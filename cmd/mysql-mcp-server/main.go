@@ -5,8 +5,8 @@ import (
 	"context"
 	"log"
 
-	mycfg "github.com/yourname/mysql-mcp-server/internal/config"
-	mydb "github.com/yourname/mysql-mcp-server/internal/mysql"
+	mycfg "github.com/askdba/mysql-mcp-server/internal/config"
+	mydb "github.com/askdba/mysql-mcp-server/internal/mysql"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
