@@ -1,6 +1,11 @@
 # mysql-mcp-server
 
-A MySQL server implementation for the Model Context Protocol (MCP), written in Go.
+![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-green.svg)
+![Go Version](https://img.shields.io/badge/Go-1.22+-blue)
+![Status](https://img.shields.io/badge/status-experimental-orange)
+
+A lightweight, open-source **MySQL Server implementation for the Model Context Protocol (MCP)** written in Go.  
+This server exposes MySQL database introspection and querying capabilities to any MCP-compatible client (ChatGPT, Claude, VS Code extensions, custom agents, etc.).
 
 ## Features
 - List databases
