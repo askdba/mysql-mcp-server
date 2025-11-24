@@ -1,74 +1,75 @@
-MySQL MCP Server
+# MySQL MCP Server
 
 A fast, read-only MySQL Server for the Model Context Protocol (MCP) written in Go.
 
-This project exposes safe MySQL introspection tools to Claude Desktop via MCP. Claude can use these tools to explore databases, describe schemas, and run controlled read-only SQL queries — ideal for secure assistance during development, debugging, analytics, or schema documentation.
+This project exposes safe MySQL introspection tools to Claude Desktop via MCP. Claude can explore databases, describe schemas, and execute controlled read-only SQL queries — ideal for secure development assistance, debugging, analytics, and schema documentation.
 
-⸻
+## Features
 
-🚀 Features
-	•	🔒 Fully read-only (blocks all non-SELECT/SHOW/DESCRIBE/EXPLAIN statements)
-	•	🧰 MCP tools provided
-	•	list_databases
-	•	list_tables
-	•	describe_table
-	•	run_query (safe & row-limited)
-	•	🐬 Compatible with MySQL 5.7 / 8.0 / 8.4
-	•	⏱ Query timeout enforcement
-	•	📦 Zero external runtime dependencies — single Go binary
-	•	🧪 Unit + integration tests using Testcontainers
-	•	🔌 Drop-in integration with Claude Desktop
+- Fully read-only (blocks all non-SELECT/SHOW/DESCRIBE/EXPLAIN)
+- MCP tools:
+  - list_databases
+  - list_tables
+  - describe_table
+  - run_query (safe and row-limited)
+- Supports MySQL 5.7, 8.0, 8.4
+- Query timeouts
+- Single Go binary
+- Unit and integration tests (Testcontainers)
+- Native integration with Claude Desktop MCP
 
-⸻
+## Installation
 
-📦 Installation
+Clone and build:
 
-1. Clone + build
-
+```bash
 git clone https://github.com/askdba/mysql-mcp-server.git
 cd mysql-mcp-server
 make build
+```
 
-The binary will be created at:
+Binary output:
 
+```
 bin/mysql-mcp-server
+```
 
+## Configuration
 
-⸻
+Environment variables:
 
-⚙️ Configuration
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| MYSQL_DSN | Yes | – | MySQL DSN |
+| MYSQL_MAX_ROWS | No | 200 | Max rows returned |
+| MYSQL_QUERY_TIMEOUT_SECONDS | No | 30 | Query timeout |
+| MYSQL_READONLY | No | 1 | Enforce read-only |
 
-The server is configured using environment variables:
+Example:
 
-Variable	Required	Default	Description
-MYSQL_DSN	✅ Yes	–	MySQL connection string (Go DSN format)
-MYSQL_MAX_ROWS	No	200	Max rows returned by run_query
-MYSQL_QUERY_TIMEOUT_SECONDS	No	30	Query timeout, in seconds
-MYSQL_READONLY	No	1	Read-only enforcement
-
-Example
-
+```bash
 export MYSQL_DSN="root:password@tcp(127.0.0.1:3306)/mysql?parseTime=true"
 export MYSQL_MAX_ROWS=200
 export MYSQL_QUERY_TIMEOUT_SECONDS=30
+```
 
 Run:
 
+```bash
 make run
+```
 
+## Claude Desktop Integration
 
-⸻
+Edit:
 
-🧠 Claude Desktop Integration
-
-This server integrates directly with Claude Desktop via the official MCP interface.
-
-1. Create (or edit) the Claude config file:
-
+```
 ~/Library/Application Support/Claude/claude_desktop_config.json
+```
 
 Add:
 
+```json
 {
   "mcpServers": {
     "mysql": {
@@ -80,97 +81,67 @@ Add:
     }
   }
 }
+```
 
-2. Restart Claude Desktop
+Restart Claude Desktop.
 
-Claude will automatically detect the MySQL MCP server and load the tools.
+## MCP Tools
 
-⸻
-
-🧰 MCP Tools
-
-The server exposes the following tools to Claude:
-
-1. list_databases
+### list_databases
 
 Returns non-system databases.
 
-⸻
-
-2. list_tables
+### list_tables
 
 Input:
 
-{
-  "database": "employees"
-}
+```json
+{ "database": "employees" }
+```
 
-
-⸻
-
-3. describe_table
+### describe_table
 
 Input:
 
-{
-  "database": "employees",
-  "table": "salaries"
-}
+```json
+{ "database": "employees", "table": "salaries" }
+```
 
-Returns column names, types, nullability, and other metadata.
-
-⸻
-
-4. run_query
+### run_query
 
 Input:
 
-{
-  "sql": "SELECT id, name FROM users LIMIT 5"
-}
+```json
+{ "sql": "SELECT id, name FROM users LIMIT 5" }
+```
 
-	•	Rejects any non-read-only SQL
-	•	Enforces limit + timeout
-	•	Never returns more than MYSQL_MAX_ROWS
+- Rejects non-read-only SQL
+- Enforces row limit
+- Enforces timeout
 
-⸻
+## Security Model
 
-🔒 Security Model
-
-This server is explicitly built for safe AI-assisted database access:
-	•	Read-only SQL enforcement
-	•	Row limits to prevent dumping large tables
-	•	Query timeout
-	•	Recommended to use a dedicated low-privilege MySQL user:
-
+```sql
 CREATE USER 'mcp'@'localhost' IDENTIFIED BY 'strongpass';
 GRANT SELECT ON *.* TO 'mcp'@'localhost';
+```
 
+## Testing
 
-⸻
-
-🧪 Testing
-
-Unit tests:
-
+```bash
 make test
-
-Integration tests (requires Docker):
-
 make integration
+```
 
-This spins up a temporary MySQL container using Testcontainers and runs real queries.
+## Docker
 
-⸻
-
-🐳 Docker
-
-Build image:
-
+```bash
 docker build -t mysql-mcp-server .
+```
 
-Example docker-compose.yml:
+docker-compose:
 
+```yaml
 version: "3.9"
 services:
   mysql:
@@ -187,56 +158,32 @@ services:
       - mysql
     environment:
       MYSQL_DSN: "root:rootpass@tcp(mysql:3306)/testdb?parseTime=true"
+```
 
 Run:
 
+```bash
 docker compose up --build
+```
 
+## Project Structure
 
-⸻
+```
+cmd/mysql-mcp-server/   -> Server entrypoint
+internal/config/        -> Configuration loader
+internal/mysql/         -> MySQL client + tests
+bin/                    -> Built binaries
+```
 
-📁 Project Structure
+## Development
 
-cmd/mysql-mcp-server/   → Main MCP server entrypoint
-internal/config/        → Configuration loader
-internal/mysql/         → DB client + unit + integration tests
-bin/                    → Built binaries
-
-
-⸻
-
-👨‍💻 Development
-
-Format:
-
+```bash
 make fmt
-
-Run:
-
 make run
-
-Build:
-
 make build
+```
 
+## License
 
-⸻
-
-🤝 Contributing
-
-Contributions and PRs are welcome.
-
-Possible areas:
-	•	Extra MySQL MCP tools (list_indexes, explain_query, etc.)
-	•	More schema exploration helpers
-	•	Healthcheck tool
-	•	Audit logging
-	•	MySQL connection pooling configuration
-
-⸻
-
-📜 License
-
-Apache License 2.0
+Apache License 2.0  
 © 2025 Alkin Tezuysal
-
