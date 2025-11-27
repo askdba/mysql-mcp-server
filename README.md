@@ -46,6 +46,11 @@ Environment variables:
 | MYSQL_MAX_ROWS | No | 200 | Max rows returned |
 | MYSQL_QUERY_TIMEOUT_SECONDS | No | 30 | Query timeout |
 | MYSQL_MCP_EXTENDED | No | 0 | Enable extended tools (set to 1) |
+| MYSQL_MCP_JSON_LOGS | No | 0 | Enable JSON structured logging (set to 1) |
+| MYSQL_MCP_AUDIT_LOG | No | – | Path to audit log file |
+| MYSQL_MAX_OPEN_CONNS | No | 10 | Max open database connections |
+| MYSQL_MAX_IDLE_CONNS | No | 5 | Max idle database connections |
+| MYSQL_CONN_MAX_LIFETIME_MINUTES | No | 30 | Connection max lifetime in minutes |
 
 Example:
 
@@ -277,9 +282,72 @@ List MySQL server configuration variables.
 
 ## Security Model
 
+### SQL Safety (Paranoid Mode)
+
+The server enforces strict SQL validation:
+
+**Allowed operations:**
+- `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`
+
+**Blocked patterns:**
+- Multi-statement queries (semicolons)
+- File operations: `LOAD_FILE()`, `INTO OUTFILE`, `INTO DUMPFILE`
+- DDL: `CREATE`, `ALTER`, `DROP`, `TRUNCATE`, `RENAME`
+- DML: `INSERT`, `UPDATE`, `DELETE`, `REPLACE`
+- Admin: `GRANT`, `REVOKE`, `FLUSH`, `KILL`, `SHUTDOWN`
+- Dangerous functions: `SLEEP()`, `BENCHMARK()`, `GET_LOCK()`
+- Transaction control: `BEGIN`, `COMMIT`, `ROLLBACK`
+
+### Recommended MySQL User
+
 ```sql
 CREATE USER 'mcp'@'localhost' IDENTIFIED BY 'strongpass';
 GRANT SELECT ON *.* TO 'mcp'@'localhost';
+```
+
+## Observability
+
+### JSON Structured Logging
+
+Enable JSON logs for production:
+
+```bash
+export MYSQL_MCP_JSON_LOGS=1
+```
+
+Output:
+```json
+{"timestamp":"2025-01-15T10:30:00.123Z","level":"INFO","message":"query executed","fields":{"tool":"run_query","duration_ms":15,"row_count":42}}
+```
+
+### Audit Logging
+
+Enable query audit trail:
+
+```bash
+export MYSQL_MCP_AUDIT_LOG=/var/log/mysql-mcp-audit.jsonl
+```
+
+Each query is logged with timing, success/failure, and row counts.
+
+### Query Timing
+
+All queries are automatically timed and logged with:
+- Execution duration (milliseconds)
+- Row count returned
+- Tool name
+- Truncated query (for debugging)
+
+## Performance Tuning
+
+### Connection Pool
+
+Configure the connection pool for your workload:
+
+```bash
+export MYSQL_MAX_OPEN_CONNS=20      # Max open connections
+export MYSQL_MAX_IDLE_CONNS=10      # Max idle connections  
+export MYSQL_CONN_MAX_LIFETIME_MINUTES=60  # Connection lifetime
 ```
 
 ## Testing

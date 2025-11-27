@@ -4,11 +4,14 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -18,6 +21,9 @@ import (
 const (
 	defaultMaxRows          = 200
 	defaultQueryTimeoutSecs = 30
+	defaultMaxOpenConns     = 10
+	defaultMaxIdleConns     = 5
+	defaultConnMaxLifetimeM = 30
 )
 
 // Global DB handle shared by all tools (safe for concurrent use).
@@ -26,7 +32,139 @@ var (
 	maxRows      int
 	queryTimeout time.Duration
 	extendedMode bool
+	jsonLogging  bool
+	auditLogger  *AuditLogger
 )
+
+// ===== Structured Logging =====
+
+type LogEntry struct {
+	Timestamp string                 `json:"timestamp"`
+	Level     string                 `json:"level"`
+	Message   string                 `json:"message"`
+	Fields    map[string]interface{} `json:"fields,omitempty"`
+}
+
+func logJSON(level, message string, fields map[string]interface{}) {
+	entry := LogEntry{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Level:     level,
+		Message:   message,
+		Fields:    fields,
+	}
+	if jsonLogging {
+		data, _ := json.Marshal(entry)
+		fmt.Fprintln(os.Stderr, string(data))
+	} else {
+		if len(fields) > 0 {
+			log.Printf("[%s] %s %v", level, message, fields)
+		} else {
+			log.Printf("[%s] %s", level, message)
+		}
+	}
+}
+
+func logInfo(message string, fields map[string]interface{}) {
+	logJSON("INFO", message, fields)
+}
+
+func logWarn(message string, fields map[string]interface{}) {
+	logJSON("WARN", message, fields)
+}
+
+func logError(message string, fields map[string]interface{}) {
+	logJSON("ERROR", message, fields)
+}
+
+// ===== Audit Logging =====
+
+type AuditEntry struct {
+	Timestamp  string  `json:"timestamp"`
+	Tool       string  `json:"tool"`
+	Database   string  `json:"database,omitempty"`
+	Query      string  `json:"query,omitempty"`
+	DurationMs int64   `json:"duration_ms"`
+	RowCount   int     `json:"row_count,omitempty"`
+	Success    bool    `json:"success"`
+	Error      string  `json:"error,omitempty"`
+}
+
+type AuditLogger struct {
+	file   *os.File
+	mu     sync.Mutex
+	enabled bool
+}
+
+func NewAuditLogger(path string) (*AuditLogger, error) {
+	if path == "" {
+		return &AuditLogger{enabled: false}, nil
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open audit log: %w", err)
+	}
+	return &AuditLogger{file: f, enabled: true}, nil
+}
+
+func (a *AuditLogger) Log(entry AuditEntry) {
+	if !a.enabled {
+		return
+	}
+	entry.Timestamp = time.Now().UTC().Format(time.RFC3339Nano)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	data, _ := json.Marshal(entry)
+	a.file.WriteString(string(data) + "\n")
+}
+
+func (a *AuditLogger) Close() {
+	if a.file != nil {
+		a.file.Close()
+	}
+}
+
+// ===== Query Timing Helper =====
+
+type QueryTimer struct {
+	start time.Time
+	tool  string
+}
+
+func NewQueryTimer(tool string) *QueryTimer {
+	return &QueryTimer{start: time.Now(), tool: tool}
+}
+
+func (t *QueryTimer) Elapsed() time.Duration {
+	return time.Since(t.start)
+}
+
+func (t *QueryTimer) ElapsedMs() int64 {
+	return t.Elapsed().Milliseconds()
+}
+
+func (t *QueryTimer) LogSuccess(rowCount int, query string) {
+	fields := map[string]interface{}{
+		"tool":        t.tool,
+		"duration_ms": t.ElapsedMs(),
+		"row_count":   rowCount,
+	}
+	if query != "" && len(query) <= 200 {
+		fields["query"] = query
+	}
+	logInfo("query executed", fields)
+}
+
+func (t *QueryTimer) LogError(err error, query string) {
+	fields := map[string]interface{}{
+		"tool":        t.tool,
+		"duration_ms": t.ElapsedMs(),
+		"error":       err.Error(),
+	}
+	if query != "" && len(query) <= 200 {
+		fields["query"] = query
+	}
+	logError("query failed", fields)
+}
 
 // ===== Tool input / output types =====
 
@@ -147,9 +285,9 @@ type ListViewsInput struct {
 }
 
 type ViewInfo struct {
-	Name       string `json:"name" jsonschema:"view name"`
-	Definer    string `json:"definer" jsonschema:"view definer"`
-	Security   string `json:"security" jsonschema:"security type (DEFINER or INVOKER)"`
+	Name        string `json:"name" jsonschema:"view name"`
+	Definer     string `json:"definer" jsonschema:"view definer"`
+	Security    string `json:"security" jsonschema:"security type (DEFINER or INVOKER)"`
 	IsUpdatable string `json:"is_updatable" jsonschema:"YES if view is updatable"`
 }
 
@@ -178,11 +316,11 @@ type ListProceduresInput struct {
 }
 
 type ProcedureInfo struct {
-	Name       string `json:"name" jsonschema:"procedure name"`
-	Definer    string `json:"definer" jsonschema:"procedure definer"`
-	Created    string `json:"created" jsonschema:"creation timestamp"`
-	Modified   string `json:"modified" jsonschema:"last modified timestamp"`
-	ParamList  string `json:"parameters" jsonschema:"parameter list"`
+	Name      string `json:"name" jsonschema:"procedure name"`
+	Definer   string `json:"definer" jsonschema:"procedure definer"`
+	Created   string `json:"created" jsonschema:"creation timestamp"`
+	Modified  string `json:"modified" jsonschema:"last modified timestamp"`
+	ParamList string `json:"parameters" jsonschema:"parameter list"`
 }
 
 type ListProceduresOutput struct {
@@ -194,10 +332,10 @@ type ListFunctionsInput struct {
 }
 
 type FunctionInfo struct {
-	Name       string `json:"name" jsonschema:"function name"`
-	Definer    string `json:"definer" jsonschema:"function definer"`
-	Returns    string `json:"returns" jsonschema:"return type"`
-	Created    string `json:"created" jsonschema:"creation timestamp"`
+	Name    string `json:"name" jsonschema:"function name"`
+	Definer string `json:"definer" jsonschema:"function definer"`
+	Returns string `json:"returns" jsonschema:"return type"`
+	Created string `json:"created" jsonschema:"creation timestamp"`
 }
 
 type ListFunctionsOutput struct {
@@ -210,12 +348,12 @@ type ListPartitionsInput struct {
 }
 
 type PartitionInfo struct {
-	Name            string `json:"name" jsonschema:"partition name"`
-	Method          string `json:"method" jsonschema:"partitioning method"`
-	Expression      string `json:"expression" jsonschema:"partitioning expression"`
-	Description     string `json:"description" jsonschema:"partition description/value"`
-	TableRows       int64  `json:"table_rows" jsonschema:"approximate row count"`
-	DataLength      int64  `json:"data_length" jsonschema:"data size in bytes"`
+	Name        string `json:"name" jsonschema:"partition name"`
+	Method      string `json:"method" jsonschema:"partitioning method"`
+	Expression  string `json:"expression" jsonschema:"partitioning expression"`
+	Description string `json:"description" jsonschema:"partition description/value"`
+	TableRows   int64  `json:"table_rows" jsonschema:"approximate row count"`
+	DataLength  int64  `json:"data_length" jsonschema:"data size in bytes"`
 }
 
 type ListPartitionsOutput struct {
@@ -227,11 +365,11 @@ type DatabaseSizeInput struct {
 }
 
 type DatabaseSizeInfo struct {
-	Name      string  `json:"name" jsonschema:"database name"`
-	SizeMB    float64 `json:"size_mb" jsonschema:"total size in megabytes"`
-	DataMB    float64 `json:"data_mb" jsonschema:"data size in megabytes"`
-	IndexMB   float64 `json:"index_mb" jsonschema:"index size in megabytes"`
-	Tables    int     `json:"tables" jsonschema:"number of tables"`
+	Name    string  `json:"name" jsonschema:"database name"`
+	SizeMB  float64 `json:"size_mb" jsonschema:"total size in megabytes"`
+	DataMB  float64 `json:"data_mb" jsonschema:"data size in megabytes"`
+	IndexMB float64 `json:"index_mb" jsonschema:"index size in megabytes"`
+	Tables  int     `json:"tables" jsonschema:"number of tables"`
 }
 
 type DatabaseSizeOutput struct {
@@ -244,12 +382,12 @@ type TableSizeInput struct {
 }
 
 type TableSizeInfo struct {
-	Name      string  `json:"name" jsonschema:"table name"`
-	Rows      int64   `json:"rows" jsonschema:"approximate row count"`
-	DataMB    float64 `json:"data_mb" jsonschema:"data size in megabytes"`
-	IndexMB   float64 `json:"index_mb" jsonschema:"index size in megabytes"`
-	TotalMB   float64 `json:"total_mb" jsonschema:"total size in megabytes"`
-	Engine    string  `json:"engine" jsonschema:"storage engine"`
+	Name    string  `json:"name" jsonschema:"table name"`
+	Rows    int64   `json:"rows" jsonschema:"approximate row count"`
+	DataMB  float64 `json:"data_mb" jsonschema:"data size in megabytes"`
+	IndexMB float64 `json:"index_mb" jsonschema:"index size in megabytes"`
+	TotalMB float64 `json:"total_mb" jsonschema:"total size in megabytes"`
+	Engine  string  `json:"engine" jsonschema:"storage engine"`
 }
 
 type TableSizeOutput struct {
@@ -344,15 +482,174 @@ func normalizeValue(v interface{}) interface{} {
 	}
 }
 
-// Basic read-only safety check for run_query.
-func isReadOnlySQL(sqlText string) bool {
+// ===== SQL Safety Validator (Paranoid Mode) =====
+
+// SQLValidationError contains details about why a query was rejected
+type SQLValidationError struct {
+	Reason  string
+	Pattern string
+}
+
+func (e *SQLValidationError) Error() string {
+	if e.Pattern != "" {
+		return fmt.Sprintf("%s: %s", e.Reason, e.Pattern)
+	}
+	return e.Reason
+}
+
+// Blocked SQL patterns - these are dangerous even in SELECT statements
+var blockedPatterns = []*regexp.Regexp{
+	// File operations
+	regexp.MustCompile(`(?i)\bLOAD_FILE\s*\(`),
+	regexp.MustCompile(`(?i)\bINTO\s+OUTFILE\b`),
+	regexp.MustCompile(`(?i)\bINTO\s+DUMPFILE\b`),
+	regexp.MustCompile(`(?i)\bLOAD\s+DATA\b`),
+
+	// DDL statements that might slip through
+	regexp.MustCompile(`(?i)^\s*CREATE\b`),
+	regexp.MustCompile(`(?i)^\s*ALTER\b`),
+	regexp.MustCompile(`(?i)^\s*DROP\b`),
+	regexp.MustCompile(`(?i)^\s*TRUNCATE\b`),
+	regexp.MustCompile(`(?i)^\s*RENAME\b`),
+
+	// DML statements
+	regexp.MustCompile(`(?i)^\s*INSERT\b`),
+	regexp.MustCompile(`(?i)^\s*UPDATE\b`),
+	regexp.MustCompile(`(?i)^\s*DELETE\b`),
+	regexp.MustCompile(`(?i)^\s*REPLACE\b`),
+
+	// Administrative commands
+	regexp.MustCompile(`(?i)^\s*GRANT\b`),
+	regexp.MustCompile(`(?i)^\s*REVOKE\b`),
+	regexp.MustCompile(`(?i)^\s*SET\s+(GLOBAL|SESSION|@@)`),
+	regexp.MustCompile(`(?i)^\s*FLUSH\b`),
+	regexp.MustCompile(`(?i)^\s*RESET\b`),
+	regexp.MustCompile(`(?i)^\s*KILL\b`),
+	regexp.MustCompile(`(?i)^\s*SHUTDOWN\b`),
+
+	// Locking
+	regexp.MustCompile(`(?i)^\s*LOCK\s+TABLES\b`),
+	regexp.MustCompile(`(?i)^\s*UNLOCK\s+TABLES\b`),
+
+	// Transactions (should not be user-controlled)
+	regexp.MustCompile(`(?i)^\s*START\s+TRANSACTION\b`),
+	regexp.MustCompile(`(?i)^\s*BEGIN\b`),
+	regexp.MustCompile(`(?i)^\s*COMMIT\b`),
+	regexp.MustCompile(`(?i)^\s*ROLLBACK\b`),
+	regexp.MustCompile(`(?i)^\s*SAVEPOINT\b`),
+
+	// Prepared statements (could be abused)
+	regexp.MustCompile(`(?i)^\s*PREPARE\b`),
+	regexp.MustCompile(`(?i)^\s*EXECUTE\b`),
+	regexp.MustCompile(`(?i)^\s*DEALLOCATE\b`),
+
+	// Stored procedure calls
+	regexp.MustCompile(`(?i)^\s*CALL\b`),
+
+	// User-defined functions that might be dangerous
+	regexp.MustCompile(`(?i)\bSLEEP\s*\(`),
+	regexp.MustCompile(`(?i)\bBENCHMARK\s*\(`),
+	regexp.MustCompile(`(?i)\bGET_LOCK\s*\(`),
+	regexp.MustCompile(`(?i)\bRELEASE_LOCK\s*\(`),
+	regexp.MustCompile(`(?i)\bIS_FREE_LOCK\s*\(`),
+	regexp.MustCompile(`(?i)\bIS_USED_LOCK\s*\(`),
+}
+
+// Allowed query prefixes (read-only operations)
+var allowedPrefixes = []string{
+	"SELECT",
+	"SHOW",
+	"DESCRIBE",
+	"DESC",
+	"EXPLAIN",
+}
+
+// validateSQL performs comprehensive SQL safety validation
+func validateSQL(sqlText string) error {
 	s := strings.TrimSpace(sqlText)
 	if s == "" {
+		return &SQLValidationError{Reason: "empty query"}
+	}
+
+	// Check for multi-statement attacks (semicolon-separated queries)
+	// Allow semicolon only at the very end (single statement)
+	cleaned := strings.TrimRight(s, "; \t\n\r")
+	if strings.Contains(cleaned, ";") {
+		return &SQLValidationError{
+			Reason:  "multi-statement queries are not allowed",
+			Pattern: ";",
+		}
+	}
+
+	// Check against blocked patterns
+	for _, pattern := range blockedPatterns {
+		if pattern.MatchString(s) {
+			return &SQLValidationError{
+				Reason:  "query contains blocked pattern",
+				Pattern: pattern.String(),
+			}
+		}
+	}
+
+	// Verify query starts with an allowed prefix
+	upper := strings.ToUpper(s)
+	allowed := false
+	for _, prefix := range allowedPrefixes {
+		if strings.HasPrefix(upper, prefix) {
+			allowed = true
+			break
+		}
+	}
+
+	if !allowed {
+		return &SQLValidationError{
+			Reason: "only SELECT, SHOW, DESCRIBE, and EXPLAIN queries are allowed",
+		}
+	}
+
+	// Additional check: look for suspicious subqueries that modify data
+	// (SELECT with subquery that does INSERT/UPDATE/DELETE)
+	if strings.Contains(upper, "INSERT") || strings.Contains(upper, "UPDATE") ||
+		strings.Contains(upper, "DELETE") {
+		// Allow these words only if they appear in string literals or comments
+		// Simple heuristic: if they appear as standalone words, block
+		dangerousKeywords := regexp.MustCompile(`(?i)\b(INSERT|UPDATE|DELETE)\b`)
+		if dangerousKeywords.MatchString(s) {
+			// Check if it's likely in a string by looking for quotes around it
+			// This is a simplified check - real parsing would be better
+			if !isLikelyInString(s, "INSERT") && !isLikelyInString(s, "UPDATE") &&
+				!isLikelyInString(s, "DELETE") {
+				return &SQLValidationError{
+					Reason: "query may contain data modification keywords",
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// isLikelyInString checks if a keyword is likely within a string literal
+// This is a heuristic, not a full SQL parser
+func isLikelyInString(sql, keyword string) bool {
+	// Count quotes before and after the keyword
+	upper := strings.ToUpper(sql)
+	idx := strings.Index(upper, keyword)
+	if idx == -1 {
 		return false
 	}
-	upper := strings.ToUpper(s)
-	return strings.HasPrefix(upper, "SELECT") ||
-		StringsHasPrefixAny(upper, []string{"SHOW", "DESCRIBE", "DESC", "EXPLAIN"})
+
+	before := sql[:idx]
+	singleQuotes := strings.Count(before, "'") - strings.Count(before, "\\'")
+	doubleQuotes := strings.Count(before, "\"") - strings.Count(before, "\\\"")
+
+	// If odd number of quotes, we're likely inside a string
+	return singleQuotes%2 == 1 || doubleQuotes%2 == 1
+}
+
+// Legacy compatibility wrapper
+func isReadOnlySQL(sqlText string) bool {
+	return validateSQL(sqlText) == nil
 }
 
 func StringsHasPrefixAny(s string, prefixes []string) bool {
@@ -513,13 +810,28 @@ func toolRunQuery(
 	req *mcp.CallToolRequest,
 	input RunQueryInput,
 ) (*mcp.CallToolResult, QueryResult, error) {
+	timer := NewQueryTimer("run_query")
 
 	sqlText := strings.TrimSpace(input.SQL)
 	if sqlText == "" {
 		return nil, QueryResult{}, fmt.Errorf("sql is required")
 	}
-	if !isReadOnlySQL(sqlText) {
-		return nil, QueryResult{}, fmt.Errorf("only read-only queries are allowed (SELECT/SHOW/DESCRIBE/EXPLAIN)")
+
+	// Enhanced SQL validation
+	if err := validateSQL(sqlText); err != nil {
+		logWarn("query rejected by validator", map[string]interface{}{
+			"error": err.Error(),
+			"query": truncateQuery(sqlText, 200),
+		})
+		if auditLogger != nil {
+			auditLogger.Log(AuditEntry{
+				Tool:    "run_query",
+				Query:   truncateQuery(sqlText, 500),
+				Success: false,
+				Error:   err.Error(),
+			})
+		}
+		return nil, QueryResult{}, fmt.Errorf("query validation failed: %w", err)
 	}
 
 	limit := maxRows
@@ -531,7 +843,8 @@ func toolRunQuery(
 	defer cancel()
 
 	// Switch to the specified database if provided
-	if database := strings.TrimSpace(input.Database); database != "" {
+	database := strings.TrimSpace(input.Database)
+	if database != "" {
 		dbName, err := quoteIdent(database)
 		if err != nil {
 			return nil, QueryResult{}, fmt.Errorf("invalid database name: %w", err)
@@ -543,6 +856,17 @@ func toolRunQuery(
 
 	rows, err := db.QueryContext(ctx, sqlText)
 	if err != nil {
+		timer.LogError(err, sqlText)
+		if auditLogger != nil {
+			auditLogger.Log(AuditEntry{
+				Tool:       "run_query",
+				Database:   database,
+				Query:      truncateQuery(sqlText, 500),
+				DurationMs: timer.ElapsedMs(),
+				Success:    false,
+				Error:      err.Error(),
+			})
+		}
 		return nil, QueryResult{}, fmt.Errorf("query failed: %w", err)
 	}
 	defer rows.Close()
@@ -582,7 +906,28 @@ func toolRunQuery(
 		return nil, QueryResult{}, err
 	}
 
+	// Log success
+	timer.LogSuccess(len(result.Rows), sqlText)
+	if auditLogger != nil {
+		auditLogger.Log(AuditEntry{
+			Tool:       "run_query",
+			Database:   database,
+			Query:      truncateQuery(sqlText, 500),
+			DurationMs: timer.ElapsedMs(),
+			RowCount:   len(result.Rows),
+			Success:    true,
+		})
+	}
+
 	return nil, result, nil
+}
+
+// truncateQuery truncates a query string to maxLen characters
+func truncateQuery(query string, maxLen int) string {
+	if len(query) <= maxLen {
+		return query
+	}
+	return query[:maxLen] + "..."
 }
 
 func toolPing(
@@ -1317,19 +1662,53 @@ func main() {
 	// Check for extended mode
 	extendedMode = os.Getenv("MYSQL_MCP_EXTENDED") == "1"
 
-	// ---- Init DB ----
+	// Check for JSON logging
+	jsonLogging = os.Getenv("MYSQL_MCP_JSON_LOGS") == "1"
+
+	// Initialize audit logger if path is specified
+	auditLogPath := strings.TrimSpace(os.Getenv("MYSQL_MCP_AUDIT_LOG"))
 	var err error
+	auditLogger, err = NewAuditLogger(auditLogPath)
+	if err != nil {
+		log.Fatalf("audit log init error: %v", err)
+	}
+	if auditLogger.enabled {
+		defer auditLogger.Close()
+	}
+
+	// Connection pool settings
+	maxOpenConns := getEnvInt("MYSQL_MAX_OPEN_CONNS", defaultMaxOpenConns)
+	maxIdleConns := getEnvInt("MYSQL_MAX_IDLE_CONNS", defaultMaxIdleConns)
+	connMaxLifetimeMin := getEnvInt("MYSQL_CONN_MAX_LIFETIME_MINUTES", defaultConnMaxLifetimeM)
+
+	// ---- Init DB ----
 	db, err = sql.Open("mysql", dsn)
 	if err != nil {
 		log.Fatalf("db init error: %v", err)
 	}
+
+	// Configure connection pool
+	db.SetMaxOpenConns(maxOpenConns)
+	db.SetMaxIdleConns(maxIdleConns)
+	db.SetConnMaxLifetime(time.Duration(connMaxLifetimeMin) * time.Minute)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := db.PingContext(ctx); err != nil {
 		log.Fatalf("db init error: %v", err)
 	}
 
-	log.Printf("mysql-mcp-server connected to MySQL; maxRows=%d, queryTimeout=%s, extendedMode=%v", maxRows, queryTimeout, extendedMode)
+	// Log startup configuration
+	logInfo("mysql-mcp-server started", map[string]interface{}{
+		"maxRows":         maxRows,
+		"queryTimeout":    queryTimeout.String(),
+		"extendedMode":    extendedMode,
+		"jsonLogging":     jsonLogging,
+		"auditLogEnabled": auditLogger.enabled,
+		"maxOpenConns":    maxOpenConns,
+		"maxIdleConns":    maxIdleConns,
+		"connMaxLifetime": fmt.Sprintf("%dm", connMaxLifetimeMin),
+	})
 
 	// ---- Build MCP server ----
 	server := mcp.NewServer(
