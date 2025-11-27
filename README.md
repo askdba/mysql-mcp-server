@@ -45,7 +45,7 @@ Environment variables:
 | MYSQL_DSN | Yes | – | MySQL DSN |
 | MYSQL_MAX_ROWS | No | 200 | Max rows returned |
 | MYSQL_QUERY_TIMEOUT_SECONDS | No | 30 | Query timeout |
-| MYSQL_READONLY | No | 1 | Enforce read-only |
+| MYSQL_MCP_EXTENDED | No | 0 | Enable extended tools (set to 1) |
 
 Example:
 
@@ -155,6 +155,124 @@ Output:
   "max_connections": 151,
   "threads_connected": 5
 }
+```
+
+## Extended Tools (MYSQL_MCP_EXTENDED=1)
+
+Enable with:
+
+```bash
+export MYSQL_MCP_EXTENDED=1
+```
+
+### list_indexes
+
+List indexes on a table.
+
+```json
+{ "database": "myapp", "table": "users" }
+```
+
+### show_create_table
+
+Get the CREATE TABLE statement.
+
+```json
+{ "database": "myapp", "table": "users" }
+```
+
+### explain_query
+
+Get execution plan for a SELECT query.
+
+```json
+{ "sql": "SELECT * FROM users WHERE id = 1", "database": "myapp" }
+```
+
+### list_views
+
+List views in a database.
+
+```json
+{ "database": "myapp" }
+```
+
+### list_triggers
+
+List triggers in a database.
+
+```json
+{ "database": "myapp" }
+```
+
+### list_procedures
+
+List stored procedures.
+
+```json
+{ "database": "myapp" }
+```
+
+### list_functions
+
+List stored functions.
+
+```json
+{ "database": "myapp" }
+```
+
+### list_partitions
+
+List table partitions.
+
+```json
+{ "database": "myapp", "table": "events" }
+```
+
+### database_size
+
+Get database size information.
+
+```json
+{ "database": "myapp" }
+```
+
+Or get all databases:
+
+```json
+{}
+```
+
+### table_size
+
+Get table size information.
+
+```json
+{ "database": "myapp" }
+```
+
+### foreign_keys
+
+List foreign key constraints.
+
+```json
+{ "database": "myapp", "table": "orders" }
+```
+
+### list_status
+
+List MySQL server status variables.
+
+```json
+{ "pattern": "Threads%" }
+```
+
+### list_variables
+
+List MySQL server configuration variables.
+
+```json
+{ "pattern": "%buffer%" }
 ```
 
 ## Security Model
