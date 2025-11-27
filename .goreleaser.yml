@@ -6,7 +6,6 @@ version: 2
 before:
   hooks:
     - go mod tidy
-    - go generate ./...
 
 builds:
   - id: mysql-mcp-server
@@ -21,6 +20,9 @@ builds:
     goarch:
       - amd64
       - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -48,7 +50,6 @@ snapshot:
 
 changelog:
   sort: asc
-  use: github
   filters:
     exclude:
       - "^docs:"
@@ -73,40 +74,31 @@ changelog:
     - title: "Other"
       order: 999
 
-brews:
-  - name: mysql-mcp-server
-    repository:
-      owner: askdba
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    folder: Formula
-    homepage: "https://github.com/askdba/mysql-mcp-server"
-    description: "A fast, read-only MySQL MCP server for Claude Desktop"
-    license: "Apache-2.0"
-    install: |
-      bin.install "mysql-mcp-server"
-    test: |
-      system "#{bin}/mysql-mcp-server", "--version"
-    dependencies:
-      - name: mysql
-        type: optional
+# Homebrew formula - uncomment when homebrew-tap repo exists
+# brews:
+#   - name: mysql-mcp-server
+#     repository:
+#       owner: askdba
+#       name: homebrew-tap
+#       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+#     folder: Formula
+#     homepage: "https://github.com/askdba/mysql-mcp-server"
+#     description: "A fast, read-only MySQL MCP server for Claude Desktop"
+#     license: "Apache-2.0"
+#     install: |
+#       bin.install "mysql-mcp-server"
+#     test: |
+#       system "#{bin}/mysql-mcp-server", "--version"
 
-dockers:
-  - image_templates:
-      - "ghcr.io/askdba/mysql-mcp-server:{{ .Version }}"
-      - "ghcr.io/askdba/mysql-mcp-server:{{ .Major }}.{{ .Minor }}"
-      - "ghcr.io/askdba/mysql-mcp-server:{{ .Major }}"
-      - "ghcr.io/askdba/mysql-mcp-server:latest"
-    dockerfile: Dockerfile
-    build_flag_templates:
-      - "--pull"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--label=org.opencontainers.image.source={{.GitURL}}"
-      - "--label=org.opencontainers.image.licenses=Apache-2.0"
-      - "--platform=linux/amd64"
+# Docker images - handled separately in GitHub Actions for reliability
+# dockers:
+#   - image_templates:
+#       - "ghcr.io/askdba/mysql-mcp-server:{{ .Version }}"
+#       - "ghcr.io/askdba/mysql-mcp-server:latest"
+#     dockerfile: Dockerfile
+#     build_flag_templates:
+#       - "--pull"
+#       - "--platform=linux/amd64"
 
 release:
   github:
@@ -122,19 +114,20 @@ release:
     
     ### Installation
     
-    **Homebrew (macOS/Linux):**
-    ```bash
-    brew install askdba/tap/mysql-mcp-server
-    ```
+    **Download Binary:**
+    Download the appropriate binary for your platform below.
     
     **Docker:**
     ```bash
     docker pull ghcr.io/askdba/mysql-mcp-server:{{ .Version }}
     ```
     
-    **Binary:**
-    Download the appropriate binary for your platform below.
+    **Build from Source:**
+    ```bash
+    git clone https://github.com/askdba/mysql-mcp-server.git
+    cd mysql-mcp-server
+    make build
+    ```
   footer: |
     ---
     **Full Changelog**: https://github.com/askdba/mysql-mcp-server/compare/{{ .PreviousTag }}...{{ .Tag }}
-
