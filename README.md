@@ -520,9 +520,71 @@ make integration
 
 ### Using Pre-built Image
 
+**Basic usage:**
+
 ```bash
-docker run -e MYSQL_DSN="user:pass@tcp(host:3306)/db?parseTime=true" \
+docker run -e MYSQL_DSN="user:password@tcp(host.docker.internal:3306)/mydb" \
   ghcr.io/askdba/mysql-mcp-server:latest
+```
+
+> **Note:** Use `host.docker.internal` instead of `localhost` to connect from inside the container to MySQL on your host machine (macOS/Windows).
+
+**With extended tools enabled:**
+
+```bash
+docker run \
+  -e MYSQL_DSN="user:password@tcp(host.docker.internal:3306)/mydb" \
+  -e MYSQL_MCP_EXTENDED=1 \
+  ghcr.io/askdba/mysql-mcp-server:latest
+```
+
+**With all options:**
+
+```bash
+docker run \
+  -e MYSQL_DSN="user:password@tcp(host.docker.internal:3306)/mydb" \
+  -e MYSQL_MCP_EXTENDED=1 \
+  -e MYSQL_MCP_VECTOR=1 \
+  -e MYSQL_MAX_ROWS=500 \
+  -e MYSQL_QUERY_TIMEOUT_SECONDS=60 \
+  ghcr.io/askdba/mysql-mcp-server:latest
+```
+
+### Claude Desktop with Docker
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "mysql": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "MYSQL_DSN=user:password@tcp(host.docker.internal:3306)/mydb",
+        "ghcr.io/askdba/mysql-mcp-server:latest"
+      ]
+    }
+  }
+}
+```
+
+**With extended tools:**
+
+```json
+{
+  "mcpServers": {
+    "mysql": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "MYSQL_DSN=user:password@tcp(host.docker.internal:3306)/mydb",
+        "-e", "MYSQL_MCP_EXTENDED=1",
+        "ghcr.io/askdba/mysql-mcp-server:latest"
+      ]
+    }
+  }
+}
 ```
 
 ### Docker Compose
