@@ -31,27 +31,19 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: false
 
-      - name: Clean workspace
-        run: |
-          echo "Cleaning any stale files..."
-          git clean -fdx
-          git checkout -- .
-          
       - name: Check formatting
         run: |
           echo "Commit: $(git rev-parse HEAD)"
           echo "Go version: $(go version)"
-          echo "Files to check:"
-          find . -name "*.go" -type f
-          echo ""
-          echo "Running gofmt..."
-          UNFORMATTED=$(gofmt -l .)
-          if [ -n "$UNFORMATTED" ]; then
-            echo "Code is not formatted. Files:"
-            echo "$UNFORMATTED"
+          # Format all files
+          go fmt ./...
+          # Check if formatting made any changes
+          if [ -n "$(git diff --name-only)" ]; then
+            echo "Code was not formatted. The following files were changed by go fmt:"
+            git diff --name-only
             echo ""
             echo "Diff:"
-            gofmt -d .
+            git diff
             exit 1
           fi
           echo "All files properly formatted"
