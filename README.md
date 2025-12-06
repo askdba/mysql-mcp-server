@@ -81,6 +81,8 @@ Environment variables:
 | MYSQL_MCP_JSON_LOGS | No | 0 | Enable JSON structured logging (set to 1) |
 | MYSQL_MCP_AUDIT_LOG | No | – | Path to audit log file |
 | MYSQL_MCP_VECTOR | No | 0 | Enable vector tools for MySQL 9.0+ (set to 1) |
+| MYSQL_MCP_HTTP | No | 0 | Enable REST API mode (set to 1) |
+| MYSQL_HTTP_PORT | No | 9306 | HTTP port for REST API mode |
 | MYSQL_MAX_OPEN_CONNS | No | 10 | Max open database connections |
 | MYSQL_MAX_IDLE_CONNS | No | 5 | Max idle database connections |
 | MYSQL_CONN_MAX_LIFETIME_MINUTES | No | 30 | Connection max lifetime in minutes |
@@ -619,6 +621,112 @@ docker compose up
 
 ```bash
 docker build -t mysql-mcp-server .
+```
+
+## REST API Mode
+
+Enable HTTP REST API mode to use with ChatGPT, Gemini, or any HTTP client:
+
+```bash
+export MYSQL_DSN="user:password@tcp(localhost:3306)/mydb"
+export MYSQL_MCP_HTTP=1
+export MYSQL_HTTP_PORT=9306  # Optional, defaults to 9306
+mysql-mcp-server
+```
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check |
+| GET | `/api` | API index with all endpoints |
+| GET | `/api/databases` | List databases |
+| GET | `/api/tables?database=` | List tables |
+| GET | `/api/describe?database=&table=` | Describe table |
+| POST | `/api/query` | Run SQL query |
+| GET | `/api/ping` | Ping database |
+| GET | `/api/server-info` | Server info |
+| GET | `/api/connections` | List connections |
+| POST | `/api/connections/use` | Switch connection |
+
+**Extended endpoints** (requires `MYSQL_MCP_EXTENDED=1`):
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/indexes?database=&table=` | List indexes |
+| GET | `/api/create-table?database=&table=` | Show CREATE TABLE |
+| POST | `/api/explain` | Explain query |
+| GET | `/api/views?database=` | List views |
+| GET | `/api/triggers?database=` | List triggers |
+| GET | `/api/procedures?database=` | List procedures |
+| GET | `/api/functions?database=` | List functions |
+| GET | `/api/size/database?database=` | Database size |
+| GET | `/api/size/tables?database=` | Table sizes |
+| GET | `/api/foreign-keys?database=` | Foreign keys |
+| GET | `/api/status?pattern=` | Server status |
+| GET | `/api/variables?pattern=` | Server variables |
+
+**Vector endpoints** (requires `MYSQL_MCP_VECTOR=1`):
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/vector/search` | Vector similarity search |
+| GET | `/api/vector/info?database=` | Vector column info |
+
+### Example Usage
+
+**List databases:**
+```bash
+curl http://localhost:9306/api/databases
+```
+
+**Run a query:**
+```bash
+curl -X POST http://localhost:9306/api/query \
+  -H "Content-Type: application/json" \
+  -d '{"sql": "SELECT * FROM users LIMIT 5", "database": "myapp"}'
+```
+
+**Get server info:**
+```bash
+curl http://localhost:9306/api/server-info
+```
+
+### Response Format
+
+All responses follow this format:
+
+```json
+{
+  "success": true,
+  "data": { ... }
+}
+```
+
+Error responses:
+
+```json
+{
+  "success": false,
+  "error": "error message"
+}
+```
+
+### ChatGPT Custom GPT Integration
+
+1. Start the REST API server on a publicly accessible host
+2. Create a Custom GPT with Actions
+3. Import the OpenAPI schema from `/api`
+4. Configure authentication if needed
+
+### Docker with REST API
+
+```bash
+docker run -p 9306:9306 \
+  -e MYSQL_DSN="user:password@tcp(host.docker.internal:3306)/mydb" \
+  -e MYSQL_MCP_HTTP=1 \
+  -e MYSQL_MCP_EXTENDED=1 \
+  ghcr.io/askdba/mysql-mcp-server:latest
 ```
 
 ## Project Structure

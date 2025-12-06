@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
@@ -24,6 +25,7 @@ const (
 	defaultMaxOpenConns     = 10
 	defaultMaxIdleConns     = 5
 	defaultConnMaxLifetimeM = 30
+	defaultHTTPPort         = 9306
 )
 
 // Global DB handle shared by all tools (safe for concurrent use).
@@ -1062,7 +1064,7 @@ func toolRunQuery(
 	if database != "" {
 		var dbName string
 		dbName, err = quoteIdent(database)
-		if err != nil {
+	if err != nil {
 			return nil, QueryResult{}, fmt.Errorf("invalid database name: %w", err)
 		}
 		// Use a single connection to ensure USE affects the query
@@ -2207,6 +2209,667 @@ func toolListVariables(
 	return nil, out, nil
 }
 
+// ===== HTTP REST API Server =====
+
+// APIResponse is the standard JSON response structure
+type APIResponse struct {
+	Success bool        `json:"success"`
+	Data    interface{} `json:"data,omitempty"`
+	Error   string      `json:"error,omitempty"`
+}
+
+// writeJSON writes a JSON response
+func writeJSON(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
+// writeSuccess writes a successful JSON response
+func writeSuccess(w http.ResponseWriter, data interface{}) {
+	writeJSON(w, http.StatusOK, APIResponse{Success: true, Data: data})
+}
+
+// writeError writes an error JSON response
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, APIResponse{Success: false, Error: message})
+}
+
+// httpListDatabases handles GET /api/databases
+func httpListDatabases(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolListDatabases(ctx, nil, ListDatabasesInput{})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpListTables handles GET /api/tables?database=xxx
+func httpListTables(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	database := r.URL.Query().Get("database")
+	if database == "" {
+		writeError(w, http.StatusBadRequest, "database parameter is required")
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolListTables(ctx, nil, ListTablesInput{Database: database})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpDescribeTable handles GET /api/describe?database=xxx&table=yyy
+func httpDescribeTable(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	database := r.URL.Query().Get("database")
+	table := r.URL.Query().Get("table")
+	if database == "" || table == "" {
+		writeError(w, http.StatusBadRequest, "database and table parameters are required")
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolDescribeTable(ctx, nil, DescribeTableInput{Database: database, Table: table})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpRunQuery handles POST /api/query with JSON body {"sql": "...", "database": "...", "max_rows": N}
+func httpRunQuery(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	if r.Method != "POST" {
+		writeError(w, http.StatusMethodNotAllowed, "POST method required")
+		return
+	}
+	var input RunQueryInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return
+	}
+	if input.SQL == "" {
+		writeError(w, http.StatusBadRequest, "sql field is required")
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolRunQuery(ctx, nil, input)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpPing handles GET /api/ping
+func httpPing(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolPing(ctx, nil, PingInput{})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpServerInfo handles GET /api/server-info
+func httpServerInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolServerInfo(ctx, nil, ServerInfoInput{})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpListConnections handles GET /api/connections
+func httpListConnections(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolListConnections(ctx, nil, ListConnectionsInput{})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpUseConnection handles POST /api/connections/use with JSON body {"name": "..."}
+func httpUseConnection(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	if r.Method != "POST" {
+		writeError(w, http.StatusMethodNotAllowed, "POST method required")
+		return
+	}
+	var input UseConnectionInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return
+	}
+	if input.Name == "" {
+		writeError(w, http.StatusBadRequest, "name field is required")
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolUseConnection(ctx, nil, input)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpListIndexes handles GET /api/indexes?database=xxx&table=yyy
+func httpListIndexes(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	database := r.URL.Query().Get("database")
+	table := r.URL.Query().Get("table")
+	if database == "" || table == "" {
+		writeError(w, http.StatusBadRequest, "database and table parameters are required")
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolListIndexes(ctx, nil, ListIndexesInput{Database: database, Table: table})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpShowCreateTable handles GET /api/create-table?database=xxx&table=yyy
+func httpShowCreateTable(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	database := r.URL.Query().Get("database")
+	table := r.URL.Query().Get("table")
+	if database == "" || table == "" {
+		writeError(w, http.StatusBadRequest, "database and table parameters are required")
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolShowCreateTable(ctx, nil, ShowCreateTableInput{Database: database, Table: table})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpExplainQuery handles POST /api/explain with JSON body {"sql": "...", "database": "..."}
+func httpExplainQuery(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	if r.Method != "POST" {
+		writeError(w, http.StatusMethodNotAllowed, "POST method required")
+		return
+	}
+	var input ExplainQueryInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return
+	}
+	if input.SQL == "" {
+		writeError(w, http.StatusBadRequest, "sql field is required")
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolExplainQuery(ctx, nil, input)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpListViews handles GET /api/views?database=xxx
+func httpListViews(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	database := r.URL.Query().Get("database")
+	if database == "" {
+		writeError(w, http.StatusBadRequest, "database parameter is required")
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolListViews(ctx, nil, ListViewsInput{Database: database})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpListTriggers handles GET /api/triggers?database=xxx
+func httpListTriggers(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	database := r.URL.Query().Get("database")
+	if database == "" {
+		writeError(w, http.StatusBadRequest, "database parameter is required")
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolListTriggers(ctx, nil, ListTriggersInput{Database: database})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpListProcedures handles GET /api/procedures?database=xxx
+func httpListProcedures(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	database := r.URL.Query().Get("database")
+	if database == "" {
+		writeError(w, http.StatusBadRequest, "database parameter is required")
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolListProcedures(ctx, nil, ListProceduresInput{Database: database})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpListFunctions handles GET /api/functions?database=xxx
+func httpListFunctions(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	database := r.URL.Query().Get("database")
+	if database == "" {
+		writeError(w, http.StatusBadRequest, "database parameter is required")
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolListFunctions(ctx, nil, ListFunctionsInput{Database: database})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpDatabaseSize handles GET /api/size/database?database=xxx (optional)
+func httpDatabaseSize(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	database := r.URL.Query().Get("database")
+	ctx := context.Background()
+	_, out, err := toolDatabaseSize(ctx, nil, DatabaseSizeInput{Database: database})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpTableSize handles GET /api/size/tables?database=xxx
+func httpTableSize(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	database := r.URL.Query().Get("database")
+	if database == "" {
+		writeError(w, http.StatusBadRequest, "database parameter is required")
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolTableSize(ctx, nil, TableSizeInput{Database: database})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpForeignKeys handles GET /api/foreign-keys?database=xxx&table=yyy (table optional)
+func httpForeignKeys(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	database := r.URL.Query().Get("database")
+	table := r.URL.Query().Get("table")
+	if database == "" {
+		writeError(w, http.StatusBadRequest, "database parameter is required")
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolForeignKeys(ctx, nil, ForeignKeysInput{Database: database, Table: table})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpListStatus handles GET /api/status?pattern=xxx (pattern optional)
+func httpListStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	pattern := r.URL.Query().Get("pattern")
+	ctx := context.Background()
+	_, out, err := toolListStatus(ctx, nil, ListStatusInput{Pattern: pattern})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpListVariables handles GET /api/variables?pattern=xxx (pattern optional)
+func httpListVariables(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	pattern := r.URL.Query().Get("pattern")
+	ctx := context.Background()
+	_, out, err := toolListVariables(ctx, nil, ListVariablesInput{Pattern: pattern})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpVectorSearch handles POST /api/vector/search
+func httpVectorSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	if r.Method != "POST" {
+		writeError(w, http.StatusMethodNotAllowed, "POST method required")
+		return
+	}
+	var input VectorSearchInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolVectorSearch(ctx, nil, input)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpVectorInfo handles GET /api/vector/info?database=xxx
+func httpVectorInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	database := r.URL.Query().Get("database")
+	if database == "" {
+		writeError(w, http.StatusBadRequest, "database parameter is required")
+		return
+	}
+	ctx := context.Background()
+	_, out, err := toolVectorInfo(ctx, nil, VectorInfoInput{Database: database})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeSuccess(w, out)
+}
+
+// httpHealth handles GET /health
+func httpHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	writeSuccess(w, map[string]interface{}{
+		"status":  "healthy",
+		"service": "mysql-mcp-server",
+	})
+}
+
+// httpAPIIndex handles GET /api
+func httpAPIIndex(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	endpoints := map[string]interface{}{
+		"service": "mysql-mcp-server REST API",
+		"version": "1.1.0",
+		"endpoints": map[string]string{
+			"GET  /health":                 "Health check",
+			"GET  /api":                    "API index (this page)",
+			"GET  /api/databases":          "List databases",
+			"GET  /api/tables":             "List tables (requires ?database=)",
+			"GET  /api/describe":           "Describe table (requires ?database=&table=)",
+			"POST /api/query":              "Run SQL query (body: {sql, database?, max_rows?})",
+			"GET  /api/ping":               "Ping database",
+			"GET  /api/server-info":        "Get server info",
+			"GET  /api/connections":        "List connections",
+			"POST /api/connections/use":    "Switch connection (body: {name})",
+			"GET  /api/indexes":            "List indexes (requires ?database=&table=) [extended]",
+			"GET  /api/create-table":       "Show CREATE TABLE (requires ?database=&table=) [extended]",
+			"POST /api/explain":            "Explain query (body: {sql, database?}) [extended]",
+			"GET  /api/views":              "List views (requires ?database=) [extended]",
+			"GET  /api/triggers":           "List triggers (requires ?database=) [extended]",
+			"GET  /api/procedures":         "List procedures (requires ?database=) [extended]",
+			"GET  /api/functions":          "List functions (requires ?database=) [extended]",
+			"GET  /api/size/database":      "Database size (optional ?database=) [extended]",
+			"GET  /api/size/tables":        "Table sizes (requires ?database=) [extended]",
+			"GET  /api/foreign-keys":       "Foreign keys (requires ?database=, optional &table=) [extended]",
+			"GET  /api/status":             "Server status (optional ?pattern=) [extended]",
+			"GET  /api/variables":          "Server variables (optional ?pattern=) [extended]",
+			"POST /api/vector/search":      "Vector search (body: {...}) [vector]",
+			"GET  /api/vector/info":        "Vector info (requires ?database=) [vector]",
+		},
+		"modes": map[string]bool{
+			"extended": extendedMode,
+			"vector":   os.Getenv("MYSQL_MCP_VECTOR") == "1",
+		},
+	}
+	writeSuccess(w, endpoints)
+}
+
+// startHTTPServer starts the REST API server
+func startHTTPServer(port int, vectorMode bool) {
+	mux := http.NewServeMux()
+
+	// Health and index
+	mux.HandleFunc("/health", httpHealth)
+	mux.HandleFunc("/api", httpAPIIndex)
+	mux.HandleFunc("/api/", httpAPIIndex)
+
+	// Core endpoints
+	mux.HandleFunc("/api/databases", httpListDatabases)
+	mux.HandleFunc("/api/tables", httpListTables)
+	mux.HandleFunc("/api/describe", httpDescribeTable)
+	mux.HandleFunc("/api/query", httpRunQuery)
+	mux.HandleFunc("/api/ping", httpPing)
+	mux.HandleFunc("/api/server-info", httpServerInfo)
+	mux.HandleFunc("/api/connections", httpListConnections)
+	mux.HandleFunc("/api/connections/use", httpUseConnection)
+
+	// Extended endpoints (always registered, but handlers check extendedMode)
+	mux.HandleFunc("/api/indexes", func(w http.ResponseWriter, r *http.Request) {
+		if !extendedMode {
+			writeError(w, http.StatusNotFound, "extended mode not enabled (set MYSQL_MCP_EXTENDED=1)")
+			return
+		}
+		httpListIndexes(w, r)
+	})
+	mux.HandleFunc("/api/create-table", func(w http.ResponseWriter, r *http.Request) {
+		if !extendedMode {
+			writeError(w, http.StatusNotFound, "extended mode not enabled (set MYSQL_MCP_EXTENDED=1)")
+			return
+		}
+		httpShowCreateTable(w, r)
+	})
+	mux.HandleFunc("/api/explain", func(w http.ResponseWriter, r *http.Request) {
+		if !extendedMode {
+			writeError(w, http.StatusNotFound, "extended mode not enabled (set MYSQL_MCP_EXTENDED=1)")
+			return
+		}
+		httpExplainQuery(w, r)
+	})
+	mux.HandleFunc("/api/views", func(w http.ResponseWriter, r *http.Request) {
+		if !extendedMode {
+			writeError(w, http.StatusNotFound, "extended mode not enabled (set MYSQL_MCP_EXTENDED=1)")
+			return
+		}
+		httpListViews(w, r)
+	})
+	mux.HandleFunc("/api/triggers", func(w http.ResponseWriter, r *http.Request) {
+		if !extendedMode {
+			writeError(w, http.StatusNotFound, "extended mode not enabled (set MYSQL_MCP_EXTENDED=1)")
+			return
+		}
+		httpListTriggers(w, r)
+	})
+	mux.HandleFunc("/api/procedures", func(w http.ResponseWriter, r *http.Request) {
+		if !extendedMode {
+			writeError(w, http.StatusNotFound, "extended mode not enabled (set MYSQL_MCP_EXTENDED=1)")
+			return
+		}
+		httpListProcedures(w, r)
+	})
+	mux.HandleFunc("/api/functions", func(w http.ResponseWriter, r *http.Request) {
+		if !extendedMode {
+			writeError(w, http.StatusNotFound, "extended mode not enabled (set MYSQL_MCP_EXTENDED=1)")
+			return
+		}
+		httpListFunctions(w, r)
+	})
+	mux.HandleFunc("/api/size/database", func(w http.ResponseWriter, r *http.Request) {
+		if !extendedMode {
+			writeError(w, http.StatusNotFound, "extended mode not enabled (set MYSQL_MCP_EXTENDED=1)")
+			return
+		}
+		httpDatabaseSize(w, r)
+	})
+	mux.HandleFunc("/api/size/tables", func(w http.ResponseWriter, r *http.Request) {
+		if !extendedMode {
+			writeError(w, http.StatusNotFound, "extended mode not enabled (set MYSQL_MCP_EXTENDED=1)")
+			return
+		}
+		httpTableSize(w, r)
+	})
+	mux.HandleFunc("/api/foreign-keys", func(w http.ResponseWriter, r *http.Request) {
+		if !extendedMode {
+			writeError(w, http.StatusNotFound, "extended mode not enabled (set MYSQL_MCP_EXTENDED=1)")
+			return
+		}
+		httpForeignKeys(w, r)
+	})
+	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
+		if !extendedMode {
+			writeError(w, http.StatusNotFound, "extended mode not enabled (set MYSQL_MCP_EXTENDED=1)")
+			return
+		}
+		httpListStatus(w, r)
+	})
+	mux.HandleFunc("/api/variables", func(w http.ResponseWriter, r *http.Request) {
+		if !extendedMode {
+			writeError(w, http.StatusNotFound, "extended mode not enabled (set MYSQL_MCP_EXTENDED=1)")
+			return
+		}
+		httpListVariables(w, r)
+	})
+
+	// Vector endpoints
+	mux.HandleFunc("/api/vector/search", func(w http.ResponseWriter, r *http.Request) {
+		if !vectorMode {
+			writeError(w, http.StatusNotFound, "vector mode not enabled (set MYSQL_MCP_VECTOR=1)")
+			return
+		}
+		httpVectorSearch(w, r)
+	})
+	mux.HandleFunc("/api/vector/info", func(w http.ResponseWriter, r *http.Request) {
+		if !vectorMode {
+			writeError(w, http.StatusNotFound, "vector mode not enabled (set MYSQL_MCP_VECTOR=1)")
+			return
+		}
+		httpVectorInfo(w, r)
+	})
+
+	addr := fmt.Sprintf(":%d", port)
+	logInfo("HTTP REST API server starting", map[string]interface{}{
+		"port":         port,
+		"address":      "http://localhost" + addr,
+		"extendedMode": extendedMode,
+		"vectorMode":   vectorMode,
+	})
+
+	log.Printf("REST API endpoints available at http://localhost:%d/api", port)
+	log.Printf("Health check at http://localhost:%d/health", port)
+
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		log.Fatalf("HTTP server error: %v", err)
+	}
+}
+
 // ===== main =====
 
 func main() {
@@ -2223,6 +2886,10 @@ func main() {
 
 	// Check for vector tools (MySQL 9.0+)
 	vectorMode := os.Getenv("MYSQL_MCP_VECTOR") == "1"
+
+	// Check for HTTP REST API mode
+	httpMode := os.Getenv("MYSQL_MCP_HTTP") == "1"
+	httpPort := getEnvInt("MYSQL_HTTP_PORT", defaultHTTPPort)
 
 	// Initialize audit logger if path is specified
 	auditLogPath := strings.TrimSpace(os.Getenv("MYSQL_MCP_AUDIT_LOG"))
@@ -2275,11 +2942,19 @@ func main() {
 		"queryTimeout":     queryTimeout.String(),
 		"extendedMode":     extendedMode,
 		"vectorMode":       vectorMode,
+		"httpMode":         httpMode,
+		"httpPort":         httpPort,
 		"jsonLogging":      jsonLogging,
 		"auditLogEnabled":  auditLogger.enabled,
 		"connections":      len(connConfigs),
 		"activeConnection": activeName,
 	})
+
+	// If HTTP mode is enabled, start REST API server instead of MCP
+	if httpMode {
+		startHTTPServer(httpPort, vectorMode)
+		return
+	}
 
 	// ---- Build MCP server ----
 	server := mcp.NewServer(
