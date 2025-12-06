@@ -1,15 +1,25 @@
-# Build stage
-FROM golang:1.23-alpine AS builder
+# Build stage - use Alpine and download Go 1.24
+FROM alpine:3.20 AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates tzdata curl
+
+# Download and install Go 1.24.3 (latest 1.24.x)
+ENV GO_VERSION=1.24.3
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o go.tar.gz \
+    && tar -C /usr/local -xzf go.tar.gz \
+    && rm go.tar.gz
+
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH="/go"
+ENV PATH="${GOPATH}/bin:${PATH}"
 
 WORKDIR /build
-
-# Install dependencies
-RUN apk add --no-cache git ca-certificates tzdata
 
 # Copy go mod files first for better caching
 COPY go.mod go.sum ./
 
-# Download dependencies with retry
+# Download dependencies
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
@@ -23,7 +33,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -ldflags="-s -w" -o /mysql-mcp-server ./cmd/mysql-mcp-server
 
 # Final stage - minimal image
-FROM alpine:3.19
+FROM alpine:3.20
 
 # Install ca-certificates for HTTPS connections
 RUN apk --no-cache add ca-certificates tzdata
