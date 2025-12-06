@@ -1064,7 +1064,7 @@ func toolRunQuery(
 	if database != "" {
 		var dbName string
 		dbName, err = quoteIdent(database)
-	if err != nil {
+		if err != nil {
 			return nil, QueryResult{}, fmt.Errorf("invalid database name: %w", err)
 		}
 		// Use a single connection to ensure USE affects the query
@@ -2700,30 +2700,30 @@ func httpAPIIndex(w http.ResponseWriter, r *http.Request) {
 		"service": "mysql-mcp-server REST API",
 		"version": "1.1.0",
 		"endpoints": map[string]string{
-			"GET  /health":                 "Health check",
-			"GET  /api":                    "API index (this page)",
-			"GET  /api/databases":          "List databases",
-			"GET  /api/tables":             "List tables (requires ?database=)",
-			"GET  /api/describe":           "Describe table (requires ?database=&table=)",
-			"POST /api/query":              "Run SQL query (body: {sql, database?, max_rows?})",
-			"GET  /api/ping":               "Ping database",
-			"GET  /api/server-info":        "Get server info",
-			"GET  /api/connections":        "List connections",
-			"POST /api/connections/use":    "Switch connection (body: {name})",
-			"GET  /api/indexes":            "List indexes (requires ?database=&table=) [extended]",
-			"GET  /api/create-table":       "Show CREATE TABLE (requires ?database=&table=) [extended]",
-			"POST /api/explain":            "Explain query (body: {sql, database?}) [extended]",
-			"GET  /api/views":              "List views (requires ?database=) [extended]",
-			"GET  /api/triggers":           "List triggers (requires ?database=) [extended]",
-			"GET  /api/procedures":         "List procedures (requires ?database=) [extended]",
-			"GET  /api/functions":          "List functions (requires ?database=) [extended]",
-			"GET  /api/size/database":      "Database size (optional ?database=) [extended]",
-			"GET  /api/size/tables":        "Table sizes (requires ?database=) [extended]",
-			"GET  /api/foreign-keys":       "Foreign keys (requires ?database=, optional &table=) [extended]",
-			"GET  /api/status":             "Server status (optional ?pattern=) [extended]",
-			"GET  /api/variables":          "Server variables (optional ?pattern=) [extended]",
-			"POST /api/vector/search":      "Vector search (body: {...}) [vector]",
-			"GET  /api/vector/info":        "Vector info (requires ?database=) [vector]",
+			"GET  /health":              "Health check",
+			"GET  /api":                 "API index (this page)",
+			"GET  /api/databases":       "List databases",
+			"GET  /api/tables":          "List tables (requires ?database=)",
+			"GET  /api/describe":        "Describe table (requires ?database=&table=)",
+			"POST /api/query":           "Run SQL query (body: {sql, database?, max_rows?})",
+			"GET  /api/ping":            "Ping database",
+			"GET  /api/server-info":     "Get server info",
+			"GET  /api/connections":     "List connections",
+			"POST /api/connections/use": "Switch connection (body: {name})",
+			"GET  /api/indexes":         "List indexes (requires ?database=&table=) [extended]",
+			"GET  /api/create-table":    "Show CREATE TABLE (requires ?database=&table=) [extended]",
+			"POST /api/explain":         "Explain query (body: {sql, database?}) [extended]",
+			"GET  /api/views":           "List views (requires ?database=) [extended]",
+			"GET  /api/triggers":        "List triggers (requires ?database=) [extended]",
+			"GET  /api/procedures":      "List procedures (requires ?database=) [extended]",
+			"GET  /api/functions":       "List functions (requires ?database=) [extended]",
+			"GET  /api/size/database":   "Database size (optional ?database=) [extended]",
+			"GET  /api/size/tables":     "Table sizes (requires ?database=) [extended]",
+			"GET  /api/foreign-keys":    "Foreign keys (requires ?database=, optional &table=) [extended]",
+			"GET  /api/status":          "Server status (optional ?pattern=) [extended]",
+			"GET  /api/variables":       "Server variables (optional ?pattern=) [extended]",
+			"POST /api/vector/search":   "Vector search (body: {...}) [vector]",
+			"GET  /api/vector/info":     "Vector info (requires ?database=) [vector]",
 		},
 		"modes": map[string]bool{
 			"extended": extendedMode,
