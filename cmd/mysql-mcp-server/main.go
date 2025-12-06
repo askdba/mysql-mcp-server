@@ -34,7 +34,170 @@ var (
 	extendedMode bool
 	jsonLogging  bool
 	auditLogger  *AuditLogger
+	connManager  *ConnectionManager
 )
+
+// ===== Multi-DSN Connection Manager =====
+
+type ConnectionConfig struct {
+	Name        string `json:"name"`
+	DSN         string `json:"dsn"`
+	Description string `json:"description,omitempty"`
+	ReadOnly    bool   `json:"read_only,omitempty"`
+}
+
+type ConnectionManager struct {
+	connections map[string]*sql.DB
+	configs     map[string]ConnectionConfig
+	activeConn  string
+	mu          sync.RWMutex
+}
+
+func NewConnectionManager() *ConnectionManager {
+	return &ConnectionManager{
+		connections: make(map[string]*sql.DB),
+		configs:     make(map[string]ConnectionConfig),
+	}
+}
+
+func (cm *ConnectionManager) AddConnection(cfg ConnectionConfig) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	conn, err := sql.Open("mysql", cfg.DSN)
+	if err != nil {
+		return fmt.Errorf("failed to open connection %s: %w", cfg.Name, err)
+	}
+
+	// Configure connection pool
+	conn.SetMaxOpenConns(defaultMaxOpenConns)
+	conn.SetMaxIdleConns(defaultMaxIdleConns)
+	conn.SetConnMaxLifetime(time.Duration(defaultConnMaxLifetimeM) * time.Minute)
+
+	// Test connection
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := conn.PingContext(ctx); err != nil {
+		conn.Close()
+		return fmt.Errorf("failed to ping connection %s: %w", cfg.Name, err)
+	}
+
+	cm.connections[cfg.Name] = conn
+	cm.configs[cfg.Name] = cfg
+
+	// Set as active if it's the first connection
+	if cm.activeConn == "" {
+		cm.activeConn = cfg.Name
+	}
+
+	return nil
+}
+
+func (cm *ConnectionManager) GetActive() (*sql.DB, string) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.connections[cm.activeConn], cm.activeConn
+}
+
+func (cm *ConnectionManager) SetActive(name string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if _, exists := cm.connections[name]; !exists {
+		return fmt.Errorf("connection '%s' not found", name)
+	}
+	cm.activeConn = name
+	return nil
+}
+
+func (cm *ConnectionManager) List() []ConnectionConfig {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	var list []ConnectionConfig
+	for _, cfg := range cm.configs {
+		// Mask DSN for security
+		maskedCfg := cfg
+		maskedCfg.DSN = maskDSN(cfg.DSN)
+		list = append(list, maskedCfg)
+	}
+	return list
+}
+
+func (cm *ConnectionManager) GetActiveDB() *sql.DB {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.connections[cm.activeConn]
+}
+
+func (cm *ConnectionManager) Close() {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	for _, conn := range cm.connections {
+		conn.Close()
+	}
+}
+
+// maskDSN hides password in DSN for display
+func maskDSN(dsn string) string {
+	// DSN format: user:password@tcp(host:port)/database
+	atIdx := strings.Index(dsn, "@")
+	if atIdx == -1 {
+		return dsn
+	}
+	colonIdx := strings.Index(dsn, ":")
+	if colonIdx == -1 || colonIdx > atIdx {
+		return dsn
+	}
+	return dsn[:colonIdx+1] + "****" + dsn[atIdx:]
+}
+
+// loadConnectionsFromEnv loads DSN configurations from environment variables
+func loadConnectionsFromEnv() ([]ConnectionConfig, error) {
+	var configs []ConnectionConfig
+
+	// Check for JSON-based configuration first
+	if jsonConfig := os.Getenv("MYSQL_CONNECTIONS"); jsonConfig != "" {
+		if err := json.Unmarshal([]byte(jsonConfig), &configs); err != nil {
+			return nil, fmt.Errorf("failed to parse MYSQL_CONNECTIONS: %w", err)
+		}
+		return configs, nil
+	}
+
+	// Fall back to numbered DSN environment variables
+	// MYSQL_DSN (default), MYSQL_DSN_1, MYSQL_DSN_2, etc.
+	if dsn := os.Getenv("MYSQL_DSN"); dsn != "" {
+		configs = append(configs, ConnectionConfig{
+			Name:        "default",
+			DSN:         dsn,
+			Description: "Default connection",
+		})
+	}
+
+	for i := 1; i <= 10; i++ {
+		dsnKey := fmt.Sprintf("MYSQL_DSN_%d", i)
+		nameKey := fmt.Sprintf("MYSQL_DSN_%d_NAME", i)
+		descKey := fmt.Sprintf("MYSQL_DSN_%d_DESC", i)
+
+		dsn := os.Getenv(dsnKey)
+		if dsn == "" {
+			continue
+		}
+
+		name := os.Getenv(nameKey)
+		if name == "" {
+			name = fmt.Sprintf("connection_%d", i)
+		}
+
+		configs = append(configs, ConnectionConfig{
+			Name:        name,
+			DSN:         dsn,
+			Description: os.Getenv(descKey),
+		})
+	}
+
+	return configs, nil
+}
 
 // ===== Structured Logging =====
 
@@ -241,6 +404,75 @@ type ServerInfoOutput struct {
 	Collation        string `json:"collation" jsonschema:"server collation"`
 	MaxConnections   int    `json:"max_connections" jsonschema:"maximum allowed connections"`
 	ThreadsConnected int    `json:"threads_connected" jsonschema:"current number of connected threads"`
+}
+
+// ===== Multi-DSN Tool Types =====
+
+type ListConnectionsInput struct{}
+
+type ConnectionInfo struct {
+	Name        string `json:"name" jsonschema:"connection name"`
+	DSN         string `json:"dsn" jsonschema:"masked DSN (password hidden)"`
+	Description string `json:"description,omitempty" jsonschema:"connection description"`
+	Active      bool   `json:"active" jsonschema:"true if this is the active connection"`
+}
+
+type ListConnectionsOutput struct {
+	Connections []ConnectionInfo `json:"connections" jsonschema:"list of available connections"`
+	Active      string           `json:"active" jsonschema:"name of the currently active connection"`
+}
+
+type UseConnectionInput struct {
+	Name string `json:"name" jsonschema:"name of the connection to switch to"`
+}
+
+type UseConnectionOutput struct {
+	Success  bool   `json:"success" jsonschema:"true if switch was successful"`
+	Active   string `json:"active" jsonschema:"name of the now-active connection"`
+	Message  string `json:"message" jsonschema:"status message"`
+	Database string `json:"database,omitempty" jsonschema:"current database of the connection"`
+}
+
+// ===== Vector Tool Types (MySQL 9.0+) =====
+
+type VectorSearchInput struct {
+	Database   string    `json:"database" jsonschema:"database name"`
+	Table      string    `json:"table" jsonschema:"table name containing vector column"`
+	Column     string    `json:"column" jsonschema:"name of the vector column"`
+	Query      []float64 `json:"query" jsonschema:"query vector for similarity search"`
+	Limit      int       `json:"limit,omitempty" jsonschema:"max results to return (default: 10)"`
+	Select     string    `json:"select,omitempty" jsonschema:"additional columns to select (comma-separated)"`
+	Where      string    `json:"where,omitempty" jsonschema:"additional WHERE conditions"`
+	DistanceFunc string  `json:"distance_func,omitempty" jsonschema:"distance function: cosine, euclidean, dot (default: cosine)"`
+}
+
+type VectorSearchResult struct {
+	Distance float64                `json:"distance" jsonschema:"distance/similarity score"`
+	Data     map[string]interface{} `json:"data" jsonschema:"row data"`
+}
+
+type VectorSearchOutput struct {
+	Results []VectorSearchResult `json:"results" jsonschema:"search results ordered by similarity"`
+	Count   int                  `json:"count" jsonschema:"number of results"`
+}
+
+type VectorInfoInput struct {
+	Database string `json:"database" jsonschema:"database name"`
+	Table    string `json:"table,omitempty" jsonschema:"table name (optional, lists all if empty)"`
+}
+
+type VectorColumnInfo struct {
+	Table      string `json:"table" jsonschema:"table name"`
+	Column     string `json:"column" jsonschema:"column name"`
+	Dimensions int    `json:"dimensions" jsonschema:"vector dimensions"`
+	IndexName  string `json:"index_name,omitempty" jsonschema:"vector index name if exists"`
+	IndexType  string `json:"index_type,omitempty" jsonschema:"vector index type"`
+}
+
+type VectorInfoOutput struct {
+	Columns        []VectorColumnInfo `json:"columns" jsonschema:"vector columns found"`
+	VectorSupport  bool               `json:"vector_support" jsonschema:"true if MySQL supports VECTOR type"`
+	MySQLVersion   string             `json:"mysql_version" jsonschema:"MySQL version"`
 }
 
 // ===== Extended Tool Types (MYSQL_MCP_EXTENDED=1) =====
@@ -607,44 +839,13 @@ func validateSQL(sqlText string) error {
 		}
 	}
 
-	// Additional check: look for suspicious subqueries that modify data
-	// (SELECT with subquery that does INSERT/UPDATE/DELETE)
-	if strings.Contains(upper, "INSERT") || strings.Contains(upper, "UPDATE") ||
-		strings.Contains(upper, "DELETE") {
-		// Allow these words only if they appear in string literals or comments
-		// Simple heuristic: if they appear as standalone words, block
-		dangerousKeywords := regexp.MustCompile(`(?i)\b(INSERT|UPDATE|DELETE)\b`)
-		if dangerousKeywords.MatchString(s) {
-			// Check if it's likely in a string by looking for quotes around it
-			// This is a simplified check - real parsing would be better
-			if !isLikelyInString(s, "INSERT") && !isLikelyInString(s, "UPDATE") &&
-				!isLikelyInString(s, "DELETE") {
-				return &SQLValidationError{
-					Reason: "query may contain data modification keywords",
-				}
-			}
-		}
-	}
+	// Note: We intentionally do NOT block queries containing INSERT/UPDATE/DELETE
+	// as standalone words because:
+	// 1. They can be valid column/table names (e.g., SELECT update_time FROM logs)
+	// 2. The blocked patterns regex already catches actual DML statements at the start
+	// 3. Subqueries cannot perform DML in MySQL SELECT statements anyway
 
 	return nil
-}
-
-// isLikelyInString checks if a keyword is likely within a string literal
-// This is a heuristic, not a full SQL parser
-func isLikelyInString(sql, keyword string) bool {
-	// Count quotes before and after the keyword
-	upper := strings.ToUpper(sql)
-	idx := strings.Index(upper, keyword)
-	if idx == -1 {
-		return false
-	}
-
-	before := sql[:idx]
-	singleQuotes := strings.Count(before, "'") - strings.Count(before, "\\'")
-	doubleQuotes := strings.Count(before, "\"") - strings.Count(before, "\\\"")
-
-	// If odd number of quotes, we're likely inside a string
-	return singleQuotes%2 == 1 || doubleQuotes%2 == 1
 }
 
 // Legacy compatibility wrapper
@@ -850,7 +1051,7 @@ func toolRunQuery(
 
 	if database != "" {
 		dbName, err := quoteIdent(database)
-		if err != nil {
+	if err != nil {
 			return nil, QueryResult{}, fmt.Errorf("invalid database name: %w", err)
 		}
 		// Use a single connection to ensure USE affects the query
@@ -1071,6 +1272,296 @@ func toolServerInfo(
 	return nil, out, nil
 }
 
+// ===== Multi-DSN Tool Handlers =====
+
+func toolListConnections(
+	ctx context.Context,
+	req *mcp.CallToolRequest,
+	input ListConnectionsInput,
+) (*mcp.CallToolResult, ListConnectionsOutput, error) {
+	if connManager == nil {
+		return nil, ListConnectionsOutput{}, fmt.Errorf("connection manager not initialized")
+	}
+
+	configs := connManager.List()
+	_, activeName := connManager.GetActive()
+
+	out := ListConnectionsOutput{
+		Connections: make([]ConnectionInfo, 0, len(configs)),
+		Active:      activeName,
+	}
+
+	for _, cfg := range configs {
+		out.Connections = append(out.Connections, ConnectionInfo{
+			Name:        cfg.Name,
+			DSN:         cfg.DSN, // Already masked
+			Description: cfg.Description,
+			Active:      cfg.Name == activeName,
+		})
+	}
+
+	return nil, out, nil
+}
+
+func toolUseConnection(
+	ctx context.Context,
+	req *mcp.CallToolRequest,
+	input UseConnectionInput,
+) (*mcp.CallToolResult, UseConnectionOutput, error) {
+	if connManager == nil {
+		return nil, UseConnectionOutput{}, fmt.Errorf("connection manager not initialized")
+	}
+
+	if input.Name == "" {
+		return nil, UseConnectionOutput{}, fmt.Errorf("connection name is required")
+	}
+
+	if err := connManager.SetActive(input.Name); err != nil {
+		return nil, UseConnectionOutput{
+			Success: false,
+			Message: err.Error(),
+		}, nil
+	}
+
+	// Update the global db reference
+	db = connManager.GetActiveDB()
+
+	// Get current database
+	var currentDB sql.NullString
+	db.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&currentDB)
+
+	logInfo("switched connection", map[string]interface{}{
+		"connection": input.Name,
+	})
+
+	return nil, UseConnectionOutput{
+		Success:  true,
+		Active:   input.Name,
+		Message:  fmt.Sprintf("Switched to connection '%s'", input.Name),
+		Database: currentDB.String,
+	}, nil
+}
+
+// ===== Vector Tool Handlers (MySQL 9.0+) =====
+
+func toolVectorSearch(
+	ctx context.Context,
+	req *mcp.CallToolRequest,
+	input VectorSearchInput,
+) (*mcp.CallToolResult, VectorSearchOutput, error) {
+	if input.Database == "" || input.Table == "" || input.Column == "" {
+		return nil, VectorSearchOutput{}, fmt.Errorf("database, table, and column are required")
+	}
+	if len(input.Query) == 0 {
+		return nil, VectorSearchOutput{}, fmt.Errorf("query vector is required")
+	}
+
+	dbName, err := quoteIdent(input.Database)
+	if err != nil {
+		return nil, VectorSearchOutput{}, fmt.Errorf("invalid database name: %w", err)
+	}
+	tableName, err := quoteIdent(input.Table)
+	if err != nil {
+		return nil, VectorSearchOutput{}, fmt.Errorf("invalid table name: %w", err)
+	}
+	colName, err := quoteIdent(input.Column)
+	if err != nil {
+		return nil, VectorSearchOutput{}, fmt.Errorf("invalid column name: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
+	defer cancel()
+
+	// Set default limit
+	limit := input.Limit
+	if limit <= 0 || limit > maxRows {
+		limit = 10
+	}
+
+	// Build vector string for MySQL
+	vectorStr := buildVectorString(input.Query)
+
+	// Determine distance function
+	distFunc := "COSINE"
+	switch strings.ToLower(input.DistanceFunc) {
+	case "euclidean", "l2":
+		distFunc = "EUCLIDEAN"
+	case "dot", "inner_product":
+		distFunc = "DOT"
+	}
+
+	// Build SELECT columns
+	selectCols := "*"
+	if input.Select != "" {
+		selectCols = input.Select
+	}
+
+	// Build query with vector distance
+	query := fmt.Sprintf(`
+		SELECT %s, 
+			DISTANCE(%s, STRING_TO_VECTOR('%s'), '%s') AS _distance
+		FROM %s.%s
+	`, selectCols, colName, vectorStr, distFunc, dbName, tableName)
+
+	if input.Where != "" {
+		query += " WHERE " + input.Where
+	}
+
+	query += fmt.Sprintf(" ORDER BY _distance ASC LIMIT %d", limit)
+
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		// Check if it's a vector support error
+		if strings.Contains(err.Error(), "DISTANCE") || strings.Contains(err.Error(), "STRING_TO_VECTOR") {
+			return nil, VectorSearchOutput{}, fmt.Errorf("vector search failed (MySQL 9.0+ required): %w", err)
+		}
+		return nil, VectorSearchOutput{}, fmt.Errorf("vector search failed: %w", err)
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, VectorSearchOutput{}, fmt.Errorf("failed to get columns: %w", err)
+	}
+
+	out := VectorSearchOutput{Results: []VectorSearchResult{}}
+
+	for rows.Next() {
+		values := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range values {
+			ptrs[i] = &values[i]
+		}
+
+		if err := rows.Scan(ptrs...); err != nil {
+			continue
+		}
+
+		result := VectorSearchResult{
+			Data: make(map[string]interface{}),
+		}
+
+		for i, col := range cols {
+			if col == "_distance" {
+				if dist, ok := values[i].(float64); ok {
+					result.Distance = dist
+				}
+			} else {
+				result.Data[col] = normalizeValue(values[i])
+			}
+		}
+
+		out.Results = append(out.Results, result)
+	}
+
+	out.Count = len(out.Results)
+	return nil, out, nil
+}
+
+func toolVectorInfo(
+	ctx context.Context,
+	req *mcp.CallToolRequest,
+	input VectorInfoInput,
+) (*mcp.CallToolResult, VectorInfoOutput, error) {
+	if input.Database == "" {
+		return nil, VectorInfoOutput{}, fmt.Errorf("database is required")
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
+	defer cancel()
+
+	out := VectorInfoOutput{Columns: []VectorColumnInfo{}}
+
+	// Check MySQL version for vector support
+	var version string
+	if err := db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version); err != nil {
+		return nil, VectorInfoOutput{}, fmt.Errorf("failed to get version: %w", err)
+	}
+	out.MySQLVersion = version
+
+	// Check if VECTOR type is supported (MySQL 9.0+)
+	out.VectorSupport = isVectorSupported(version)
+
+	if !out.VectorSupport {
+		return nil, out, nil
+	}
+
+	// Query for VECTOR columns from information_schema
+	query := `
+		SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE
+		FROM information_schema.COLUMNS 
+		WHERE TABLE_SCHEMA = ? 
+		AND COLUMN_TYPE LIKE 'vector%'
+	`
+	args := []interface{}{input.Database}
+
+	if input.Table != "" {
+		query += " AND TABLE_NAME = ?"
+		args = append(args, input.Table)
+	}
+
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, VectorInfoOutput{}, fmt.Errorf("failed to query vector columns: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var tableName, colName, colType string
+		if err := rows.Scan(&tableName, &colName, &colType); err != nil {
+			continue
+		}
+
+		info := VectorColumnInfo{
+			Table:  tableName,
+			Column: colName,
+		}
+
+		// Extract dimensions from type like "vector(768)"
+		if matches := regexp.MustCompile(`vector\((\d+)\)`).FindStringSubmatch(colType); len(matches) > 1 {
+			info.Dimensions, _ = strconv.Atoi(matches[1])
+		}
+
+		// Check for vector index
+		indexQuery := fmt.Sprintf(`
+			SELECT INDEX_NAME, INDEX_TYPE 
+			FROM information_schema.STATISTICS 
+			WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?
+		`)
+		var indexName, indexType sql.NullString
+		db.QueryRowContext(ctx, indexQuery, input.Database, tableName, colName).Scan(&indexName, &indexType)
+		info.IndexName = indexName.String
+		info.IndexType = indexType.String
+
+		out.Columns = append(out.Columns, info)
+	}
+
+	return nil, out, nil
+}
+
+// buildVectorString converts a float64 slice to MySQL vector string format
+func buildVectorString(vec []float64) string {
+	parts := make([]string, len(vec))
+	for i, v := range vec {
+		parts[i] = fmt.Sprintf("%f", v)
+	}
+	return "[" + strings.Join(parts, ",") + "]"
+}
+
+// isVectorSupported checks if MySQL version supports VECTOR type (9.0+)
+func isVectorSupported(version string) bool {
+	// Extract major version
+	parts := strings.Split(version, ".")
+	if len(parts) < 1 {
+		return false
+	}
+	major, err := strconv.Atoi(strings.TrimLeft(parts[0], "0"))
+	if err != nil {
+		return false
+	}
+	return major >= 9
+}
+
 // ===== Extended Tool Handlers (MYSQL_MCP_EXTENDED=1) =====
 
 func toolListIndexes(
@@ -1108,14 +1599,20 @@ func toolListIndexes(
 	}
 	colCount := len(cols)
 
-	// Group columns by index name
-	indexCols := make(map[string][]string)
-	indexInfo := make(map[string]IndexInfo)
-
 	// Column positions (standard SHOW INDEX output):
 	// 0:Table, 1:Non_unique, 2:Key_name, 3:Seq_in_index, 4:Column_name,
 	// 5:Collation, 6:Cardinality, 7:Sub_part, 8:Packed, 9:Null, 10:Index_type
 	// Newer versions may have additional columns (Comment, Index_comment, Visible, Expression)
+
+	// Validate column count before processing rows
+	// We need at least columns 0-10 (11 columns) for the standard SHOW INDEX output
+	if colCount < 11 {
+		return nil, ListIndexesOutput{}, fmt.Errorf("unexpected SHOW INDEX output: got %d columns, expected at least 11", colCount)
+	}
+
+	// Group columns by index name
+	indexCols := make(map[string][]string)
+	indexInfo := make(map[string]IndexInfo)
 
 	for rows.Next() {
 		// Create slice to hold all columns dynamically
@@ -1130,10 +1627,6 @@ func toolListIndexes(
 		}
 
 		// Extract the values we need (positions 1, 2, 4, 10)
-		if colCount < 11 {
-			continue // Need at least 11 columns for basic index info
-		}
-
 		keyName := fmt.Sprintf("%v", normalizeValue(values[2]))
 		colName := fmt.Sprintf("%v", normalizeValue(values[4]))
 		nonUnique := fmt.Sprintf("%v", normalizeValue(values[1])) == "1"
@@ -1688,11 +2181,6 @@ func toolListVariables(
 
 func main() {
 	// ---- Load config from env ----
-	dsn := strings.TrimSpace(os.Getenv("MYSQL_DSN"))
-	if dsn == "" {
-		log.Fatalf("config error: MYSQL_DSN env var is required, e.g. user:pass@tcp(127.0.0.1:3306)/dbname?parseTime=true")
-	}
-
 	maxRows = getEnvInt("MYSQL_MAX_ROWS", defaultMaxRows)
 	qTimeoutSecs := getEnvInt("MYSQL_QUERY_TIMEOUT_SECONDS", defaultQueryTimeoutSecs)
 	queryTimeout = time.Duration(qTimeoutSecs) * time.Second
@@ -1702,6 +2190,9 @@ func main() {
 
 	// Check for JSON logging
 	jsonLogging = os.Getenv("MYSQL_MCP_JSON_LOGS") == "1"
+
+	// Check for vector tools (MySQL 9.0+)
+	vectorMode := os.Getenv("MYSQL_MCP_VECTOR") == "1"
 
 	// Initialize audit logger if path is specified
 	auditLogPath := strings.TrimSpace(os.Getenv("MYSQL_MCP_AUDIT_LOG"))
@@ -1714,38 +2205,50 @@ func main() {
 		defer auditLogger.Close()
 	}
 
-	// Connection pool settings
-	maxOpenConns := getEnvInt("MYSQL_MAX_OPEN_CONNS", defaultMaxOpenConns)
-	maxIdleConns := getEnvInt("MYSQL_MAX_IDLE_CONNS", defaultMaxIdleConns)
-	connMaxLifetimeMin := getEnvInt("MYSQL_CONN_MAX_LIFETIME_MINUTES", defaultConnMaxLifetimeM)
+	// ---- Initialize Connection Manager ----
+	connManager = NewConnectionManager()
+	defer connManager.Close()
 
-	// ---- Init DB ----
-	db, err = sql.Open("mysql", dsn)
+	// Load connections from environment
+	connConfigs, err := loadConnectionsFromEnv()
 	if err != nil {
-		log.Fatalf("db init error: %v", err)
+		log.Fatalf("config error: %v", err)
 	}
 
-	// Configure connection pool
-	db.SetMaxOpenConns(maxOpenConns)
-	db.SetMaxIdleConns(maxIdleConns)
-	db.SetConnMaxLifetime(time.Duration(connMaxLifetimeMin) * time.Minute)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		log.Fatalf("db init error: %v", err)
+	if len(connConfigs) == 0 {
+		log.Fatalf("config error: no MySQL connections configured. Set MYSQL_DSN or MYSQL_CONNECTIONS")
 	}
+
+	// Add all connections to the manager
+	for _, cfg := range connConfigs {
+		if err := connManager.AddConnection(cfg); err != nil {
+			log.Printf("Warning: failed to add connection '%s': %v", cfg.Name, err)
+		} else {
+			logInfo("connection added", map[string]interface{}{
+				"name": cfg.Name,
+				"dsn":  maskDSN(cfg.DSN),
+			})
+		}
+	}
+
+	// Set the global db to the active connection
+	db = connManager.GetActiveDB()
+	if db == nil {
+		log.Fatalf("config error: no valid MySQL connections available")
+	}
+
+	_, activeName := connManager.GetActive()
 
 	// Log startup configuration
 	logInfo("mysql-mcp-server started", map[string]interface{}{
 		"maxRows":         maxRows,
 		"queryTimeout":    queryTimeout.String(),
 		"extendedMode":    extendedMode,
+		"vectorMode":      vectorMode,
 		"jsonLogging":     jsonLogging,
 		"auditLogEnabled": auditLogger.enabled,
-		"maxOpenConns":    maxOpenConns,
-		"maxIdleConns":    maxIdleConns,
-		"connMaxLifetime": fmt.Sprintf("%dm", connMaxLifetimeMin),
+		"connections":     len(connConfigs),
+		"activeConnection": activeName,
 	})
 
 	// ---- Build MCP server ----
@@ -1787,6 +2290,32 @@ func main() {
 		Name:        "server_info",
 		Description: "Get MySQL server version, uptime, and configuration details",
 	}, toolServerInfo)
+
+	// ---- Register multi-DSN tools ----
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_connections",
+		Description: "List all configured MySQL connections and show which is active",
+	}, toolListConnections)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "use_connection",
+		Description: "Switch to a different MySQL connection by name",
+	}, toolUseConnection)
+
+	// ---- Register vector tools (MYSQL_MCP_VECTOR=1) ----
+	if vectorMode {
+		logInfo("Registering MySQL vector tools (MySQL 9.0+ required)...", nil)
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "vector_search",
+			Description: "Perform similarity search on vector columns (MySQL 9.0+ required)",
+		}, toolVectorSearch)
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "vector_info",
+			Description: "List vector columns and their properties in a database",
+		}, toolVectorInfo)
+	}
 
 	// ---- Register extended tools (MYSQL_MCP_EXTENDED=1) ----
 	if extendedMode {

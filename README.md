@@ -7,15 +7,16 @@ This project exposes safe MySQL introspection tools to Claude Desktop via MCP. C
 ## Features
 
 - Fully read-only (blocks all non-SELECT/SHOW/DESCRIBE/EXPLAIN)
+- **Multi-DSN Support**: Connect to multiple MySQL instances, switch via tool
+- **Vector Search** (MySQL 9.0+): Similarity search on vector columns
 - MCP tools:
-  - list_databases
-  - list_tables
-  - describe_table
+  - list_databases, list_tables, describe_table
   - run_query (safe and row-limited)
-  - ping (connectivity check with latency)
-  - server_info (version, uptime, config)
-- Supports MySQL 5.7, 8.0, 8.4
-- Query timeouts
+  - ping, server_info
+  - list_connections, use_connection (multi-DSN)
+  - vector_search, vector_info (MySQL 9.0+)
+- Supports MySQL 5.7, 8.0, 8.4, 9.0
+- Query timeouts, structured logging, audit logs
 - Single Go binary
 - Unit and integration tests (Testcontainers)
 - Native integration with Claude Desktop MCP
@@ -79,9 +80,37 @@ Environment variables:
 | MYSQL_MCP_EXTENDED | No | 0 | Enable extended tools (set to 1) |
 | MYSQL_MCP_JSON_LOGS | No | 0 | Enable JSON structured logging (set to 1) |
 | MYSQL_MCP_AUDIT_LOG | No | – | Path to audit log file |
+| MYSQL_MCP_VECTOR | No | 0 | Enable vector tools for MySQL 9.0+ (set to 1) |
 | MYSQL_MAX_OPEN_CONNS | No | 10 | Max open database connections |
 | MYSQL_MAX_IDLE_CONNS | No | 5 | Max idle database connections |
 | MYSQL_CONN_MAX_LIFETIME_MINUTES | No | 30 | Connection max lifetime in minutes |
+
+### Multi-DSN Configuration
+
+Configure multiple MySQL connections using numbered environment variables:
+
+```bash
+# Default connection
+export MYSQL_DSN="user:pass@tcp(localhost:3306)/db1?parseTime=true"
+
+# Additional connections
+export MYSQL_DSN_1="user:pass@tcp(prod-server:3306)/production?parseTime=true"
+export MYSQL_DSN_1_NAME="production"
+export MYSQL_DSN_1_DESC="Production database"
+
+export MYSQL_DSN_2="user:pass@tcp(staging:3306)/staging?parseTime=true"
+export MYSQL_DSN_2_NAME="staging"
+export MYSQL_DSN_2_DESC="Staging database"
+```
+
+Or use JSON configuration:
+
+```bash
+export MYSQL_CONNECTIONS='[
+  {"name": "production", "dsn": "user:pass@tcp(prod:3306)/db?parseTime=true", "description": "Production"},
+  {"name": "staging", "dsn": "user:pass@tcp(staging:3306)/db?parseTime=true", "description": "Staging"}
+]'
+```
 
 Example:
 
@@ -190,6 +219,105 @@ Output:
   "collation": "utf8mb4_0900_ai_ci",
   "max_connections": 151,
   "threads_connected": 5
+}
+```
+
+### list_connections
+
+List all configured MySQL connections.
+
+Output:
+
+```json
+{
+  "connections": [
+    {"name": "production", "dsn": "user:****@tcp(prod:3306)/db", "active": true},
+    {"name": "staging", "dsn": "user:****@tcp(staging:3306)/db", "active": false}
+  ],
+  "active": "production"
+}
+```
+
+### use_connection
+
+Switch to a different MySQL connection.
+
+Input:
+
+```json
+{ "name": "staging" }
+```
+
+Output:
+
+```json
+{
+  "success": true,
+  "active": "staging",
+  "message": "Switched to connection 'staging'",
+  "database": "staging_db"
+}
+```
+
+## Vector Tools (MySQL 9.0+)
+
+Enable with:
+
+```bash
+export MYSQL_MCP_VECTOR=1
+```
+
+### vector_search
+
+Perform similarity search on vector columns.
+
+Input:
+
+```json
+{
+  "database": "myapp",
+  "table": "embeddings",
+  "column": "embedding",
+  "query": [0.1, 0.2, 0.3, ...],
+  "limit": 10,
+  "select": "id, title, content",
+  "distance_func": "cosine"
+}
+```
+
+Output:
+
+```json
+{
+  "results": [
+    {"distance": 0.123, "data": {"id": 1, "title": "Doc 1", "content": "..."}},
+    {"distance": 0.456, "data": {"id": 2, "title": "Doc 2", "content": "..."}}
+  ],
+  "count": 2
+}
+```
+
+Distance functions: `cosine` (default), `euclidean`, `dot`
+
+### vector_info
+
+List vector columns in a database.
+
+Input:
+
+```json
+{ "database": "myapp" }
+```
+
+Output:
+
+```json
+{
+  "columns": [
+    {"table": "embeddings", "column": "embedding", "dimensions": 768, "index_name": "vec_idx"}
+  ],
+  "vector_support": true,
+  "mysql_version": "9.0.0"
 }
 ```
 
