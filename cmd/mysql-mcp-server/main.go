@@ -714,6 +714,147 @@ func quoteIdent(name string) (string, error) {
 	return "`" + name + "`", nil
 }
 
+// validateSelectColumns validates and quotes column names in a SELECT list.
+// Accepts: "col1, col2, col3" or "col1 AS alias, col2"
+// Returns quoted column string or error if invalid.
+func validateSelectColumns(selectStr string) (string, error) {
+	if selectStr == "" {
+		return "*", nil
+	}
+
+	// Block dangerous patterns in select
+	dangerousPatterns := []string{
+		"(", ")", ";", "--", "/*", "*/", "@@", "SLEEP", "BENCHMARK",
+		"LOAD_FILE", "INTO", "OUTFILE", "DUMPFILE", "UNION", "INFORMATION_SCHEMA",
+	}
+	upperSelect := strings.ToUpper(selectStr)
+	for _, pattern := range dangerousPatterns {
+		if strings.Contains(upperSelect, pattern) {
+			return "", fmt.Errorf("select contains forbidden pattern: %s", pattern)
+		}
+	}
+
+	// Split by comma and validate each column
+	parts := strings.Split(selectStr, ",")
+	var quotedCols []string
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		// Handle "column AS alias" syntax
+		var colName, alias string
+		if idx := strings.Index(strings.ToUpper(part), " AS "); idx != -1 {
+			colName = strings.TrimSpace(part[:idx])
+			alias = strings.TrimSpace(part[idx+4:])
+		} else {
+			colName = part
+		}
+
+		// Allow * as a special case
+		if colName == "*" {
+			quotedCols = append(quotedCols, "*")
+			continue
+		}
+
+		// Handle table.column syntax
+		if strings.Contains(colName, ".") {
+			dotParts := strings.Split(colName, ".")
+			if len(dotParts) != 2 {
+				return "", fmt.Errorf("invalid column reference: %s", colName)
+			}
+			tablePart, err := quoteIdent(strings.TrimSpace(dotParts[0]))
+			if err != nil {
+				return "", fmt.Errorf("invalid table in column reference: %w", err)
+			}
+			colPart, err := quoteIdent(strings.TrimSpace(dotParts[1]))
+			if err != nil {
+				return "", fmt.Errorf("invalid column in reference: %w", err)
+			}
+			colName = tablePart + "." + colPart
+		} else {
+			quoted, err := quoteIdent(colName)
+			if err != nil {
+				return "", fmt.Errorf("invalid column name: %w", err)
+			}
+			colName = quoted
+		}
+
+		// Quote alias if present
+		if alias != "" {
+			quotedAlias, err := quoteIdent(alias)
+			if err != nil {
+				return "", fmt.Errorf("invalid alias: %w", err)
+			}
+			quotedCols = append(quotedCols, colName+" AS "+quotedAlias)
+		} else {
+			quotedCols = append(quotedCols, colName)
+		}
+	}
+
+	if len(quotedCols) == 0 {
+		return "*", nil
+	}
+
+	return strings.Join(quotedCols, ", "), nil
+}
+
+// validateWhereClause checks a WHERE clause for SQL injection attempts.
+// This is a defense-in-depth measure - the primary protection is the read-only
+// MySQL user, but we still block obvious injection patterns.
+func validateWhereClause(where string) error {
+	if where == "" {
+		return nil
+	}
+
+	// Block dangerous patterns that have no legitimate use in WHERE clauses
+	dangerousPatterns := []struct {
+		pattern *regexp.Regexp
+		reason  string
+	}{
+		{regexp.MustCompile(`(?i);\s*`), "semicolon (multi-statement)"},
+		{regexp.MustCompile(`(?i)--`), "SQL comment"},
+		{regexp.MustCompile(`(?i)/\*`), "SQL block comment"},
+		{regexp.MustCompile(`(?i)\bUNION\b`), "UNION keyword"},
+		{regexp.MustCompile(`(?i)\bINTO\b`), "INTO keyword"},
+		{regexp.MustCompile(`(?i)\bLOAD_FILE\s*\(`), "LOAD_FILE function"},
+		{regexp.MustCompile(`(?i)\bSLEEP\s*\(`), "SLEEP function"},
+		{regexp.MustCompile(`(?i)\bBENCHMARK\s*\(`), "BENCHMARK function"},
+		{regexp.MustCompile(`(?i)\bGET_LOCK\s*\(`), "GET_LOCK function"},
+		{regexp.MustCompile(`(?i)\bRELEASE_LOCK\s*\(`), "RELEASE_LOCK function"},
+		{regexp.MustCompile(`(?i)@@`), "system variable access"},
+		{regexp.MustCompile(`(?i)\bINFORMATION_SCHEMA\b`), "INFORMATION_SCHEMA access"},
+		{regexp.MustCompile(`(?i)\bPERFORMANCE_SCHEMA\b`), "PERFORMANCE_SCHEMA access"},
+		{regexp.MustCompile(`(?i)\bMYSQL\s*\.\b`), "mysql system database access"},
+		{regexp.MustCompile(`(?i)\bSYS\s*\.\b`), "sys database access"},
+		{regexp.MustCompile(`(?i)\bEXEC\s*\(`), "EXEC function"},
+		{regexp.MustCompile(`(?i)\bSHUTDOWN\b`), "SHUTDOWN command"},
+		{regexp.MustCompile(`(?i)0x[0-9a-fA-F]{10,}`), "long hex string (possible injection)"},
+	}
+
+	for _, dp := range dangerousPatterns {
+		if dp.pattern.MatchString(where) {
+			return fmt.Errorf("forbidden pattern detected: %s", dp.reason)
+		}
+	}
+
+	// Check for balanced parentheses (basic sanity check)
+	openParens := strings.Count(where, "(")
+	closeParens := strings.Count(where, ")")
+	if openParens != closeParens {
+		return fmt.Errorf("unbalanced parentheses in WHERE clause")
+	}
+
+	// Limit length to prevent abuse
+	if len(where) > 1000 {
+		return fmt.Errorf("WHERE clause too long (max 1000 characters)")
+	}
+
+	return nil
+}
+
 // convert raw DB value into something JSON-friendly.
 func normalizeValue(v interface{}) interface{} {
 	switch x := v.(type) {
@@ -1064,7 +1205,7 @@ func toolRunQuery(
 	if database != "" {
 		var dbName string
 		dbName, err = quoteIdent(database)
-		if err != nil {
+	if err != nil {
 			return nil, QueryResult{}, fmt.Errorf("invalid database name: %w", err)
 		}
 		// Use a single connection to ensure USE affects the query
@@ -1419,10 +1560,15 @@ func toolVectorSearch(
 		distFunc = "DOT"
 	}
 
-	// Build SELECT columns
+	// Build SELECT columns with validation
 	selectCols := "*"
 	if input.Select != "" {
-		selectCols = input.Select
+		// Validate and quote each column in the select list
+		validatedCols, err := validateSelectColumns(input.Select)
+		if err != nil {
+			return nil, VectorSearchOutput{}, fmt.Errorf("invalid select columns: %w", err)
+		}
+		selectCols = validatedCols
 	}
 
 	// Build query with vector distance
@@ -1432,7 +1578,11 @@ func toolVectorSearch(
 		FROM %s.%s
 	`, selectCols, colName, vectorStr, distFunc, dbName, tableName)
 
+	// Validate WHERE clause if provided
 	if input.Where != "" {
+		if err := validateWhereClause(input.Where); err != nil {
+			return nil, VectorSearchOutput{}, fmt.Errorf("invalid where clause: %w", err)
+		}
 		query += " WHERE " + input.Where
 	}
 
