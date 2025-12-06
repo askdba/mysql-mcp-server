@@ -436,14 +436,14 @@ type UseConnectionOutput struct {
 // ===== Vector Tool Types (MySQL 9.0+) =====
 
 type VectorSearchInput struct {
-	Database   string    `json:"database" jsonschema:"database name"`
-	Table      string    `json:"table" jsonschema:"table name containing vector column"`
-	Column     string    `json:"column" jsonschema:"name of the vector column"`
-	Query      []float64 `json:"query" jsonschema:"query vector for similarity search"`
-	Limit      int       `json:"limit,omitempty" jsonschema:"max results to return (default: 10)"`
-	Select     string    `json:"select,omitempty" jsonschema:"additional columns to select (comma-separated)"`
-	Where      string    `json:"where,omitempty" jsonschema:"additional WHERE conditions"`
-	DistanceFunc string  `json:"distance_func,omitempty" jsonschema:"distance function: cosine, euclidean, dot (default: cosine)"`
+	Database     string    `json:"database" jsonschema:"database name"`
+	Table        string    `json:"table" jsonschema:"table name containing vector column"`
+	Column       string    `json:"column" jsonschema:"name of the vector column"`
+	Query        []float64 `json:"query" jsonschema:"query vector for similarity search"`
+	Limit        int       `json:"limit,omitempty" jsonschema:"max results to return (default: 10)"`
+	Select       string    `json:"select,omitempty" jsonschema:"additional columns to select (comma-separated)"`
+	Where        string    `json:"where,omitempty" jsonschema:"additional WHERE conditions"`
+	DistanceFunc string    `json:"distance_func,omitempty" jsonschema:"distance function: cosine, euclidean, dot (default: cosine)"`
 }
 
 type VectorSearchResult struct {
@@ -470,9 +470,9 @@ type VectorColumnInfo struct {
 }
 
 type VectorInfoOutput struct {
-	Columns        []VectorColumnInfo `json:"columns" jsonschema:"vector columns found"`
-	VectorSupport  bool               `json:"vector_support" jsonschema:"true if MySQL supports VECTOR type"`
-	MySQLVersion   string             `json:"mysql_version" jsonschema:"MySQL version"`
+	Columns       []VectorColumnInfo `json:"columns" jsonschema:"vector columns found"`
+	VectorSupport bool               `json:"vector_support" jsonschema:"true if MySQL supports VECTOR type"`
+	MySQLVersion  string             `json:"mysql_version" jsonschema:"MySQL version"`
 }
 
 // ===== Extended Tool Types (MYSQL_MCP_EXTENDED=1) =====
@@ -1051,7 +1051,7 @@ func toolRunQuery(
 
 	if database != "" {
 		dbName, err := quoteIdent(database)
-	if err != nil {
+		if err != nil {
 			return nil, QueryResult{}, fmt.Errorf("invalid database name: %w", err)
 		}
 		// Use a single connection to ensure USE affects the query
@@ -2241,13 +2241,13 @@ func main() {
 
 	// Log startup configuration
 	logInfo("mysql-mcp-server started", map[string]interface{}{
-		"maxRows":         maxRows,
-		"queryTimeout":    queryTimeout.String(),
-		"extendedMode":    extendedMode,
-		"vectorMode":      vectorMode,
-		"jsonLogging":     jsonLogging,
-		"auditLogEnabled": auditLogger.enabled,
-		"connections":     len(connConfigs),
+		"maxRows":          maxRows,
+		"queryTimeout":     queryTimeout.String(),
+		"extendedMode":     extendedMode,
+		"vectorMode":       vectorMode,
+		"jsonLogging":      jsonLogging,
+		"auditLogEnabled":  auditLogger.enabled,
+		"connections":      len(connConfigs),
 		"activeConnection": activeName,
 	})
 
