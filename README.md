@@ -15,7 +15,7 @@ This project exposes safe MySQL introspection tools to Claude Desktop via MCP. C
   - ping, server_info
   - list_connections, use_connection (multi-DSN)
   - vector_search, vector_info (MySQL 9.0+)
-- Supports MySQL 5.7, 8.0, 8.4, 9.0
+- Supports MySQL 8.0, 8.4, 9.0+
 - Query timeouts, structured logging, audit logs
 - Single Go binary
 - Unit and integration tests (Testcontainers)
