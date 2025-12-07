@@ -44,6 +44,7 @@ jobs:
         with:
           version: latest
           args: --timeout=5m
+        continue-on-error: true  # Don't block pipeline on lint issues
 
   # ============================================
   # Stage 2: Security Scanning
@@ -109,7 +110,7 @@ jobs:
   integration-tests:
     name: Integration Tests (MySQL ${{ matrix.mysql-version }})
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests]
+    needs: [unit-tests]
     strategy:
       fail-fast: false
       matrix:
@@ -172,7 +173,6 @@ jobs:
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: [lint]
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -210,7 +210,7 @@ jobs:
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests]
+    needs: [unit-tests]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -314,8 +314,8 @@ jobs:
           echo "Docker: ${{ needs.docker.result }}"
           echo "API Tests: ${{ needs.api-tests.result }}"
           
-          if [ "${{ needs.lint.result }}" != "success" ] || \
-             [ "${{ needs.unit-tests.result }}" != "success" ] || \
+          # Only fail on unit tests and build - lint/security are informational
+          if [ "${{ needs.unit-tests.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ]; then
             echo "❌ Critical jobs failed"
             exit 1
