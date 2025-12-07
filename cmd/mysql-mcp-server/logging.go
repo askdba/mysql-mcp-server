@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -78,7 +79,11 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 	if path == "" {
 		return &AuditLogger{enabled: false}, nil
 	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// Clean the path to prevent directory traversal attacks
+	cleanPath := filepath.Clean(path)
+	// #nosec G304 -- path is from trusted environment variable MYSQL_MCP_AUDIT_LOG
+	// #nosec G302 -- audit logs need to be readable by log aggregation tools
+	f, err := os.OpenFile(cleanPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audit log: %w", err)
 	}
