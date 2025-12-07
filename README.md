@@ -83,6 +83,9 @@ Environment variables:
 | MYSQL_MCP_VECTOR | No | 0 | Enable vector tools for MySQL 9.0+ (set to 1) |
 | MYSQL_MCP_HTTP | No | 0 | Enable REST API mode (set to 1) |
 | MYSQL_HTTP_PORT | No | 9306 | HTTP port for REST API mode |
+| MYSQL_HTTP_RATE_LIMIT | No | 0 | Enable rate limiting for HTTP mode (set to 1) |
+| MYSQL_HTTP_RATE_LIMIT_RPS | No | 100 | Rate limit: requests per second |
+| MYSQL_HTTP_RATE_LIMIT_BURST | No | 200 | Rate limit: burst size |
 | MYSQL_MAX_OPEN_CONNS | No | 10 | Max open database connections |
 | MYSQL_MAX_IDLE_CONNS | No | 5 | Max idle database connections |
 | MYSQL_CONN_MAX_LIFETIME_MINUTES | No | 30 | Connection max lifetime in minutes |
@@ -126,6 +129,21 @@ Run:
 
 ```bash
 make run
+```
+
+### Version Information
+
+Check the installed version:
+
+```bash
+mysql-mcp-server --version
+```
+
+Output:
+```
+mysql-mcp-server v1.1.0
+  Build time: 2025-01-15T10:30:00Z
+  Git commit: abc1234
 ```
 
 ## Claude Desktop Integration
@@ -634,6 +652,18 @@ export MYSQL_HTTP_PORT=9306  # Optional, defaults to 9306
 mysql-mcp-server
 ```
 
+### Rate Limiting
+
+Enable per-IP rate limiting for production deployments:
+
+```bash
+export MYSQL_HTTP_RATE_LIMIT=1
+export MYSQL_HTTP_RATE_LIMIT_RPS=100    # 100 requests/second
+export MYSQL_HTTP_RATE_LIMIT_BURST=200  # Allow bursts up to 200
+```
+
+When rate limited, clients receive HTTP 429 (Too Many Requests) with a `Retry-After: 1` header.
+
 ### API Endpoints
 
 | Method | Endpoint | Description |
@@ -732,9 +762,21 @@ docker run -p 9306:9306 \
 ## Project Structure
 
 ```
-cmd/mysql-mcp-server/   -> Server entrypoint
-internal/config/        -> Configuration loader
-internal/mysql/         -> MySQL client + tests
+cmd/mysql-mcp-server/
+├── main.go             -> Server entrypoint and tool registration
+├── types.go            -> Input/output struct types for tools
+├── tools.go            -> Core MCP tool handlers
+├── tools_extended.go   -> Extended MCP tool handlers
+├── http.go             -> HTTP REST API handlers and server
+├── connection.go       -> Multi-DSN connection manager
+└── logging.go          -> Structured and audit logging
+
+internal/
+├── api/                -> HTTP middleware and response utilities
+├── config/             -> Configuration loader from environment
+├── mysql/              -> MySQL client wrapper + tests
+└── util/               -> Shared utilities (SQL validation, identifiers)
+
 examples/               -> Example configs and test data
 scripts/                -> Quickstart and utility scripts
 bin/                    -> Built binaries

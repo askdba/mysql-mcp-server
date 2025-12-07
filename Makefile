@@ -7,6 +7,16 @@ BIN_DIR = bin
 BIN = $(BIN_DIR)/$(APP_NAME)
 PKG = ./cmd/mysql-mcp-server
 
+# Version information
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+BUILD_TIME ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+# Build flags for version injection
+VERSION_FLAGS = -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME) -X main.GitCommit=$(GIT_COMMIT)
+LDFLAGS = -ldflags "$(VERSION_FLAGS)"
+LDFLAGS_RELEASE = -ldflags "$(VERSION_FLAGS) -s -w"
+
 # Colors
 YELLOW=\033[1;33m
 GREEN=\033[1;32m
@@ -23,14 +33,19 @@ RESET=\033[0m
 # ----------------------------------------
 
 build:
-	@echo "$(CYAN)🔨 Building $(APP_NAME)...$(RESET)"
+	@echo "$(CYAN)🔨 Building $(APP_NAME) $(VERSION)...$(RESET)"
 	@mkdir -p $(BIN_DIR)
-	@go build -o $(BIN) $(PKG)
+	@go build $(LDFLAGS) -o $(BIN) $(PKG)
 	@echo "$(GREEN)✔ Build complete: $(BIN)$(RESET)"
 
 run: build
 	@echo "$(CYAN)🚀 Running $(APP_NAME)...$(RESET)"
 	@$(BIN)
+
+version:
+	@echo "Version: $(VERSION)"
+	@echo "Build Time: $(BUILD_TIME)"
+	@echo "Git Commit: $(GIT_COMMIT)"
 
 clean:
 	@echo "$(YELLOW)🧹 Cleaning project...$(RESET)"
@@ -142,9 +157,12 @@ docker:
 # ----------------------------------------
 
 release:
-	@echo "$(CYAN)📦 Creating production release binary...$(RESET)"
-	GOOS=linux GOARCH=amd64 go build -o $(BIN).linux $(PKG)
-	GOOS=darwin GOARCH=arm64 go build -o $(BIN).mac $(PKG)
+	@echo "$(CYAN)📦 Creating production release binaries $(VERSION)...$(RESET)"
+	GOOS=linux GOARCH=amd64 go build $(LDFLAGS_RELEASE) -o $(BIN).linux-amd64 $(PKG)
+	GOOS=linux GOARCH=arm64 go build $(LDFLAGS_RELEASE) -o $(BIN).linux-arm64 $(PKG)
+	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS_RELEASE) -o $(BIN).darwin-amd64 $(PKG)
+	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS_RELEASE) -o $(BIN).darwin-arm64 $(PKG)
+	GOOS=windows GOARCH=amd64 go build $(LDFLAGS_RELEASE) -o $(BIN).windows-amd64.exe $(PKG)
 	@echo "$(GREEN)✔ Release artifacts ready in $(BIN_DIR)/$(RESET)"
 
 # ----------------------------------------
@@ -179,11 +197,12 @@ help:
 	@echo "$(YELLOW)Available Make targets:$(RESET)"
 	@echo ""
 	@echo "$(CYAN)Build & Run:$(RESET)"
-	@echo "  make build        - Build the server"
+	@echo "  make build        - Build the server (version: $(VERSION))"
 	@echo "  make run          - Build + run the server"
 	@echo "  make clean        - Remove build artifacts"
 	@echo "  make docker       - Build Docker image"
 	@echo "  make release      - Build multi-platform binaries"
+	@echo "  make version      - Show version information"
 	@echo ""
 	@echo "$(CYAN)Testing:$(RESET)"
 	@echo "  make test         - Run unit tests"
