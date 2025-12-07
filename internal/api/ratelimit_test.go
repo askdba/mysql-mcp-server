@@ -222,4 +222,3 @@ func TestWithRateLimit_OptionsPassThrough(t *testing.T) {
 		t.Errorf("OPTIONS request should bypass rate limit, got %d", w.Code)
 	}
 }
-

@@ -177,4 +177,3 @@ func WithLogging(logger Logger) func(http.HandlerFunc) http.HandlerFunc {
 		}
 	}
 }
-

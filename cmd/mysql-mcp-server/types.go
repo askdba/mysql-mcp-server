@@ -342,4 +342,3 @@ type ServerVariable struct {
 type ListVariablesOutput struct {
 	Variables []ServerVariable `json:"variables" jsonschema:"server configuration variables"`
 }
-

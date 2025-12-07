@@ -878,4 +878,3 @@ func isVectorSupported(version string) bool {
 	}
 	return major >= 9
 }
-

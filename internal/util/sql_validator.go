@@ -278,4 +278,3 @@ func ValidateWhereClause(where string) error {
 
 	return nil
 }
-

@@ -176,4 +176,3 @@ func WithRateLimit(rl *RateLimiter) func(http.HandlerFunc) http.HandlerFunc {
 		}
 	}
 }
-

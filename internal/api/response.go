@@ -52,4 +52,3 @@ func WriteNotFound(w http.ResponseWriter, message string) {
 func WriteMethodNotAllowed(w http.ResponseWriter, message string) {
 	WriteError(w, http.StatusMethodNotAllowed, message)
 }
-

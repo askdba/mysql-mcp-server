@@ -152,4 +152,3 @@ func (t *QueryTimer) LogError(err error, query string) {
 	}
 	logError("query failed", fields)
 }
-

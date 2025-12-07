@@ -501,4 +501,3 @@ func toolUseConnection(
 		Database: currentDB.String,
 	}, nil
 }
-
