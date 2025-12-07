@@ -143,3 +143,38 @@ func Chain(handler http.HandlerFunc, middlewares ...func(http.HandlerFunc) http.
 	return handler
 }
 
+// Logger is a function type for logging HTTP requests.
+// It receives method, path, status code, and duration.
+type Logger func(method, path string, status int, duration time.Duration)
+
+// responseWriter wraps http.ResponseWriter to capture the status code.
+type responseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.status = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+// WithLogging returns middleware that logs HTTP requests using the provided logger.
+func WithLogging(logger Logger) func(http.HandlerFunc) http.HandlerFunc {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+
+			// Wrap response writer to capture status
+			wrapped := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+
+			// Call the next handler
+			next(wrapped, r)
+
+			// Log the request (skip OPTIONS for cleaner logs)
+			if r.Method != "OPTIONS" {
+				logger(r.Method, r.URL.Path, wrapped.status, time.Since(start))
+			}
+		}
+	}
+}
+

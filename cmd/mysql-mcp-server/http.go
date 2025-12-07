@@ -355,7 +355,7 @@ func httpHealth(w http.ResponseWriter, r *http.Request) {
 func httpAPIIndex(w http.ResponseWriter, r *http.Request) {
 	endpoints := map[string]interface{}{
 		"service": "mysql-mcp-server REST API",
-		"version": "1.1.0",
+		"version": Version,
 		"endpoints": map[string]string{
 			"GET  /health":              "Health check",
 			"GET  /api":                 "API index (this page)",
@@ -392,9 +392,22 @@ func httpAPIIndex(w http.ResponseWriter, r *http.Request) {
 
 // ===== HTTP Server Setup =====
 
+// httpLogger logs HTTP requests using the application's structured logging.
+func httpLogger(method, path string, status int, duration time.Duration) {
+	logInfo("http request", map[string]interface{}{
+		"method":      method,
+		"path":        path,
+		"status":      status,
+		"duration_ms": duration.Milliseconds(),
+	})
+}
+
 // startHTTPServer starts the REST API server with graceful shutdown support.
 func startHTTPServer(port int, vectorMode bool) {
 	mux := http.NewServeMux()
+
+	// Create logging middleware
+	withLog := api.WithLogging(httpLogger)
 
 	// Health and index
 	mux.HandleFunc("/health", api.WithCORS(httpHealth))
@@ -437,10 +450,10 @@ func startHTTPServer(port int, vectorMode bool) {
 
 	addr := fmt.Sprintf(":%d", port)
 
-	// Create server with timeouts
+	// Create server with timeouts and logging
 	server := &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      withLog(mux.ServeHTTP),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: cfg.HTTPRequestTimeout + 5*time.Second, // Slightly longer than request timeout
 		IdleTimeout:  120 * time.Second,

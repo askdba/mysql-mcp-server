@@ -4,7 +4,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log"
+	"os"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -43,11 +45,19 @@ var (
 // ===== Main Entry Point =====
 
 func main() {
+	// Handle --version flag
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
+		fmt.Printf("mysql-mcp-server %s\n", Version)
+		fmt.Printf("  Build time: %s\n", BuildTime)
+		fmt.Printf("  Git commit: %s\n", GitCommit)
+		os.Exit(0)
+	}
+
 	var err error
 
 	// ---- Load configuration ----
 	cfg, err = config.Load()
-	if err != nil {
+		if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
 
@@ -190,84 +200,84 @@ func registerConnectionTools(server *mcp.Server) {
 }
 
 func registerVectorTools(server *mcp.Server) {
-	logInfo("Registering MySQL vector tools (MySQL 9.0+ required)...", nil)
+		logInfo("Registering MySQL vector tools (MySQL 9.0+ required)...", nil)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "vector_search",
-		Description: "Perform similarity search on vector columns (MySQL 9.0+ required)",
-	}, toolVectorSearch)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "vector_search",
+			Description: "Perform similarity search on vector columns (MySQL 9.0+ required)",
+		}, toolVectorSearch)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "vector_info",
-		Description: "List vector columns and their properties in a database",
-	}, toolVectorInfo)
-}
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "vector_info",
+			Description: "List vector columns and their properties in a database",
+		}, toolVectorInfo)
+	}
 
 func registerExtendedTools(server *mcp.Server) {
-	log.Printf("Registering extended MySQL tools...")
+		log.Printf("Registering extended MySQL tools...")
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_indexes",
-		Description: "List indexes on a table",
-	}, toolListIndexes)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "list_indexes",
+			Description: "List indexes on a table",
+		}, toolListIndexes)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "show_create_table",
-		Description: "Show the CREATE TABLE statement for a table",
-	}, toolShowCreateTable)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "show_create_table",
+			Description: "Show the CREATE TABLE statement for a table",
+		}, toolShowCreateTable)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "explain_query",
-		Description: "Get the execution plan for a SELECT query",
-	}, toolExplainQuery)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "explain_query",
+			Description: "Get the execution plan for a SELECT query",
+		}, toolExplainQuery)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_views",
-		Description: "List views in a database",
-	}, toolListViews)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "list_views",
+			Description: "List views in a database",
+		}, toolListViews)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_triggers",
-		Description: "List triggers in a database",
-	}, toolListTriggers)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "list_triggers",
+			Description: "List triggers in a database",
+		}, toolListTriggers)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_procedures",
-		Description: "List stored procedures in a database",
-	}, toolListProcedures)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "list_procedures",
+			Description: "List stored procedures in a database",
+		}, toolListProcedures)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_functions",
-		Description: "List stored functions in a database",
-	}, toolListFunctions)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "list_functions",
+			Description: "List stored functions in a database",
+		}, toolListFunctions)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_partitions",
-		Description: "List partitions of a table",
-	}, toolListPartitions)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "list_partitions",
+			Description: "List partitions of a table",
+		}, toolListPartitions)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "database_size",
-		Description: "Get size information for databases",
-	}, toolDatabaseSize)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "database_size",
+			Description: "Get size information for databases",
+		}, toolDatabaseSize)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "table_size",
-		Description: "Get size information for tables",
-	}, toolTableSize)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "table_size",
+			Description: "Get size information for tables",
+		}, toolTableSize)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "foreign_keys",
-		Description: "List foreign key constraints",
-	}, toolForeignKeys)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "foreign_keys",
+			Description: "List foreign key constraints",
+		}, toolForeignKeys)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_status",
-		Description: "List MySQL server status variables",
-	}, toolListStatus)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "list_status",
+			Description: "List MySQL server status variables",
+		}, toolListStatus)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_variables",
-		Description: "List MySQL server configuration variables",
-	}, toolListVariables)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "list_variables",
+			Description: "List MySQL server configuration variables",
+		}, toolListVariables)
 }

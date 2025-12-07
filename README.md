@@ -128,6 +128,21 @@ Run:
 make run
 ```
 
+### Version Information
+
+Check the installed version:
+
+```bash
+mysql-mcp-server --version
+```
+
+Output:
+```
+mysql-mcp-server v1.1.0
+  Build time: 2025-01-15T10:30:00Z
+  Git commit: abc1234
+```
+
 ## Claude Desktop Integration
 
 Edit:
@@ -732,9 +747,21 @@ docker run -p 9306:9306 \
 ## Project Structure
 
 ```
-cmd/mysql-mcp-server/   -> Server entrypoint
-internal/config/        -> Configuration loader
-internal/mysql/         -> MySQL client + tests
+cmd/mysql-mcp-server/
+├── main.go             -> Server entrypoint and tool registration
+├── types.go            -> Input/output struct types for tools
+├── tools.go            -> Core MCP tool handlers
+├── tools_extended.go   -> Extended MCP tool handlers
+├── http.go             -> HTTP REST API handlers and server
+├── connection.go       -> Multi-DSN connection manager
+└── logging.go          -> Structured and audit logging
+
+internal/
+├── api/                -> HTTP middleware and response utilities
+├── config/             -> Configuration loader from environment
+├── mysql/              -> MySQL client wrapper + tests
+└── util/               -> Shared utilities (SQL validation, identifiers)
+
 examples/               -> Example configs and test data
 scripts/                -> Quickstart and utility scripts
 bin/                    -> Built binaries

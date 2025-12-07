@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestWithCORS(t *testing.T) {
@@ -189,5 +190,81 @@ func TestChain(t *testing.T) {
 	}
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
+	}
+}
+
+func TestWithLogging(t *testing.T) {
+	var loggedMethod, loggedPath string
+	var loggedStatus int
+
+	logger := func(method, path string, status int, _ time.Duration) {
+		loggedMethod = method
+		loggedPath = path
+		loggedStatus = status
+	}
+
+	handler := WithLogging(logger)(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		WriteJSON(w, http.StatusCreated, map[string]string{"status": "created"})
+	})
+
+	// Test GET request
+	req := httptest.NewRequest("GET", "/api/test", nil)
+	w := httptest.NewRecorder()
+	handler(w, req)
+
+	if loggedMethod != "GET" {
+		t.Errorf("expected method GET, got %s", loggedMethod)
+	}
+	if loggedPath != "/api/test" {
+		t.Errorf("expected path /api/test, got %s", loggedPath)
+	}
+	if loggedStatus != http.StatusCreated {
+		t.Errorf("expected status 201, got %d", loggedStatus)
+	}
+
+	// Test OPTIONS request (should not log)
+	loggedMethod = ""
+	req = httptest.NewRequest("OPTIONS", "/api/test", nil)
+	w = httptest.NewRecorder()
+	handler(w, req)
+
+	if loggedMethod != "" {
+		t.Error("OPTIONS request should not be logged")
+	}
+}
+
+func TestResponseWriterCapture(t *testing.T) {
+	var capturedStatus int
+
+	logger := func(_, _ string, status int, _ time.Duration) {
+		capturedStatus = status
+	}
+
+	// Test default status (200)
+	handler := WithLogging(logger)(func(w http.ResponseWriter, r *http.Request) {
+		// No explicit WriteHeader call - should default to 200
+		w.Write([]byte("ok"))
+	})
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	handler(w, req)
+
+	if capturedStatus != http.StatusOK {
+		t.Errorf("expected default status 200, got %d", capturedStatus)
+	}
+
+	// Test explicit 404
+	handler = WithLogging(logger)(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	req = httptest.NewRequest("GET", "/test", nil)
+	w = httptest.NewRecorder()
+	handler(w, req)
+
+	if capturedStatus != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", capturedStatus)
 	}
 }
