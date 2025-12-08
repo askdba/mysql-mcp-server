@@ -69,11 +69,8 @@ func TestConnectionManagerWithMockDB(t *testing.T) {
 	}
 	defer mockDB.Close()
 
-	// Expect ping
-	mock.ExpectPing()
-
 	cm := NewConnectionManager()
-	
+
 	// Manually add the mock connection (bypassing AddConnectionWithPoolConfig)
 	cm.connections["test"] = mockDB
 	cm.configs["test"] = config.ConnectionConfig{
@@ -138,9 +135,6 @@ func TestConnectionManagerMultipleConnections(t *testing.T) {
 	}
 	defer mockDB2.Close()
 
-	mock1.ExpectPing()
-	mock2.ExpectPing()
-
 	cm := NewConnectionManager()
 
 	// Add connections manually
@@ -186,8 +180,12 @@ func TestConnectionManagerMultipleConnections(t *testing.T) {
 	}
 
 	cm.Close()
-	_ = mock1.ExpectationsWereMet()
-	_ = mock2.ExpectationsWereMet()
+	if err := mock1.ExpectationsWereMet(); err != nil {
+		t.Errorf("mock1 unfulfilled expectations: %v", err)
+	}
+	if err := mock2.ExpectationsWereMet(); err != nil {
+		t.Errorf("mock2 unfulfilled expectations: %v", err)
+	}
 }
 
 func TestGetDBWithConnManager(t *testing.T) {
@@ -266,13 +264,11 @@ func TestConnectionConfigStruct(t *testing.T) {
 
 func TestConnectionManagerConcurrency(t *testing.T) {
 	// Create mock database
-	mockDB, mock, err := sqlmock.New()
+	mockDB, _, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("failed to create mock: %v", err)
 	}
 	defer mockDB.Close()
-
-	mock.ExpectPing()
 
 	cm := NewConnectionManager()
 	cm.connections["test"] = mockDB
@@ -306,4 +302,3 @@ func TestConnectionManagerConcurrency(t *testing.T) {
 		<-done
 	}
 }
-

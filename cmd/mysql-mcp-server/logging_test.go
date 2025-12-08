@@ -4,6 +4,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,47 +35,56 @@ func TestNewQueryTimer(t *testing.T) {
 }
 
 func TestQueryTimerLogSuccess(t *testing.T) {
-	// Capture stderr
+	// Capture stderr and log output
 	oldStderr := os.Stderr
+	oldLogOutput := log.Writer()
 	r, w, _ := os.Pipe()
 	os.Stderr = w
+	log.SetOutput(w)
 
 	timer := NewQueryTimer("test_query")
 	timer.LogSuccess(5, "SELECT * FROM test")
 
 	w.Close()
 	os.Stderr = oldStderr
+	log.SetOutput(oldLogOutput)
 
 	var buf bytes.Buffer
 	buf.ReadFrom(r)
 	output := buf.String()
 
-	// Should contain log output
-	if !strings.Contains(output, "test_query") && !strings.Contains(output, "query executed") {
-		// Either JSON or plain log format should work
-		t.Logf("Log output: %s", output)
+	// Should contain log output - either JSON or plain log format should work
+	if output == "" {
+		t.Error("expected log output, got empty string")
+	} else if !strings.Contains(output, "test_query") && !strings.Contains(output, "query executed") {
+		t.Errorf("expected output to contain 'test_query' or 'query executed', got: %s", output)
 	}
 }
 
 func TestQueryTimerLogError(t *testing.T) {
-	// Capture stderr
+	// Capture stderr and log output
 	oldStderr := os.Stderr
+	oldLogOutput := log.Writer()
 	r, w, _ := os.Pipe()
 	os.Stderr = w
+	log.SetOutput(w)
 
 	timer := NewQueryTimer("test_query")
 	timer.LogError(os.ErrNotExist, "SELECT * FROM test")
 
 	w.Close()
 	os.Stderr = oldStderr
+	log.SetOutput(oldLogOutput)
 
 	var buf bytes.Buffer
 	buf.ReadFrom(r)
 	output := buf.String()
 
-	// Should contain error info
-	if !strings.Contains(output, "test_query") && !strings.Contains(output, "failed") {
-		t.Logf("Log output: %s", output)
+	// Should contain error info - either tool name or failure indicator
+	if output == "" {
+		t.Error("expected log output, got empty string")
+	} else if !strings.Contains(output, "test_query") && !strings.Contains(output, "failed") {
+		t.Errorf("expected output to contain 'test_query' or 'failed', got: %s", output)
 	}
 }
 
@@ -295,4 +305,3 @@ func TestAuditEntryWithError(t *testing.T) {
 		t.Error("error message should be in JSON output")
 	}
 }
-
