@@ -86,7 +86,7 @@ func TestToolListIndexesMissingDatabase(t *testing.T) {
 	})
 
 	if err == nil {
-		t.Error("expected error for missing database")
+		t.Fatal("expected error for missing database")
 	}
 	if err.Error() != "database and table are required" {
 		t.Errorf("unexpected error: %v", err)
@@ -108,7 +108,7 @@ func TestToolListIndexesMissingTable(t *testing.T) {
 	})
 
 	if err == nil {
-		t.Error("expected error for missing table")
+		t.Fatal("expected error for missing table")
 	}
 	if err.Error() != "database and table are required" {
 		t.Errorf("unexpected error: %v", err)
@@ -221,7 +221,7 @@ func TestToolExplainQueryEmptySQL(t *testing.T) {
 	})
 
 	if err == nil {
-		t.Error("expected error for empty SQL")
+		t.Fatal("expected error for empty SQL")
 	}
 	if err.Error() != "sql is required" {
 		t.Errorf("unexpected error: %v", err)
@@ -242,7 +242,7 @@ func TestToolExplainQueryNonSelect(t *testing.T) {
 	})
 
 	if err == nil {
-		t.Error("expected error for non-SELECT query")
+		t.Fatal("expected error for non-SELECT query")
 	}
 	if err.Error() != "only SELECT statements can be explained" {
 		t.Errorf("unexpected error: %v", err)
@@ -293,7 +293,7 @@ func TestToolListViewsMissingDatabase(t *testing.T) {
 	})
 
 	if err == nil {
-		t.Error("expected error for missing database")
+		t.Fatal("expected error for missing database")
 	}
 	if err.Error() != "database is required" {
 		t.Errorf("unexpected error: %v", err)
@@ -846,7 +846,7 @@ func TestToolVectorSearchMissingInputs(t *testing.T) {
 			_, _, err := toolVectorSearch(ctx, &mcp.CallToolRequest{}, tt.input)
 
 			if err == nil {
-				t.Error("expected error")
+				t.Fatal("expected error")
 			}
 			if err.Error() != tt.errMsg {
 				t.Errorf("expected error '%s', got '%s'", tt.errMsg, err.Error())
