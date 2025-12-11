@@ -171,6 +171,9 @@ func TestRunQueryInputJSONOmitEmpty(t *testing.T) {
 	if _, ok := decoded["max_rows"]; ok {
 		t.Error("max_rows should be omitted when nil")
 	}
+	if _, ok := decoded["database"]; ok {
+		t.Error("database should be omitted when empty")
+	}
 }
 
 func TestQueryResultJSON(t *testing.T) {
