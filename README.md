@@ -1,5 +1,7 @@
 # MySQL MCP Server
 
+![MySQL MCP Server Banner](./MysqlMCPServerBanner.png)
+
 A fast, read-only MySQL Server for the Model Context Protocol (MCP) written in Go.
 
 This project exposes safe MySQL introspection tools to Claude Desktop via MCP. Claude can explore databases, describe schemas, and execute controlled read-only SQL queries — ideal for secure development assistance, debugging, analytics, and schema documentation.
