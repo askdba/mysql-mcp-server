@@ -4,3 +4,11 @@ bin/
 *.swp
 .idea/
 .vscode/
+
+# Personal shell configuration files (should not be committed)
+.bash_profile
+.bashrc
+.zshrc
+.profile
+.bash_history
+.zsh_history
