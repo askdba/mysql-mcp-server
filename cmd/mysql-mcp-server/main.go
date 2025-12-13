@@ -45,12 +45,24 @@ var (
 // ===== Main Entry Point =====
 
 func main() {
-	// Handle --version flag
-	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
-		fmt.Printf("mysql-mcp-server %s\n", Version)
-		fmt.Printf("  Build time: %s\n", BuildTime)
-		fmt.Printf("  Git commit: %s\n", GitCommit)
-		os.Exit(0)
+	// Handle command-line flags before loading configuration
+	if len(os.Args) > 1 {
+		arg := os.Args[1]
+		switch arg {
+		case "--version", "-v":
+			fmt.Printf("mysql-mcp-server %s\n", Version)
+			fmt.Printf("  Build time: %s\n", BuildTime)
+			fmt.Printf("  Git commit: %s\n", GitCommit)
+			os.Exit(0)
+		case "--help", "-h", "help":
+			printHelp()
+			os.Exit(0)
+		default:
+			// Unknown flag
+			fmt.Fprintf(os.Stderr, "Error: unknown flag '%s'\n\n", arg)
+			printHelp()
+			os.Exit(1)
+		}
 	}
 
 	var err error
@@ -281,4 +293,101 @@ func registerExtendedTools(server *mcp.Server) {
 		Name:        "list_variables",
 		Description: "List MySQL server configuration variables",
 	}, toolListVariables)
+}
+
+// ===== Help and Usage =====
+
+func printHelp() {
+	fmt.Printf(`mysql-mcp-server - MySQL Server for Model Context Protocol (MCP)
+
+USAGE:
+    mysql-mcp-server [OPTIONS]
+
+OPTIONS:
+    -h, --help      Show this help message
+    -v, --version   Show version information
+
+DESCRIPTION:
+    A fast, read-only MySQL Server for the Model Context Protocol (MCP).
+    Exposes safe MySQL introspection tools to Claude Desktop via MCP.
+
+CONFIGURATION:
+    All configuration is done via environment variables.
+
+    Required:
+        MYSQL_DSN                    MySQL DSN (e.g., user:pass@tcp(localhost:3306)/db)
+
+    Optional:
+        MYSQL_MAX_ROWS               Max rows returned (default: 200)
+        MYSQL_QUERY_TIMEOUT_SECONDS  Query timeout in seconds (default: 30)
+        MYSQL_MCP_EXTENDED           Enable extended tools (set to 1)
+        MYSQL_MCP_JSON_LOGS          Enable JSON structured logging (set to 1)
+        MYSQL_MCP_AUDIT_LOG          Path to audit log file
+        MYSQL_MCP_VECTOR             Enable vector tools for MySQL 9.0+ (set to 1)
+        MYSQL_MCP_HTTP               Enable REST API mode (set to 1)
+        MYSQL_HTTP_PORT              HTTP port for REST API mode (default: 9306)
+        MYSQL_HTTP_RATE_LIMIT        Enable rate limiting for HTTP mode (set to 1)
+        MYSQL_HTTP_RATE_LIMIT_RPS    Rate limit: requests per second (default: 100)
+        MYSQL_HTTP_RATE_LIMIT_BURST  Rate limit: burst size (default: 200)
+        MYSQL_MAX_OPEN_CONNS         Max open database connections (default: 10)
+        MYSQL_MAX_IDLE_CONNS         Max idle database connections (default: 5)
+        MYSQL_CONN_MAX_LIFETIME_MINUTES  Connection max lifetime in minutes (default: 30)
+
+MULTI-DSN CONFIGURATION:
+    Configure multiple MySQL connections using numbered environment variables:
+
+        MYSQL_DSN_1                  Additional connection DSN
+        MYSQL_DSN_1_NAME             Connection name (default: connection_1)
+        MYSQL_DSN_1_DESC             Connection description
+
+    Or use JSON configuration:
+
+        MYSQL_CONNECTIONS='[
+          {"name": "production", "dsn": "user:pass@tcp(prod:3306)/db", "description": "Production"},
+          {"name": "staging", "dsn": "user:pass@tcp(staging:3306)/db", "description": "Staging"}
+        ]'
+
+EXAMPLES:
+    # Basic usage with single connection
+    export MYSQL_DSN="root:password@tcp(127.0.0.1:3306)/mysql?parseTime=true"
+    mysql-mcp-server
+
+    # With extended tools enabled
+    export MYSQL_DSN="user:pass@tcp(localhost:3306)/mydb"
+    export MYSQL_MCP_EXTENDED=1
+    mysql-mcp-server
+
+    # HTTP REST API mode
+    export MYSQL_DSN="user:pass@tcp(localhost:3306)/mydb"
+    export MYSQL_MCP_HTTP=1
+    export MYSQL_HTTP_PORT=9306
+    mysql-mcp-server
+
+FEATURES:
+    - Fully read-only (blocks all non-SELECT/SHOW/DESCRIBE/EXPLAIN)
+    - Multi-DSN support (connect to multiple MySQL instances)
+    - Vector search (MySQL 9.0+)
+    - Query timeouts and row limits
+    - Structured logging and audit logs
+    - REST API mode for HTTP clients
+
+MCP TOOLS:
+    Core: list_databases, list_tables, describe_table, run_query, ping, server_info
+    Connections: list_connections, use_connection
+    Extended: list_indexes, show_create_table, explain_query, list_views, etc.
+    Vector: vector_search, vector_info (MySQL 9.0+)
+
+SECURITY:
+    - SQL validation blocks dangerous operations
+    - Read-only enforcement
+    - Multi-statement prevention
+    - Recommended: Use a read-only MySQL user
+
+    CREATE USER 'mcp'@'localhost' IDENTIFIED BY 'strongpass';
+    GRANT SELECT ON *.* TO 'mcp'@'localhost';
+
+DOCUMENTATION:
+    Full documentation: https://github.com/askdba/mysql-mcp-server
+
+`)
 }
