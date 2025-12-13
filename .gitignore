@@ -4,3 +4,18 @@ bin/
 *.swp
 .idea/
 .vscode/
+
+# Personal shell configuration files (should not be committed)
+.bash_profile
+.bashrc
+.zshrc
+.profile
+.bash_history
+.zsh_history
+
+# Code review and analysis documents (should not be committed)
+CODE_REVIEW.md
+*_REVIEW.md
+*_review.md
+REVIEW*.md
+review*.md
