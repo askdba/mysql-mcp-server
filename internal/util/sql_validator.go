@@ -76,6 +76,10 @@ var blockedPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\bRELEASE_LOCK\s*\(`),
 	regexp.MustCompile(`(?i)\bIS_FREE_LOCK\s*\(`),
 	regexp.MustCompile(`(?i)\bIS_USED_LOCK\s*\(`),
+
+	// SQL comments (could be used to truncate/hide malicious SQL)
+	regexp.MustCompile(`--`),
+	regexp.MustCompile(`/\*`),
 }
 
 // Allowed query prefixes (read-only operations).

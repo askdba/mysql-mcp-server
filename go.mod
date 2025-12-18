@@ -8,6 +8,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.1.0
 	github.com/testcontainers/testcontainers-go v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/mysql v0.40.0
+	github.com/xwb1989/sqlparser v0.0.0-20180606152119-120387863bf2
 )
 
 require (

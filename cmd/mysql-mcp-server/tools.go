@@ -175,8 +175,8 @@ func toolRunQuery(
 		return nil, QueryResult{}, fmt.Errorf("sql is required")
 	}
 
-	// Enhanced SQL validation
-	if err := util.ValidateSQL(sqlText); err != nil {
+	// Enhanced SQL validation using parser + regex defense-in-depth
+	if err := util.ValidateSQLCombined(sqlText); err != nil {
 		logWarn("query rejected by validator", map[string]interface{}{
 			"error": err.Error(),
 			"query": util.TruncateQuery(sqlText, 200),
