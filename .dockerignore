@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+.github
+
+# Build artifacts
+bin/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*_test.go
+tests/
+coverage.out
+coverage.html
+
+# Documentation
+*.md
+!README.md
+docs/
+MysqlMCPServerBanner.png
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# CI/CD
+.goreleaser.yml
+.golangci.yml
+Makefile
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Examples (not needed in image)
+examples/
+
+# Misc
+LICENSE
+*.log
+tmp/
