@@ -360,6 +360,32 @@ func TestDangerousSchemasMap(t *testing.T) {
 	}
 }
 
+func TestValidateSQLWithParser_DangerousFunctionsInJoinCondition(t *testing.T) {
+	// These queries have dangerous functions in JOIN ON clauses
+	// They should be blocked by the parser
+	dangerousQueries := []struct {
+		name  string
+		query string
+	}{
+		{"release_all_locks in JOIN ON", "SELECT * FROM users u JOIN orders o ON release_all_locks() = 1"},
+		{"sleep in JOIN ON", "SELECT * FROM users u JOIN orders o ON sleep(5) = 0"},
+		{"get_lock in INNER JOIN ON", "SELECT * FROM users u INNER JOIN orders o ON get_lock('x', 10) = 1"},
+		{"benchmark in LEFT JOIN ON", "SELECT * FROM a LEFT JOIN b ON benchmark(1000000, SHA1('test')) > 0"},
+		{"load_file in RIGHT JOIN ON", "SELECT * FROM a RIGHT JOIN b ON load_file('/etc/passwd') IS NOT NULL"},
+		{"release_lock in multiple JOIN", "SELECT * FROM a JOIN b ON a.id = b.id JOIN c ON release_lock('x') = 1"},
+		{"is_free_lock in JOIN with complex condition", "SELECT * FROM a JOIN b ON a.id = b.id AND is_free_lock('x') = 1"},
+	}
+
+	for _, tc := range dangerousQueries {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateSQLWithParser(tc.query)
+			if err == nil {
+				t.Errorf("expected dangerous function in JOIN ON clause to be blocked\nQuery: %s", tc.query)
+			}
+		})
+	}
+}
+
 // min returns the minimum of two integers.
 func min(a, b int) int {
 	if a < b {

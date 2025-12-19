@@ -288,6 +288,12 @@ func checkTableExpr(tableExpr sqlparser.TableExpr) error {
 		if err := checkTableExpr(t.RightExpr); err != nil {
 			return err
 		}
+		// Check JOIN condition (ON clause) for dangerous functions
+		if t.Condition.On != nil {
+			if err := checkExprForDangerousFunctions(t.Condition.On); err != nil {
+				return err
+			}
+		}
 
 	case *sqlparser.ParenTableExpr:
 		for _, expr := range t.Exprs {
