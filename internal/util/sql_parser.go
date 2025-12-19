@@ -28,10 +28,10 @@ var DangerousFunctions = map[string]bool{
 	"benchmark": true,
 
 	// Locking functions
-	"get_lock":      true,
-	"release_lock":  true,
-	"is_free_lock":  true,
-	"is_used_lock":  true,
+	"get_lock":          true,
+	"release_lock":      true,
+	"is_free_lock":      true,
+	"is_used_lock":      true,
 	"release_all_locks": true,
 
 	// File operations
@@ -58,15 +58,29 @@ func ValidateSQLWithParser(sqlText string) error {
 		return &ParserValidationError{Reason: "empty query"}
 	}
 
-	// Remove trailing semicolon for parsing (parser handles it, but cleaner)
-	sqlText = strings.TrimSuffix(strings.TrimSpace(sqlText), ";")
+	// Use AST-aware splitting to detect multi-statement queries.
+	// This properly handles semicolons inside string literals (e.g., WHERE name = 'test;value')
+	// unlike a naive strings.Contains(";") check.
+	statements, err := sqlparser.SplitStatementToPieces(sqlText)
+	if err != nil {
+		return &ParserValidationError{
+			Reason:    "failed to parse SQL statement",
+			Statement: err.Error(),
+		}
+	}
 
 	// Check for multi-statement queries (not allowed)
-	if strings.Contains(sqlText, ";") {
+	if len(statements) > 1 {
 		return &ParserValidationError{
 			Reason: "multi-statement queries are not allowed",
 		}
 	}
+
+	// Get the single statement (already trimmed by SplitStatementToPieces)
+	if len(statements) == 0 {
+		return &ParserValidationError{Reason: "empty query"}
+	}
+	sqlText = statements[0]
 
 	// Parse the SQL statement
 	stmt, err := sqlparser.Parse(sqlText)

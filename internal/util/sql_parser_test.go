@@ -64,6 +64,11 @@ func TestValidateSQLWithParser_AllowedQueries(t *testing.T) {
 
 		// WITH trailing semicolon (should be stripped)
 		"SELECT * FROM users;",
+
+		// Semicolons inside string literals should be allowed (not multi-statement)
+		"SELECT * FROM users WHERE name = 'test;value'",
+		"SELECT * FROM users WHERE data = 'a;b;c;d'",
+		"SELECT * FROM users WHERE sql_example = 'SELECT * FROM t; DROP TABLE t'",
 	}
 
 	for _, query := range allowedQueries {
@@ -265,7 +270,7 @@ func TestValidateSQLWithParser_EdgeCases(t *testing.T) {
 		{"select with newlines", "SELECT\n*\nFROM\nusers", false},
 		{"select with tabs", "SELECT\t*\tFROM\tusers", false},
 
-		// Note: Standalone parenthesized SELECT like "(SELECT * FROM users)" 
+		// Note: Standalone parenthesized SELECT like "(SELECT * FROM users)"
 		// is not valid top-level SQL syntax - it's only valid as a subquery
 	}
 
