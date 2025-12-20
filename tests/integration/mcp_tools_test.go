@@ -8,10 +8,16 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+)
+
+var (
+	setupOnce sync.Once
+	setupErr  error
 )
 
 // getTestDSN returns the DSN for test database from environment
@@ -24,6 +30,90 @@ func getTestDSN(t *testing.T) string {
 		t.Skip("MYSQL_TEST_DSN or MYSQL_DSN not set, skipping integration test")
 	}
 	return dsn
+}
+
+// setupTestSchema creates test tables and data (runs once per test run)
+func setupTestSchema(db *sql.DB) error {
+	ctx := context.Background()
+
+	// Create tables
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS users (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			name VARCHAR(255) NOT NULL,
+			email VARCHAR(255),
+			status ENUM('active', 'inactive', 'pending') DEFAULT 'active',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS orders (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			user_id INT NOT NULL,
+			total DECIMAL(10, 2) NOT NULL,
+			status ENUM('pending', 'completed', 'cancelled') DEFAULT 'pending',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS products (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			name VARCHAR(255) NOT NULL,
+			category VARCHAR(100),
+			price DECIMAL(10, 2) NOT NULL,
+			stock INT DEFAULT 0
+		)`,
+		`CREATE TABLE IF NOT EXISTS special_data (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			unicode_text VARCHAR(255) CHARACTER SET utf8mb4,
+			json_data JSON,
+			large_text LONGTEXT
+		)`,
+	}
+
+	for _, stmt := range statements {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
+	}
+
+	// Check if data exists
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count); err != nil {
+		return err
+	}
+
+	// Insert test data only if tables are empty
+	if count == 0 {
+		dataStatements := []string{
+			`INSERT INTO users (name, email, status) VALUES
+				('Alice', 'alice@example.com', 'active'),
+				('Bob', 'bob@example.com', 'active'),
+				('Charlie', 'charlie@example.com', 'inactive'),
+				('Diana', 'diana@example.com', 'pending'),
+				('Eve', 'eve@example.com', 'active')`,
+			`INSERT INTO orders (user_id, total, status) VALUES
+				(1, 99.99, 'completed'),
+				(1, 149.50, 'completed'),
+				(2, 75.00, 'pending'),
+				(3, 200.00, 'cancelled'),
+				(5, 50.25, 'completed')`,
+			`INSERT INTO products (name, category, price, stock) VALUES
+				('Laptop', 'Electronics', 999.99, 50),
+				('Mouse', 'Electronics', 29.99, 200),
+				('Keyboard', 'Electronics', 79.99, 150),
+				('Desk', 'Furniture', 299.99, 30),
+				('Chair', 'Furniture', 199.99, 45)`,
+			`INSERT INTO special_data (unicode_text, json_data, large_text) VALUES
+				('日本語テスト', '{"key": "value"}', 'test data'),
+				('Ñoño español', '{"emoji": "🎉"}', 'more data'),
+				('中文测试', '{"array": [1, 2, 3]}', 'even more data')`,
+		}
+
+		for _, stmt := range dataStatements {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // setupTestDB creates a connection and ensures it's ready
@@ -50,6 +140,14 @@ func setupTestDB(t *testing.T) *sql.DB {
 		case <-ctx.Done():
 			t.Fatalf("database not ready within timeout")
 		}
+	}
+
+	// Setup schema once per test run
+	setupOnce.Do(func() {
+		setupErr = setupTestSchema(db)
+	})
+	if setupErr != nil {
+		t.Fatalf("failed to setup test schema: %v", setupErr)
 	}
 
 	t.Cleanup(func() {
