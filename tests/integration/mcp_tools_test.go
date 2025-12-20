@@ -260,8 +260,8 @@ func TestMCPTool_DescribeTable(t *testing.T) {
 		columns[field] = true
 	}
 
-	// Check for expected columns
-	expectedColumns := []string{"id", "name", "email", "status", "created_at", "updated_at"}
+	// Check for expected columns (matching our test schema)
+	expectedColumns := []string{"id", "name", "email", "status", "created_at"}
 	for _, col := range expectedColumns {
 		if !columns[col] {
 			t.Errorf("expected column '%s' not found in users table", col)
