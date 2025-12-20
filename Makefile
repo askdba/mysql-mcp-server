@@ -83,21 +83,25 @@ test-integration-80: test-mysql-up
 
 test-integration-84:
 	@echo "$(BLUE)🐋 Running integration tests against MySQL 8.4...$(RESET)"
-	docker-compose -f docker-compose.test.yml up -d mysql84
+	@docker-compose -f docker-compose.test.yml up -d mysql84
 	@echo "Waiting for MySQL 8.4 to be ready..."
 	@sleep 15
-	MYSQL_TEST_DSN="root:testpass@tcp(localhost:3307)/testdb?parseTime=true" \
-		go test -tags=integration -v ./tests/integration/... || true
-	docker-compose -f docker-compose.test.yml stop mysql84
+	@MYSQL_TEST_DSN="root:testpass@tcp(localhost:3307)/testdb?parseTime=true" \
+		go test -tags=integration -v ./tests/integration/...; \
+		TEST_EXIT=$$?; \
+		docker-compose -f docker-compose.test.yml stop mysql84; \
+		exit $$TEST_EXIT
 
 test-integration-90:
 	@echo "$(BLUE)🐋 Running integration tests against MySQL 9.0...$(RESET)"
-	docker-compose -f docker-compose.test.yml up -d mysql90
+	@docker-compose -f docker-compose.test.yml up -d mysql90
 	@echo "Waiting for MySQL 9.0 to be ready..."
 	@sleep 15
-	MYSQL_TEST_DSN="root:testpass@tcp(localhost:3308)/testdb?parseTime=true" \
-		go test -tags=integration -v ./tests/integration/... || true
-	docker-compose -f docker-compose.test.yml stop mysql90
+	@MYSQL_TEST_DSN="root:testpass@tcp(localhost:3308)/testdb?parseTime=true" \
+		go test -tags=integration -v ./tests/integration/...; \
+		TEST_EXIT=$$?; \
+		docker-compose -f docker-compose.test.yml stop mysql90; \
+		exit $$TEST_EXIT
 
 test-integration-all:
 	@echo "$(BLUE)🐋 Running integration tests against all MySQL versions...$(RESET)"
