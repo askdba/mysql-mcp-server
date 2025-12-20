@@ -19,9 +19,14 @@ type Client struct {
 }
 
 type Config struct {
-	DSN           string
-	MaxRows       int
-	QueryTimeoutS int
+	DSN             string
+	MaxRows         int
+	QueryTimeoutS   int
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
+	PingTimeout     time.Duration
 }
 
 func New(cfg Config) (*Client, error) {
@@ -30,13 +35,37 @@ func New(cfg Config) (*Client, error) {
 		return nil, err
 	}
 
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(30 * time.Minute)
+	// Apply pool settings with sensible defaults
+	maxOpen := cfg.MaxOpenConns
+	if maxOpen <= 0 {
+		maxOpen = 10
+	}
+	maxIdle := cfg.MaxIdleConns
+	if maxIdle <= 0 {
+		maxIdle = 5
+	}
+	lifetime := cfg.ConnMaxLifetime
+	if lifetime <= 0 {
+		lifetime = 30 * time.Minute
+	}
+	idleTime := cfg.ConnMaxIdleTime
+	if idleTime <= 0 {
+		idleTime = 5 * time.Minute
+	}
+	pingTimeout := cfg.PingTimeout
+	if pingTimeout <= 0 {
+		pingTimeout = 5 * time.Second
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	db.SetMaxOpenConns(maxOpen)
+	db.SetMaxIdleConns(maxIdle)
+	db.SetConnMaxLifetime(lifetime)
+	db.SetConnMaxIdleTime(idleTime)
+
+	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
 	defer cancel()
 	if err := db.PingContext(ctx); err != nil {
+		db.Close()
 		return nil, err
 	}
 

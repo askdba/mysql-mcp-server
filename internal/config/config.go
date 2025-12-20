@@ -17,6 +17,8 @@ const (
 	DefaultMaxOpenConns        = 10
 	DefaultMaxIdleConns        = 5
 	DefaultConnMaxLifetimeMins = 30
+	DefaultConnMaxIdleTimeMins = 5
+	DefaultPingTimeoutSecs     = 5
 	DefaultHTTPPort            = 9306
 	DefaultHTTPRequestTimeoutS = 60
 	DefaultRateLimitRPS        = 100 // requests per second
@@ -44,6 +46,8 @@ type Config struct {
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
+	PingTimeout     time.Duration
 
 	// Feature flags
 	ExtendedMode bool
@@ -72,6 +76,8 @@ func Load() (*Config, error) {
 		MaxOpenConns:       getEnvInt("MYSQL_MAX_OPEN_CONNS", DefaultMaxOpenConns),
 		MaxIdleConns:       getEnvInt("MYSQL_MAX_IDLE_CONNS", DefaultMaxIdleConns),
 		ConnMaxLifetime:    time.Duration(getEnvInt("MYSQL_CONN_MAX_LIFETIME_MINUTES", DefaultConnMaxLifetimeMins)) * time.Minute,
+		ConnMaxIdleTime:    time.Duration(getEnvInt("MYSQL_CONN_MAX_IDLE_TIME_MINUTES", DefaultConnMaxIdleTimeMins)) * time.Minute,
+		PingTimeout:        time.Duration(getEnvInt("MYSQL_PING_TIMEOUT_SECONDS", DefaultPingTimeoutSecs)) * time.Second,
 		ExtendedMode:       getEnvBool("MYSQL_MCP_EXTENDED"),
 		VectorMode:         getEnvBool("MYSQL_MCP_VECTOR"),
 		HTTPMode:           getEnvBool("MYSQL_MCP_HTTP"),

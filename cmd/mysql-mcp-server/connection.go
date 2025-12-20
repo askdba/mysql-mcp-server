@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/askdba/mysql-mcp-server/internal/config"
 	"github.com/askdba/mysql-mcp-server/internal/util"
@@ -44,9 +43,10 @@ func (cm *ConnectionManager) AddConnectionWithPoolConfig(connCfg config.Connecti
 	conn.SetMaxOpenConns(cfg.MaxOpenConns)
 	conn.SetMaxIdleConns(cfg.MaxIdleConns)
 	conn.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+	conn.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
 
-	// Test connection
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Test connection with configurable timeout
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.PingTimeout)
 	defer cancel()
 	if err := conn.PingContext(ctx); err != nil {
 		conn.Close()

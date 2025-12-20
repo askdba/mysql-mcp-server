@@ -15,6 +15,8 @@ func clearEnv() {
 		"MYSQL_MAX_OPEN_CONNS",
 		"MYSQL_MAX_IDLE_CONNS",
 		"MYSQL_CONN_MAX_LIFETIME_MINUTES",
+		"MYSQL_CONN_MAX_IDLE_TIME_MINUTES",
+		"MYSQL_PING_TIMEOUT_SECONDS",
 		"MYSQL_MCP_EXTENDED",
 		"MYSQL_MCP_VECTOR",
 		"MYSQL_MCP_HTTP",
@@ -70,6 +72,14 @@ func TestLoadWithDefaults(t *testing.T) {
 		t.Fatalf("expected default MaxIdleConns=%d, got %d", DefaultMaxIdleConns, cfg.MaxIdleConns)
 	}
 
+	if cfg.ConnMaxIdleTime != time.Duration(DefaultConnMaxIdleTimeMins)*time.Minute {
+		t.Fatalf("expected default ConnMaxIdleTime=%dm, got %v", DefaultConnMaxIdleTimeMins, cfg.ConnMaxIdleTime)
+	}
+
+	if cfg.PingTimeout != time.Duration(DefaultPingTimeoutSecs)*time.Second {
+		t.Fatalf("expected default PingTimeout=%ds, got %v", DefaultPingTimeoutSecs, cfg.PingTimeout)
+	}
+
 	if cfg.HTTPPort != DefaultHTTPPort {
 		t.Fatalf("expected default HTTPPort=%d, got %d", DefaultHTTPPort, cfg.HTTPPort)
 	}
@@ -97,6 +107,8 @@ func TestLoadOverridesFromEnv(t *testing.T) {
 	os.Setenv("MYSQL_QUERY_TIMEOUT_SECONDS", "60")
 	os.Setenv("MYSQL_MAX_OPEN_CONNS", "20")
 	os.Setenv("MYSQL_MAX_IDLE_CONNS", "10")
+	os.Setenv("MYSQL_CONN_MAX_IDLE_TIME_MINUTES", "10")
+	os.Setenv("MYSQL_PING_TIMEOUT_SECONDS", "15")
 	os.Setenv("MYSQL_MCP_EXTENDED", "1")
 	os.Setenv("MYSQL_MCP_VECTOR", "1")
 	os.Setenv("MYSQL_MCP_HTTP", "1")
@@ -123,6 +135,12 @@ func TestLoadOverridesFromEnv(t *testing.T) {
 	}
 	if cfg.MaxIdleConns != 10 {
 		t.Fatalf("expected MaxIdleConns=10, got %d", cfg.MaxIdleConns)
+	}
+	if cfg.ConnMaxIdleTime != 10*time.Minute {
+		t.Fatalf("expected ConnMaxIdleTime=10m, got %v", cfg.ConnMaxIdleTime)
+	}
+	if cfg.PingTimeout != 15*time.Second {
+		t.Fatalf("expected PingTimeout=15s, got %v", cfg.PingTimeout)
 	}
 	if !cfg.ExtendedMode {
 		t.Fatal("expected ExtendedMode to be true")
