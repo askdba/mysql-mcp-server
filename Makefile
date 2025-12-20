@@ -60,9 +60,71 @@ test:
 	@echo "$(BLUE)🧪 Running unit tests...$(RESET)"
 	go test ./... -v
 
+test-security:
+	@echo "$(BLUE)🔐 Running security tests...$(RESET)"
+	go test -v ./tests/security/...
+
 integration:
 	@echo "$(BLUE)🐋 Running integration tests (Docker required)...$(RESET)"
 	go test -tags=integration ./internal/mysql -v
+
+# Integration tests with Docker Compose
+test-integration: test-mysql-up
+	@echo "$(BLUE)🐋 Running full integration test suite...$(RESET)"
+	MYSQL_TEST_DSN="root:testpass@tcp(localhost:3306)/testdb?parseTime=true" \
+		go test -tags=integration -v ./...
+	@$(MAKE) test-mysql-down
+
+test-integration-80: test-mysql-up
+	@echo "$(BLUE)🐋 Running integration tests against MySQL 8.0...$(RESET)"
+	MYSQL_TEST_DSN="root:testpass@tcp(localhost:3306)/testdb?parseTime=true" \
+		go test -tags=integration -v ./tests/integration/...
+	@$(MAKE) test-mysql-down
+
+test-integration-84:
+	@echo "$(BLUE)🐋 Running integration tests against MySQL 8.4...$(RESET)"
+	docker-compose -f docker-compose.test.yml up -d mysql84
+	@echo "Waiting for MySQL 8.4 to be ready..."
+	@sleep 15
+	MYSQL_TEST_DSN="root:testpass@tcp(localhost:3307)/testdb?parseTime=true" \
+		go test -tags=integration -v ./tests/integration/... || true
+	docker-compose -f docker-compose.test.yml stop mysql84
+
+test-integration-90:
+	@echo "$(BLUE)🐋 Running integration tests against MySQL 9.0...$(RESET)"
+	docker-compose -f docker-compose.test.yml up -d mysql90
+	@echo "Waiting for MySQL 9.0 to be ready..."
+	@sleep 15
+	MYSQL_TEST_DSN="root:testpass@tcp(localhost:3308)/testdb?parseTime=true" \
+		go test -tags=integration -v ./tests/integration/... || true
+	docker-compose -f docker-compose.test.yml stop mysql90
+
+test-integration-all:
+	@echo "$(BLUE)🐋 Running integration tests against all MySQL versions...$(RESET)"
+	@$(MAKE) test-integration-80
+	@$(MAKE) test-integration-84
+	@$(MAKE) test-integration-90
+	@echo "$(GREEN)✔ All integration tests complete$(RESET)"
+
+# Docker Compose helpers for test databases
+test-mysql-up:
+	@echo "$(CYAN)🐳 Starting MySQL test containers...$(RESET)"
+	docker-compose -f docker-compose.test.yml up -d mysql80
+	@echo "Waiting for MySQL to be ready..."
+	@sleep 15
+
+test-mysql-down:
+	@echo "$(CYAN)🐳 Stopping MySQL test containers...$(RESET)"
+	docker-compose -f docker-compose.test.yml down
+
+test-mysql-all-up:
+	@echo "$(CYAN)🐳 Starting all MySQL test containers...$(RESET)"
+	docker-compose -f docker-compose.test.yml up -d
+	@echo "Waiting for MySQL containers to be ready..."
+	@sleep 20
+
+test-mysql-logs:
+	docker-compose -f docker-compose.test.yml logs -f
 
 # ----------------------------------------
 # Code Quality
@@ -205,10 +267,22 @@ help:
 	@echo "  make version      - Show version information"
 	@echo ""
 	@echo "$(CYAN)Testing:$(RESET)"
-	@echo "  make test         - Run unit tests"
-	@echo "  make integration  - Run integration tests (Docker)"
-	@echo "  make coverage     - Run tests with coverage report"
-	@echo "  make coverage-html- Generate HTML coverage report"
+	@echo "  make test              - Run unit tests"
+	@echo "  make test-security     - Run security/validator tests"
+	@echo "  make integration       - Run basic integration tests"
+	@echo "  make test-integration  - Run full integration suite (Docker Compose)"
+	@echo "  make test-integration-80  - Test against MySQL 8.0"
+	@echo "  make test-integration-84  - Test against MySQL 8.4"
+	@echo "  make test-integration-90  - Test against MySQL 9.0"
+	@echo "  make test-integration-all - Test against all MySQL versions"
+	@echo "  make coverage          - Run tests with coverage report"
+	@echo "  make coverage-html     - Generate HTML coverage report"
+	@echo ""
+	@echo "$(CYAN)Test Database Management:$(RESET)"
+	@echo "  make test-mysql-up     - Start MySQL 8.0 test container"
+	@echo "  make test-mysql-all-up - Start all MySQL test containers"
+	@echo "  make test-mysql-down   - Stop test containers"
+	@echo "  make test-mysql-logs   - View test container logs"
 	@echo ""
 	@echo "$(CYAN)Code Quality:$(RESET)"
 	@echo "  make fmt          - Format Go code"

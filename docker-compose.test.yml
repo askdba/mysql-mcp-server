@@ -1,0 +1,95 @@
+# docker-compose.test.yml
+# MySQL test environment for integration testing
+#
+# Usage:
+#   Start all MySQL versions:   docker-compose -f docker-compose.test.yml up -d
+#   Stop all:                   docker-compose -f docker-compose.test.yml down
+#   Run tests against MySQL 8.0: MYSQL_TEST_DSN="root:testpass@tcp(localhost:3306)/testdb?parseTime=true" go test -tags=integration ./...
+#   Run tests against MySQL 8.4: MYSQL_TEST_DSN="root:testpass@tcp(localhost:3307)/testdb?parseTime=true" go test -tags=integration ./...
+#   Run tests against MySQL 9.0: MYSQL_TEST_DSN="root:testpass@tcp(localhost:3308)/testdb?parseTime=true" go test -tags=integration ./...
+
+version: '3.8'
+
+services:
+  # MySQL 8.0 - LTS version
+  mysql80:
+    image: mysql:8.0
+    container_name: mysql-mcp-test-80
+    environment:
+      MYSQL_ROOT_PASSWORD: testpass
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql80_data:/var/lib/mysql
+      - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+
+  # MySQL 8.4 - Innovation release
+  mysql84:
+    image: mysql:8.4
+    container_name: mysql-mcp-test-84
+    environment:
+      MYSQL_ROOT_PASSWORD: testpass
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpass
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql84_data:/var/lib/mysql
+      - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+
+  # MySQL 9.0 - Latest innovation release
+  mysql90:
+    image: mysql:9.0
+    container_name: mysql-mcp-test-90
+    environment:
+      MYSQL_ROOT_PASSWORD: testpass
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpass
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql90_data:/var/lib/mysql
+      - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+
+volumes:
+  mysql80_data:
+  mysql84_data:
+  mysql90_data:
+
+networks:
+  default:
+    name: mysql-mcp-test-network
+
