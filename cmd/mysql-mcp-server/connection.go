@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/askdba/mysql-mcp-server/internal/config"
 	"github.com/askdba/mysql-mcp-server/internal/util"
@@ -39,14 +40,35 @@ func (cm *ConnectionManager) AddConnectionWithPoolConfig(connCfg config.Connecti
 		return fmt.Errorf("failed to open connection %s: %w", connCfg.Name, err)
 	}
 
-	// Configure connection pool from config
-	conn.SetMaxOpenConns(cfg.MaxOpenConns)
-	conn.SetMaxIdleConns(cfg.MaxIdleConns)
-	conn.SetConnMaxLifetime(cfg.ConnMaxLifetime)
-	conn.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
+	// Apply pool settings with sensible defaults (defensive against zero values)
+	maxOpen := cfg.MaxOpenConns
+	if maxOpen <= 0 {
+		maxOpen = config.DefaultMaxOpenConns
+	}
+	maxIdle := cfg.MaxIdleConns
+	if maxIdle <= 0 {
+		maxIdle = config.DefaultMaxIdleConns
+	}
+	lifetime := cfg.ConnMaxLifetime
+	if lifetime <= 0 {
+		lifetime = time.Duration(config.DefaultConnMaxLifetimeMins) * time.Minute
+	}
+	idleTime := cfg.ConnMaxIdleTime
+	if idleTime <= 0 {
+		idleTime = time.Duration(config.DefaultConnMaxIdleTimeMins) * time.Minute
+	}
+	pingTimeout := cfg.PingTimeout
+	if pingTimeout <= 0 {
+		pingTimeout = time.Duration(config.DefaultPingTimeoutSecs) * time.Second
+	}
+
+	conn.SetMaxOpenConns(maxOpen)
+	conn.SetMaxIdleConns(maxIdle)
+	conn.SetConnMaxLifetime(lifetime)
+	conn.SetConnMaxIdleTime(idleTime)
 
 	// Test connection with configurable timeout
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.PingTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
 	defer cancel()
 	if err := conn.PingContext(ctx); err != nil {
 		conn.Close()
