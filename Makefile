@@ -71,15 +71,19 @@ integration:
 # Integration tests with Docker Compose
 test-integration: test-mysql-up
 	@echo "$(BLUE)🐋 Running full integration test suite...$(RESET)"
-	MYSQL_TEST_DSN="root:testpass@tcp(localhost:3306)/testdb?parseTime=true" \
-		go test -tags=integration -v ./...
-	@$(MAKE) test-mysql-down
+	@MYSQL_TEST_DSN="root:testpass@tcp(localhost:3306)/testdb?parseTime=true" \
+		go test -tags=integration -v ./...; \
+		TEST_EXIT=$$?; \
+		docker-compose -f docker-compose.test.yml down; \
+		exit $$TEST_EXIT
 
 test-integration-80: test-mysql-up
 	@echo "$(BLUE)🐋 Running integration tests against MySQL 8.0...$(RESET)"
-	MYSQL_TEST_DSN="root:testpass@tcp(localhost:3306)/testdb?parseTime=true" \
-		go test -tags=integration -v ./tests/integration/...
-	@$(MAKE) test-mysql-down
+	@MYSQL_TEST_DSN="root:testpass@tcp(localhost:3306)/testdb?parseTime=true" \
+		go test -tags=integration -v ./tests/integration/...; \
+		TEST_EXIT=$$?; \
+		docker-compose -f docker-compose.test.yml down; \
+		exit $$TEST_EXIT
 
 test-integration-84:
 	@echo "$(BLUE)🐋 Running integration tests against MySQL 8.4...$(RESET)"
