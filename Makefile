@@ -87,7 +87,7 @@ test-integration-80: test-mysql-up
 
 test-integration-84:
 	@echo "$(BLUE)🐋 Running integration tests against MySQL 8.4...$(RESET)"
-	@docker-compose -f docker-compose.test.yml up -d --wait mysql84
+	@docker-compose -f docker-compose.test.yml up -d --wait --wait-timeout 60 mysql84
 	@MYSQL_TEST_DSN="root:testpass@tcp(localhost:3307)/testdb?parseTime=true" \
 		go test -tags=integration -v ./tests/integration/...; \
 		TEST_EXIT=$$?; \
@@ -96,7 +96,7 @@ test-integration-84:
 
 test-integration-90:
 	@echo "$(BLUE)🐋 Running integration tests against MySQL 9.0...$(RESET)"
-	@docker-compose -f docker-compose.test.yml up -d --wait mysql90
+	@docker-compose -f docker-compose.test.yml up -d --wait --wait-timeout 60 mysql90
 	@MYSQL_TEST_DSN="root:testpass@tcp(localhost:3308)/testdb?parseTime=true" \
 		go test -tags=integration -v ./tests/integration/...; \
 		TEST_EXIT=$$?; \
@@ -113,7 +113,7 @@ test-integration-all:
 # Docker Compose helpers for test databases
 test-mysql-up:
 	@echo "$(CYAN)🐳 Starting MySQL test containers...$(RESET)"
-	@docker-compose -f docker-compose.test.yml up -d --wait mysql80
+	@docker-compose -f docker-compose.test.yml up -d --wait --wait-timeout 60 mysql80
 
 test-mysql-down:
 	@echo "$(CYAN)🐳 Stopping MySQL test containers...$(RESET)"
@@ -121,7 +121,7 @@ test-mysql-down:
 
 test-mysql-all-up:
 	@echo "$(CYAN)🐳 Starting all MySQL test containers...$(RESET)"
-	@docker-compose -f docker-compose.test.yml up -d --wait
+	@docker-compose -f docker-compose.test.yml up -d --wait --wait-timeout 90
 
 test-mysql-logs:
 	docker-compose -f docker-compose.test.yml logs -f
