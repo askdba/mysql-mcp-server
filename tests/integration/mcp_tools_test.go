@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -693,7 +694,7 @@ func TestMCPTool_LargeResultSet(t *testing.T) {
 		if err != nil {
 			// Fallback: insert rows one by one if the complex query fails
 			for j := 0; j < 100; j++ {
-				db.ExecContext(ctx, "INSERT INTO testdb.large_data (value) VALUES (?)", "row_"+string(rune('0'+j)))
+				db.ExecContext(ctx, "INSERT INTO testdb.large_data (value) VALUES (?)", "row_"+strconv.Itoa(j))
 			}
 		}
 	}
@@ -768,7 +769,7 @@ func TestMCPTool_ConcurrentQueries(t *testing.T) {
 
 			for j := 0; j < queriesPerGoroutine; j++ {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				
+
 				rows, err := db.QueryContext(ctx, "SELECT * FROM testdb.users WHERE id = ?", (workerID%5)+1)
 				if err != nil {
 					errors <- err
@@ -802,7 +803,7 @@ func TestMCPTool_ConcurrentQueries(t *testing.T) {
 // TestMCPTool_ConnectionPoolBehavior tests connection pool under stress
 func TestMCPTool_ConnectionPoolBehavior(t *testing.T) {
 	dsn := getTestDSN(t)
-	
+
 	// Create a new connection with limited pool
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -950,13 +951,13 @@ func TestMCPTool_PreparedStatements(t *testing.T) {
 		if err != nil {
 			t.Fatalf("query with param %d failed: %v", i, err)
 		}
-		
+
 		count := 0
 		for rows.Next() {
 			count++
 		}
 		rows.Close()
-		
+
 		// We expect 0 or 1 row per ID
 		if count > 1 {
 			t.Errorf("expected at most 1 row for id=%d, got %d", i, count)
@@ -1032,4 +1033,3 @@ func TestMCPTool_StringFunctions(t *testing.T) {
 		})
 	}
 }
-

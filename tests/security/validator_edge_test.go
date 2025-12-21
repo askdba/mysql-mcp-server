@@ -420,4 +420,3 @@ func TestValidator_EdgeCaseStrings(t *testing.T) {
 		})
 	}
 }
-
