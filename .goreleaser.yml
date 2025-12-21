@@ -74,21 +74,38 @@ changelog:
     - title: "Other"
       order: 999
 
-# Homebrew formula - uncomment when homebrew-tap repo exists
-# brews:
-#   - name: mysql-mcp-server
-#     repository:
-#       owner: askdba
-#       name: homebrew-tap
-#       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-#     folder: Formula
-#     homepage: "https://github.com/askdba/mysql-mcp-server"
-#     description: "A fast, read-only MySQL MCP server for Claude Desktop"
-#     license: "Apache-2.0"
-#     install: |
-#       bin.install "mysql-mcp-server"
-#     test: |
-#       system "#{bin}/mysql-mcp-server", "--version"
+# Homebrew formula - automatically updates askdba/homebrew-tap
+brews:
+  - name: mysql-mcp-server
+    repository:
+      owner: askdba
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    folder: Formula
+    homepage: "https://github.com/askdba/mysql-mcp-server"
+    description: "MySQL MCP Server - Model Context Protocol server for MySQL databases"
+    license: "Apache-2.0"
+    install: |
+      bin.install "mysql-mcp-server"
+    caveats: |
+      To use mysql-mcp-server with Claude Desktop, add to your config:
+
+        {
+          "mcpServers": {
+            "mysql": {
+              "command": "#{HOMEBREW_PREFIX}/bin/mysql-mcp-server",
+              "env": {
+                "MYSQL_DSN": "user:password@tcp(localhost:3306)/database"
+              }
+            }
+          }
+        }
+
+      Config location:
+        macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
+        Linux: ~/.config/Claude/claude_desktop_config.json
+    test: |
+      assert_match "mysql-mcp-server", shell_output("#{bin}/mysql-mcp-server --version")
 
 # Docker images - handled separately in GitHub Actions for reliability
 # dockers:
