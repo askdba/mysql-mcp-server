@@ -539,10 +539,102 @@ export MYSQL_CONN_MAX_LIFETIME_MINUTES=60  # Connection lifetime
 
 ## Testing
 
+### Prerequisites
+
+- Go 1.24+
+- Docker and Docker Compose (for integration tests)
+- MySQL client (optional, for manual database access)
+
+### Unit Tests
+
+Run unit tests (no external dependencies):
+
 ```bash
 make test
-make integration
 ```
+
+### Integration Tests
+
+Integration tests run against real MySQL instances using Docker Compose.
+
+**Test against MySQL 8.0 (default):**
+
+```bash
+make test-integration-80
+```
+
+**Test against MySQL 8.4:**
+
+```bash
+make test-integration-84
+```
+
+**Test against MySQL 9.0:**
+
+```bash
+make test-integration-90
+```
+
+**Test against all MySQL versions:**
+
+```bash
+make test-integration-all
+```
+
+### Security Tests
+
+Run SQL injection and validation security tests:
+
+```bash
+make test-security
+```
+
+### Manual Database Management
+
+Start and stop test MySQL containers manually:
+
+```bash
+# Start MySQL 8.0 container
+make test-mysql-up
+
+# Start all MySQL versions (8.0, 8.4, 9.0)
+make test-mysql-all-up
+
+# Stop all test containers
+make test-mysql-down
+
+# View container logs
+make test-mysql-logs
+```
+
+### Environment Variables
+
+When running tests manually, set the DSN:
+
+```bash
+# MySQL 8.0 (port 3306)
+export MYSQL_TEST_DSN="root:testpass@tcp(localhost:3306)/testdb?parseTime=true"
+
+# MySQL 8.4 (port 3307)
+export MYSQL_TEST_DSN="root:testpass@tcp(localhost:3307)/testdb?parseTime=true"
+
+# MySQL 9.0 (port 3308)
+export MYSQL_TEST_DSN="root:testpass@tcp(localhost:3308)/testdb?parseTime=true"
+```
+
+Then run tests directly:
+
+```bash
+go test -v -tags=integration ./tests/integration/...
+```
+
+### Test Database Schema
+
+Integration tests use `tests/sql/init.sql` which creates:
+- Tables: `users`, `orders`, `products`, `special_data`
+- Views: `user_orders`
+- Stored procedures: `get_user_by_id`
+- Sample test data
 
 ## Docker
 
