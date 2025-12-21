@@ -162,6 +162,45 @@ func TestToolDescribeTableSuccess(t *testing.T) {
 	}
 }
 
+func TestToolDescribeTableWithNullCollation(t *testing.T) {
+	mock, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	// MySQL 8.4+ returns NULL for Collation on non-string columns
+	rows := sqlmock.NewRows([]string{"Field", "Type", "Collation", "Null", "Key", "Default", "Extra", "Privileges", "Comment"}).
+		AddRow("id", "int", nil, "NO", "PRI", nil, "auto_increment", "select,insert,update,references", nil).
+		AddRow("created_at", "timestamp", nil, "YES", "", nil, "", "select,insert,update,references", nil).
+		AddRow("name", "varchar(255)", "utf8mb4_general_ci", "NO", "", nil, "", "select,insert,update,references", "User name")
+
+	mock.ExpectQuery("SHOW FULL COLUMNS FROM `testdb`.`users`").WillReturnRows(rows)
+
+	ctx := context.Background()
+	_, output, err := toolDescribeTable(ctx, &mcp.CallToolRequest{}, DescribeTableInput{
+		Database: "testdb",
+		Table:    "users",
+	})
+
+	if err != nil {
+		t.Fatalf("toolDescribeTable failed with NULL collation: %v", err)
+	}
+
+	if len(output.Columns) != 3 {
+		t.Errorf("expected 3 columns, got %d", len(output.Columns))
+	}
+
+	// Check that NULL collation is handled (returns empty string)
+	if output.Columns[0].Collation != "" {
+		t.Errorf("expected empty collation for int column, got '%s'", output.Columns[0].Collation)
+	}
+	if output.Columns[2].Collation != "utf8mb4_general_ci" {
+		t.Errorf("expected 'utf8mb4_general_ci' collation, got '%s'", output.Columns[2].Collation)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
 func TestToolDescribeTableMissingDatabase(t *testing.T) {
 	mock, cleanup := setupMockDB(t)
 	defer cleanup()
