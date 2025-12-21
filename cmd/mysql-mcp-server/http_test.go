@@ -220,6 +220,33 @@ func TestHTTPDescribeTable(t *testing.T) {
 	}
 }
 
+// TestHTTPDescribeTableWithNullCollation tests /api/describe with NULL collation values
+func TestHTTPDescribeTableWithNullCollation(t *testing.T) {
+	mock, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	// MySQL 8.4+ returns NULL for Collation on non-string columns (int, timestamp, etc.)
+	rows := sqlmock.NewRows([]string{"Field", "Type", "Collation", "Null", "Key", "Default", "Extra", "Privileges", "Comment"}).
+		AddRow("id", "int", nil, "NO", "PRI", nil, "auto_increment", "select,insert", nil).
+		AddRow("created_at", "timestamp", nil, "YES", "", nil, "", "select,insert", nil).
+		AddRow("name", "varchar(255)", "utf8mb4_general_ci", "NO", "", nil, "", "select,insert", "User name")
+	mock.ExpectQuery("SHOW FULL COLUMNS FROM `testdb`.`users`").WillReturnRows(rows)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/describe?database=testdb&table=users", nil)
+	w := httptest.NewRecorder()
+
+	httpDescribeTable(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
 // TestHTTPRunQuerySuccess tests the /api/query endpoint with valid input
 func TestHTTPRunQuerySuccess(t *testing.T) {
 	mock, cleanup := setupHTTPTest(t)

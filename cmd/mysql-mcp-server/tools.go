@@ -135,22 +135,32 @@ func toolDescribeTable(
 	for rows.Next() {
 		var col ColumnInfo
 		var dummyPrivileges string
+		// Use sql.NullString for columns that can be NULL
+		var collation, null, key, defaultVal, extra, comment sql.NullString
 
 		// SHOW FULL COLUMNS FROM db.table returns:
 		// Field, Type, Collation, Null, Key, Default, Extra, Privileges, Comment
 		if err := rows.Scan(
 			&col.Name,
 			&col.Type,
-			&col.Collation,
-			&col.Null,
-			&col.Key,
-			&col.Default,
-			&col.Extra,
+			&collation,
+			&null,
+			&key,
+			&defaultVal,
+			&extra,
 			&dummyPrivileges,
-			&col.Comment,
+			&comment,
 		); err != nil {
 			return nil, DescribeTableOutput{}, fmt.Errorf("scan column failed: %w", err)
 		}
+		// Convert NullString to string (empty string if NULL)
+		col.Collation = collation.String
+		col.Null = null.String
+		col.Key = key.String
+		col.Default = defaultVal.String
+		col.Extra = extra.String
+		col.Comment = comment.String
+
 		out.Columns = append(out.Columns, col)
 		if len(out.Columns) >= maxRows {
 			break
