@@ -3,7 +3,7 @@
 <div align="center">
   <img src="./MysqlMCPServerBanner.png" alt="MySQL MCP Server Banner" width="800"/>
   
-  [![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/askdba/mysql-mcp-server/releases)
+  [![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/askdba/mysql-mcp-server/releases)
   [![Go](https://img.shields.io/badge/go-1.25+-00ADD8.svg)](https://golang.org/)
   [![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
 </div>
