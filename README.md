@@ -3,8 +3,8 @@
 <div align="center">
   <img src="./MysqlMCPServerBanner.png" alt="MySQL MCP Server Banner" width="800"/>
   
-  [![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/askdba/mysql-mcp-server/releases)
-  [![Go](https://img.shields.io/badge/go-1.25+-00ADD8.svg)](https://golang.org/)
+  [![Version](https://img.shields.io/badge/version-1.3.1-blue.svg)](https://github.com/askdba/mysql-mcp-server/releases)
+  [![Go](https://img.shields.io/badge/go-1.24+-00ADD8.svg)](https://golang.org/)
   [![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
 </div>
 
@@ -97,6 +97,9 @@ Environment variables:
 | MYSQL_MAX_OPEN_CONNS | No | 10 | Max open database connections |
 | MYSQL_MAX_IDLE_CONNS | No | 5 | Max idle database connections |
 | MYSQL_CONN_MAX_LIFETIME_MINUTES | No | 30 | Connection max lifetime in minutes |
+| MYSQL_CONN_MAX_IDLE_TIME_MINUTES | No | 5 | Max idle time before connection is closed |
+| MYSQL_PING_TIMEOUT_SECONDS | No | 5 | Database ping/health check timeout |
+| MYSQL_HTTP_REQUEST_TIMEOUT_SECONDS | No | 60 | HTTP request timeout in REST API mode |
 
 ### Multi-DSN Configuration
 
@@ -149,17 +152,28 @@ mysql-mcp-server --version
 
 Output:
 ```
-mysql-mcp-server v1.1.0
-  Build time: 2025-01-15T10:30:00Z
-  Git commit: abc1234
+mysql-mcp-server v1.3.1
+  Build time: 2025-12-21T11:43:11Z
+  Git commit: a1b2c3d
 ```
 
 ## Claude Desktop Integration
 
-Edit:
+Edit your Claude Desktop configuration file:
 
+**macOS:**
 ```
 ~/Library/Application Support/Claude/claude_desktop_config.json
+```
+
+**Windows:**
+```
+%APPDATA%\Claude\claude_desktop_config.json
+```
+
+**Linux:**
+```
+~/.config/Claude/claude_desktop_config.json
 ```
 
 Add:
@@ -710,10 +724,9 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ### Docker Compose
 
 ```yaml
-version: "3.9"
 services:
   mysql:
-    image: mysql:8.0.36
+    image: mysql:8.4
     environment:
       MYSQL_ROOT_PASSWORD: rootpass
       MYSQL_DATABASE: testdb
