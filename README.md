@@ -194,6 +194,64 @@ Add:
 
 Restart Claude Desktop.
 
+## Cursor IDE Integration
+
+Cursor IDE supports the Model Context Protocol (MCP). Configure it to use mysql-mcp-server:
+
+Edit your Cursor MCP configuration file:
+
+**macOS:**
+```
+~/.cursor/mcp.json
+```
+
+**Windows:**
+```
+%APPDATA%\Cursor\mcp.json
+```
+
+**Linux:**
+```
+~/.config/Cursor/mcp.json
+```
+
+Add:
+
+```json
+{
+  "mcpServers": {
+    "mysql": {
+      "command": "mysql-mcp-server",
+      "env": {
+        "MYSQL_DSN": "root:password@tcp(127.0.0.1:3306)/mydb?parseTime=true",
+        "MYSQL_MAX_ROWS": "200",
+        "MYSQL_MCP_EXTENDED": "1"
+      }
+    }
+  }
+}
+```
+
+**With Docker:**
+
+```json
+{
+  "mcpServers": {
+    "mysql": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "MYSQL_DSN=root:password@tcp(host.docker.internal:3306)/mydb?parseTime=true",
+        "-e", "MYSQL_MCP_EXTENDED=1",
+        "ghcr.io/askdba/mysql-mcp-server:latest"
+      ]
+    }
+  }
+}
+```
+
+Restart Cursor after saving the configuration.
+
 ## MCP Tools
 
 ### list_databases
