@@ -34,6 +34,7 @@ var (
 	// Convenience aliases from config (for tool access)
 	maxRows      int
 	queryTimeout time.Duration
+	pingTimeout  time.Duration
 	extendedMode bool
 	jsonLogging  bool
 
@@ -76,6 +77,7 @@ func main() {
 	// Set convenience aliases
 	maxRows = cfg.MaxRows
 	queryTimeout = cfg.QueryTimeout
+	pingTimeout = cfg.PingTimeout
 	extendedMode = cfg.ExtendedMode
 	jsonLogging = cfg.JSONLogging
 

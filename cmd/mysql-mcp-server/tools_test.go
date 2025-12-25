@@ -23,18 +23,21 @@ func setupMockDB(t *testing.T) (sqlmock.Sqlmock, func()) {
 	oldDB := db
 	oldMaxRows := maxRows
 	oldQueryTimeout := queryTimeout
+	oldPingTimeout := pingTimeout
 
 	// Set up global state
 	db = mockDB
 	connManager = nil
 	maxRows = 1000
 	queryTimeout = 30 * time.Second
+	pingTimeout = time.Duration(config.DefaultPingTimeoutSecs) * time.Second
 
 	cleanup := func() {
 		connManager = oldConnManager
 		db = oldDB
 		maxRows = oldMaxRows
 		queryTimeout = oldQueryTimeout
+		pingTimeout = oldPingTimeout
 		mockDB.Close()
 	}
 
