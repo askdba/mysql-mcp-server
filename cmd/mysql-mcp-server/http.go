@@ -243,6 +243,20 @@ func httpListFunctions(w http.ResponseWriter, r *http.Request) {
 	api.WriteSuccess(w, out)
 }
 
+// httpListPartitions handles GET /api/partitions?database=xxx&table=yyy
+func httpListPartitions(w http.ResponseWriter, r *http.Request) {
+	database := r.URL.Query().Get("database")
+	table := r.URL.Query().Get("table")
+	ctx, cancel := httpContext(r)
+	defer cancel()
+	_, out, err := toolListPartitions(ctx, nil, ListPartitionsInput{Database: database, Table: table})
+	if err != nil {
+		api.WriteInternalError(w, err.Error())
+		return
+	}
+	api.WriteSuccess(w, out)
+}
+
 // httpDatabaseSize handles GET /api/size/database?database=xxx (optional)
 func httpDatabaseSize(w http.ResponseWriter, r *http.Request) {
 	database := r.URL.Query().Get("database")
@@ -374,6 +388,7 @@ func httpAPIIndex(w http.ResponseWriter, r *http.Request) {
 			"GET  /api/triggers":        "List triggers (requires ?database=) [extended]",
 			"GET  /api/procedures":      "List procedures (requires ?database=) [extended]",
 			"GET  /api/functions":       "List functions (requires ?database=) [extended]",
+			"GET  /api/partitions":      "List table partitions (requires ?database=&table=) [extended]",
 			"GET  /api/size/database":   "Database size (optional ?database=) [extended]",
 			"GET  /api/size/tables":     "Table sizes (requires ?database=) [extended]",
 			"GET  /api/foreign-keys":    "Foreign keys (requires ?database=, optional &table=) [extended]",
@@ -446,6 +461,7 @@ func startHTTPServer(port int, vectorMode bool) {
 	mux.HandleFunc("/api/triggers", api.Chain(httpListTriggers, api.WithCORS, extendedFeature, api.RequireQueryParam("database")))
 	mux.HandleFunc("/api/procedures", api.Chain(httpListProcedures, api.WithCORS, extendedFeature, api.RequireQueryParam("database")))
 	mux.HandleFunc("/api/functions", api.Chain(httpListFunctions, api.WithCORS, extendedFeature, api.RequireQueryParam("database")))
+	mux.HandleFunc("/api/partitions", api.Chain(httpListPartitions, api.WithCORS, extendedFeature, api.RequireQueryParam("database"), api.RequireQueryParam("table")))
 	mux.HandleFunc("/api/size/database", api.Chain(httpDatabaseSize, api.WithCORS, extendedFeature))
 	mux.HandleFunc("/api/size/tables", api.Chain(httpTableSize, api.WithCORS, extendedFeature, api.RequireQueryParam("database")))
 	mux.HandleFunc("/api/foreign-keys", api.Chain(httpForeignKeys, api.WithCORS, extendedFeature, api.RequireQueryParam("database")))

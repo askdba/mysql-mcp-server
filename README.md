@@ -861,6 +861,7 @@ When rate limited, clients receive HTTP 429 (Too Many Requests) with a `Retry-Af
 | GET | `/api/triggers?database=` | List triggers |
 | GET | `/api/procedures?database=` | List procedures |
 | GET | `/api/functions?database=` | List functions |
+| GET | `/api/partitions?database=&table=` | List table partitions |
 | GET | `/api/size/database?database=` | Database size |
 | GET | `/api/size/tables?database=` | Table sizes |
 | GET | `/api/foreign-keys?database=` | Foreign keys |

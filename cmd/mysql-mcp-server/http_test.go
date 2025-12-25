@@ -656,6 +656,31 @@ func TestHTTPListTriggers(t *testing.T) {
 	}
 }
 
+// TestHTTPListPartitions tests the /api/partitions endpoint (extended)
+func TestHTTPListPartitions(t *testing.T) {
+	mock, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	rows := sqlmock.NewRows([]string{"PARTITION_NAME", "PARTITION_METHOD", "PARTITION_EXPRESSION", "PARTITION_DESCRIPTION", "TABLE_ROWS", "DATA_LENGTH"}).
+		AddRow("p0", "RANGE", "year", "2020", 1000, 16384).
+		AddRow("p1", "RANGE", "year", "2021", 2000, 32768)
+	mock.ExpectQuery("SELECT PARTITION_NAME, PARTITION_METHOD, PARTITION_EXPRESSION").WillReturnRows(rows)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/partitions?database=testdb&table=events", nil)
+	w := httptest.NewRecorder()
+
+	httpListPartitions(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
 // TestHTTPDatabaseSize tests the /api/size/database endpoint (extended)
 func TestHTTPDatabaseSize(t *testing.T) {
 	mock, cleanup := setupHTTPTest(t)
