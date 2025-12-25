@@ -7,10 +7,12 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/askdba/mysql-mcp-server/internal/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// setupExtendedMockDB sets up a mock database for extended tool tests
+// setupExtendedMockDB sets up a mock database for extended tool tests.
+// Uses connManager with a mock DB instead of the deprecated global db variable.
 func setupExtendedMockDB(t *testing.T) (sqlmock.Sqlmock, func()) {
 	mockDB, mock, err := sqlmock.New()
 	if err != nil {
@@ -19,19 +21,21 @@ func setupExtendedMockDB(t *testing.T) (sqlmock.Sqlmock, func()) {
 
 	// Save original state
 	oldConnManager := connManager
-	oldDB := db
 	oldMaxRows := maxRows
 	oldQueryTimeout := queryTimeout
 
-	// Set up global state
-	db = mockDB
-	connManager = nil
+	// Set up mock connection manager with mock DB
+	cm := NewConnectionManager()
+	cm.connections["mock"] = mockDB
+	cm.configs["mock"] = config.ConnectionConfig{Name: "mock", DSN: "mock://test"}
+	cm.activeConn = "mock"
+	connManager = cm
+
 	maxRows = 1000
 	queryTimeout = 30 * time.Second
 
 	cleanup := func() {
 		connManager = oldConnManager
-		db = oldDB
 		maxRows = oldMaxRows
 		queryTimeout = oldQueryTimeout
 		mockDB.Close()

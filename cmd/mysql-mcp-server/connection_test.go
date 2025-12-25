@@ -198,10 +198,8 @@ func TestGetDBWithConnManager(t *testing.T) {
 
 	// Save and restore global state
 	oldConnManager := connManager
-	oldDB := db
 	defer func() {
 		connManager = oldConnManager
-		db = oldDB
 	}()
 
 	// Set up connection manager
@@ -217,31 +215,24 @@ func TestGetDBWithConnManager(t *testing.T) {
 	}
 }
 
-func TestGetDBWithoutConnManager(t *testing.T) {
-	// Create mock database
-	mockDB, _, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("failed to create mock: %v", err)
-	}
-	defer mockDB.Close()
-
+func TestGetDBWithoutConnManagerPanics(t *testing.T) {
 	// Save and restore global state
 	oldConnManager := connManager
-	oldDB := db
 	defer func() {
 		connManager = oldConnManager
-		db = oldDB
 	}()
 
-	// Set global db, no connection manager
+	// Set connManager to nil
 	connManager = nil
-	db = mockDB
 
-	// getDB should return global db
-	result := getDB()
-	if result != mockDB {
-		t.Error("getDB should return global db when connManager is nil")
-	}
+	// getDB should panic when connManager is nil
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("getDB should panic when connManager is nil")
+		}
+	}()
+
+	getDB() // This should panic
 }
 
 func TestConnectionConfigStruct(t *testing.T) {

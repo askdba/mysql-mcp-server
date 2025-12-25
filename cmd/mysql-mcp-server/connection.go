@@ -137,11 +137,11 @@ func (cm *ConnectionManager) Close() {
 }
 
 // getDB returns the active database connection in a thread-safe manner.
-// This should be used instead of accessing the global db variable directly
-// to avoid data races when connections are switched.
+// All database access should go through this function to ensure proper
+// connection management and avoid data races when connections are switched.
 func getDB() *sql.DB {
-	if connManager != nil {
-		return connManager.GetActiveDB()
+	if connManager == nil {
+		panic("getDB called before connManager initialized")
 	}
-	return db
+	return connManager.GetActiveDB()
 }

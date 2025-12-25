@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,24 +15,42 @@ import (
 	"github.com/askdba/mysql-mcp-server/internal/config"
 )
 
-// setupHTTPTest sets up mock database and config for HTTP handler tests
+// httpMockResult holds the results of setupHTTPTest for tests that need access to the mock DB.
+type httpMockResult struct {
+	mock    sqlmock.Sqlmock
+	mockDB  *sql.DB
+	cleanup func()
+}
+
+// setupHTTPTest sets up mock database and config for HTTP handler tests.
+// Uses connManager with a mock DB instead of the deprecated global db variable.
 func setupHTTPTest(t *testing.T) (sqlmock.Sqlmock, func()) {
+	result := setupHTTPTestFull(t)
+	return result.mock, result.cleanup
+}
+
+// setupHTTPTestFull returns the full mock result including the mock DB for tests
+// that need to add it to additional connection managers.
+func setupHTTPTestFull(t *testing.T) httpMockResult {
 	mockDB, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("failed to create mock: %v", err)
 	}
 
 	// Save original state
-	oldDB := db
 	oldConnManager := connManager
 	oldCfg := cfg
 	oldMaxRows := maxRows
 	oldQueryTimeout := queryTimeout
 	oldExtendedMode := extendedMode
 
-	// Set up global state for HTTP handlers
-	db = mockDB
-	connManager = nil
+	// Set up mock connection manager with mock DB
+	cm := NewConnectionManager()
+	cm.connections["mock"] = mockDB
+	cm.configs["mock"] = config.ConnectionConfig{Name: "mock", DSN: "mock://test"}
+	cm.activeConn = "mock"
+	connManager = cm
+
 	maxRows = 1000
 	queryTimeout = 30 * time.Second
 	extendedMode = true
@@ -42,7 +61,6 @@ func setupHTTPTest(t *testing.T) (sqlmock.Sqlmock, func()) {
 	}
 
 	cleanup := func() {
-		db = oldDB
 		connManager = oldConnManager
 		cfg = oldCfg
 		maxRows = oldMaxRows
@@ -51,7 +69,7 @@ func setupHTTPTest(t *testing.T) (sqlmock.Sqlmock, func()) {
 		mockDB.Close()
 	}
 
-	return mock, cleanup
+	return httpMockResult{mock: mock, mockDB: mockDB, cleanup: cleanup}
 }
 
 // TestHTTPHealth tests the /health endpoint
@@ -381,12 +399,12 @@ func TestHTTPServerInfo(t *testing.T) {
 
 // TestHTTPListConnections tests the /api/connections endpoint
 func TestHTTPListConnections(t *testing.T) {
-	mock, cleanup := setupHTTPTest(t)
-	defer cleanup()
+	result := setupHTTPTestFull(t)
+	defer result.cleanup()
 
-	// Set up connection manager
+	// Set up connection manager with mock DB
 	cm := NewConnectionManager()
-	cm.connections["test1"] = db
+	cm.connections["test1"] = result.mockDB
 	cm.configs["test1"] = config.ConnectionConfig{Name: "test1", DSN: "user:pass@tcp(localhost)/db1"}
 	cm.activeConn = "test1"
 	connManager = cm
@@ -401,25 +419,25 @@ func TestHTTPListConnections(t *testing.T) {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
 	}
 
-	_ = mock
+	_ = result.mock
 }
 
 // TestHTTPUseConnectionSuccess tests the /api/connections/use endpoint
 func TestHTTPUseConnectionSuccess(t *testing.T) {
-	mock, cleanup := setupHTTPTest(t)
-	defer cleanup()
+	result := setupHTTPTestFull(t)
+	defer result.cleanup()
 
-	// Set up connection manager with multiple connections
+	// Set up connection manager with multiple connections using mock DB
 	cm := NewConnectionManager()
-	cm.connections["conn1"] = db
+	cm.connections["conn1"] = result.mockDB
 	cm.configs["conn1"] = config.ConnectionConfig{Name: "conn1", DSN: "user:pass@tcp(localhost)/db1"}
-	cm.connections["conn2"] = db
+	cm.connections["conn2"] = result.mockDB
 	cm.configs["conn2"] = config.ConnectionConfig{Name: "conn2", DSN: "user:pass@tcp(localhost)/db2"}
 	cm.activeConn = "conn1"
 	connManager = cm
 
 	// Expect DATABASE() query after switch
-	mock.ExpectQuery("SELECT DATABASE\\(\\)").WillReturnRows(
+	result.mock.ExpectQuery("SELECT DATABASE\\(\\)").WillReturnRows(
 		sqlmock.NewRows([]string{"DATABASE()"}).AddRow("db2"),
 	)
 
@@ -435,7 +453,7 @@ func TestHTTPUseConnectionSuccess(t *testing.T) {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
 	}
 
-	if err := mock.ExpectationsWereMet(); err != nil {
+	if err := result.mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unfulfilled expectations: %v", err)
 	}
 }

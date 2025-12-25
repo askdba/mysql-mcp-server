@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -11,8 +12,23 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// setupMockDB sets up a mock database and configures global state for testing
+// mockDBResult holds the results of setupMockDB for tests that need to access the mock DB.
+type mockDBResult struct {
+	mock    sqlmock.Sqlmock
+	mockDB  *sql.DB
+	cleanup func()
+}
+
+// setupMockDB sets up a mock database and configures global state for testing.
+// Uses connManager with a mock DB instead of the deprecated global db variable.
 func setupMockDB(t *testing.T) (sqlmock.Sqlmock, func()) {
+	result := setupMockDBFull(t)
+	return result.mock, result.cleanup
+}
+
+// setupMockDBFull returns the full mock result including the mock DB for tests
+// that need to add it to additional connection managers.
+func setupMockDBFull(t *testing.T) mockDBResult {
 	mockDB, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("failed to create mock: %v", err)
@@ -20,28 +36,30 @@ func setupMockDB(t *testing.T) (sqlmock.Sqlmock, func()) {
 
 	// Save original state
 	oldConnManager := connManager
-	oldDB := db
 	oldMaxRows := maxRows
 	oldQueryTimeout := queryTimeout
 	oldPingTimeout := pingTimeout
 
-	// Set up global state
-	db = mockDB
-	connManager = nil
+	// Set up mock connection manager with mock DB
+	cm := NewConnectionManager()
+	cm.connections["mock"] = mockDB
+	cm.configs["mock"] = config.ConnectionConfig{Name: "mock", DSN: "mock://test"}
+	cm.activeConn = "mock"
+	connManager = cm
+
 	maxRows = 1000
 	queryTimeout = 30 * time.Second
 	pingTimeout = time.Duration(config.DefaultPingTimeoutSecs) * time.Second
 
 	cleanup := func() {
 		connManager = oldConnManager
-		db = oldDB
 		maxRows = oldMaxRows
 		queryTimeout = oldQueryTimeout
 		pingTimeout = oldPingTimeout
 		mockDB.Close()
 	}
 
-	return mock, cleanup
+	return mockDBResult{mock: mock, mockDB: mockDB, cleanup: cleanup}
 }
 
 func TestToolListDatabases(t *testing.T) {
@@ -405,14 +423,14 @@ func TestToolListConnectionsNoManager(t *testing.T) {
 }
 
 func TestToolListConnectionsSuccess(t *testing.T) {
-	mock, cleanup := setupMockDB(t)
-	defer cleanup()
+	result := setupMockDBFull(t)
+	defer result.cleanup()
 
-	// Set up connection manager
+	// Set up connection manager with multiple connections using the mock DB
 	cm := NewConnectionManager()
-	cm.connections["test1"] = db
+	cm.connections["test1"] = result.mockDB
 	cm.configs["test1"] = config.ConnectionConfig{Name: "test1", DSN: "user:pass@tcp(localhost)/db1", Description: "Test 1"}
-	cm.connections["test2"] = db
+	cm.connections["test2"] = result.mockDB
 	cm.configs["test2"] = config.ConnectionConfig{Name: "test2", DSN: "user:pass@tcp(localhost)/db2", Description: "Test 2"}
 	cm.activeConn = "test1"
 	connManager = cm
@@ -431,7 +449,7 @@ func TestToolListConnectionsSuccess(t *testing.T) {
 		t.Errorf("expected active 'test1', got '%s'", output.Active)
 	}
 
-	_ = mock
+	_ = result.mock
 }
 
 func TestToolUseConnectionNoManager(t *testing.T) {
@@ -449,12 +467,12 @@ func TestToolUseConnectionNoManager(t *testing.T) {
 }
 
 func TestToolUseConnectionEmptyName(t *testing.T) {
-	mock, cleanup := setupMockDB(t)
-	defer cleanup()
+	result := setupMockDBFull(t)
+	defer result.cleanup()
 
 	cm := NewConnectionManager()
-	cm.connections["test"] = db
-	cm.configs["test"] = config.ConnectionConfig{Name: "test", DSN: "user:pass@tcp(localhost)/db", Description: "Test"}
+	cm.connections["test"] = result.mockDB
+	cm.configs["test"] = config.ConnectionConfig{Name: "test", DSN: "user:pass@tcp(localhost)/testdb", Description: "Test"}
 	cm.activeConn = "test"
 	connManager = cm
 
@@ -468,22 +486,22 @@ func TestToolUseConnectionEmptyName(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	_ = mock
+	_ = result.mock
 }
 
 func TestToolUseConnectionSuccess(t *testing.T) {
-	mock, cleanup := setupMockDB(t)
-	defer cleanup()
+	result := setupMockDBFull(t)
+	defer result.cleanup()
 
 	// Expect DATABASE() query after switch
-	mock.ExpectQuery("SELECT DATABASE\\(\\)").WillReturnRows(
+	result.mock.ExpectQuery("SELECT DATABASE\\(\\)").WillReturnRows(
 		sqlmock.NewRows([]string{"DATABASE()"}).AddRow("testdb"),
 	)
 
 	cm := NewConnectionManager()
-	cm.connections["conn1"] = db
+	cm.connections["conn1"] = result.mockDB
 	cm.configs["conn1"] = config.ConnectionConfig{Name: "conn1", DSN: "user:pass@tcp(localhost)/db1", Description: "Conn 1"}
-	cm.connections["conn2"] = db
+	cm.connections["conn2"] = result.mockDB
 	cm.configs["conn2"] = config.ConnectionConfig{Name: "conn2", DSN: "user:pass@tcp(localhost)/db2", Description: "Conn 2"}
 	cm.activeConn = "conn1"
 	connManager = cm
@@ -502,17 +520,17 @@ func TestToolUseConnectionSuccess(t *testing.T) {
 		t.Errorf("expected active 'conn2', got '%s'", output.Active)
 	}
 
-	if err := mock.ExpectationsWereMet(); err != nil {
+	if err := result.mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unfulfilled expectations: %v", err)
 	}
 }
 
 func TestToolUseConnectionNotFound(t *testing.T) {
-	mock, cleanup := setupMockDB(t)
-	defer cleanup()
+	result := setupMockDBFull(t)
+	defer result.cleanup()
 
 	cm := NewConnectionManager()
-	cm.connections["conn1"] = db
+	cm.connections["conn1"] = result.mockDB
 	cm.configs["conn1"] = config.ConnectionConfig{Name: "conn1", DSN: "user:pass@tcp(localhost)/db1", Description: "Conn 1"}
 	cm.activeConn = "conn1"
 	connManager = cm
@@ -529,6 +547,6 @@ func TestToolUseConnectionNotFound(t *testing.T) {
 		t.Error("expected success to be false")
 	}
 
-	_ = mock
+	_ = result.mock
 }
 

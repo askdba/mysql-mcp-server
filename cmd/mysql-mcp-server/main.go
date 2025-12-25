@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -37,10 +36,6 @@ var (
 	pingTimeout  time.Duration
 	extendedMode bool
 	jsonLogging  bool
-
-	// Deprecated: Use connManager.GetActiveDB() instead.
-	// Kept for backward compatibility during transition.
-	db *sql.DB
 )
 
 // ===== Main Entry Point =====
@@ -107,8 +102,7 @@ func main() {
 	}
 
 	// Verify we have at least one valid connection
-	db = connManager.GetActiveDB()
-	if db == nil {
+	if connManager.GetActiveDB() == nil {
 		connManager.Close() // Clean up before exit
 		log.Fatalf("config error: no valid MySQL connections available")
 	}
