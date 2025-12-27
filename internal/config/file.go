@@ -163,10 +163,15 @@ func LoadConfigFile(path string) (*FileConfig, error) {
 		}
 	default:
 		// Try YAML first, then JSON
-		if err := yaml.Unmarshal(data, &cfg); err != nil {
-			if err := json.Unmarshal(data, &cfg); err != nil {
+		var yamlCfg FileConfig
+		if err := yaml.Unmarshal(data, &yamlCfg); err != nil {
+			var jsonCfg FileConfig
+			if err := json.Unmarshal(data, &jsonCfg); err != nil {
 				return nil, fmt.Errorf("failed to parse config file (tried YAML and JSON): %w", err)
 			}
+			cfg = jsonCfg
+		} else {
+			cfg = yamlCfg
 		}
 	}
 
