@@ -431,6 +431,10 @@ func TestMaskDSN(t *testing.T) {
 		{"root:secret123@tcp(127.0.0.1:3306)/mysql", "root:***@tcp(127.0.0.1:3306)/mysql"},
 		{"user@tcp(localhost:3306)/db", "user@tcp(localhost:3306)/db"}, // No password
 		{"localhost:3306/db", "localhost:3306/db"},                     // No user
+		// Passwords containing @ characters (must use LastIndex to find separator)
+		{"user:p@ssword@tcp(localhost:3306)/db", "user:***@tcp(localhost:3306)/db"},
+		{"user:p@ss@word@tcp(host:3306)/db", "user:***@tcp(host:3306)/db"},
+		{"root:@dm1n@123@tcp(127.0.0.1:3306)/mysql", "root:***@tcp(127.0.0.1:3306)/mysql"},
 	}
 
 	for _, tt := range tests {
@@ -477,6 +481,68 @@ func TestPrintConfig(t *testing.T) {
 	}
 	if !contains(output, "extended_tools: true") {
 		t.Error("expected extended_tools in output")
+	}
+}
+
+// TestConnectionOrderingDeterministic verifies that connections from a config file
+// are always returned in a deterministic order, with "default" connection first
+// if it exists, then alphabetically by name. This is critical because the
+// ConnectionManager uses the first connection as the active default.
+func TestConnectionOrderingDeterministic(t *testing.T) {
+	// Config with multiple connections including "default"
+	fc := &FileConfig{
+		Connections: map[string]FileConnectionConfig{
+			"zebra":      {DSN: "zebra:pass@tcp(localhost:3306)/zebra"},
+			"alpha":      {DSN: "alpha:pass@tcp(localhost:3306)/alpha"},
+			"default":    {DSN: "default:pass@tcp(localhost:3306)/default"},
+			"production": {DSN: "prod:pass@tcp(localhost:3306)/prod"},
+		},
+	}
+
+	// Run multiple times to verify determinism (map iteration is random)
+	for i := 0; i < 10; i++ {
+		cfg := fc.ToConfig()
+
+		if len(cfg.Connections) != 4 {
+			t.Fatalf("iteration %d: expected 4 connections, got %d", i, len(cfg.Connections))
+		}
+
+		// "default" should always be first
+		if cfg.Connections[0].Name != "default" {
+			t.Errorf("iteration %d: expected first connection to be 'default', got '%s'", i, cfg.Connections[0].Name)
+		}
+
+		// Remaining should be alphabetically sorted
+		expectedOrder := []string{"default", "alpha", "production", "zebra"}
+		for j, expected := range expectedOrder {
+			if cfg.Connections[j].Name != expected {
+				t.Errorf("iteration %d: expected connection[%d] to be '%s', got '%s'", i, j, expected, cfg.Connections[j].Name)
+			}
+		}
+	}
+}
+
+// TestConnectionOrderingWithoutDefault verifies alphabetical ordering when
+// there is no "default" connection defined.
+func TestConnectionOrderingWithoutDefault(t *testing.T) {
+	fc := &FileConfig{
+		Connections: map[string]FileConnectionConfig{
+			"zebra":      {DSN: "zebra:pass@tcp(localhost:3306)/zebra"},
+			"alpha":      {DSN: "alpha:pass@tcp(localhost:3306)/alpha"},
+			"production": {DSN: "prod:pass@tcp(localhost:3306)/prod"},
+		},
+	}
+
+	// Run multiple times to verify determinism
+	for i := 0; i < 10; i++ {
+		cfg := fc.ToConfig()
+
+		expectedOrder := []string{"alpha", "production", "zebra"}
+		for j, expected := range expectedOrder {
+			if cfg.Connections[j].Name != expected {
+				t.Errorf("iteration %d: expected connection[%d] to be '%s', got '%s'", i, j, expected, cfg.Connections[j].Name)
+			}
+		}
 	}
 }
 

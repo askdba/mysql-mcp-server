@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -257,8 +258,24 @@ func (fc *FileConfig) ToConfig() *Config {
 		cfg.RateLimitBurst = fc.HTTP.RateLimit.Burst
 	}
 
-	// Convert connections
-	for name, conn := range fc.Connections {
+	// Convert connections - sort keys for deterministic ordering
+	// "default" connection is placed first if it exists, then alphabetically
+	names := make([]string, 0, len(fc.Connections))
+	for name := range fc.Connections {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	// Move "default" to front if it exists
+	for i, name := range names {
+		if name == "default" && i > 0 {
+			names = append([]string{"default"}, append(names[:i], names[i+1:]...)...)
+			break
+		}
+	}
+
+	for _, name := range names {
+		conn := fc.Connections[name]
 		cfg.Connections = append(cfg.Connections, ConnectionConfig{
 			Name:        name,
 			DSN:         conn.DSN,
@@ -321,8 +338,10 @@ func PrintConfig(cfg *Config) string {
 func maskDSN(dsn string) string {
 	// Simple masking: replace password with ***
 	// DSN format: user:password@tcp(host:port)/db
+	// Use LastIndex for @ to handle passwords containing @ characters
+	// e.g., user:p@ssword@tcp(host:3306)/db should mask to user:***@tcp(host:3306)/db
 	if idx := strings.Index(dsn, ":"); idx > 0 {
-		if atIdx := strings.Index(dsn, "@"); atIdx > idx {
+		if atIdx := strings.LastIndex(dsn, "@"); atIdx > idx {
 			return dsn[:idx+1] + "***" + dsn[atIdx:]
 		}
 	}

@@ -38,50 +38,97 @@ var (
 	jsonLogging  bool
 )
 
-// ===== Main Entry Point =====
+// ===== Argument Parsing =====
 
-func main() {
-	// Handle command-line flags before loading configuration
-	if len(os.Args) > 1 {
-		arg := os.Args[1]
+// parsedArgs holds the result of command-line argument parsing.
+type parsedArgs struct {
+	action       string // "", "version", "help", "print-config", "validate-config"
+	configPath   string // path from --config or --config=
+	validatePath string // path for --validate-config
+	err          error  // parsing error (e.g., unknown flag)
+}
+
+// parseArgs parses command-line arguments and returns the result.
+// This is separated from main() for testability.
+func parseArgs(args []string) parsedArgs {
+	var result parsedArgs
+
+	for len(args) > 0 {
+		arg := args[0]
+		args = args[1:]
+
 		switch arg {
 		case "--version", "-v":
-			fmt.Printf("mysql-mcp-server %s\n", Version)
-			fmt.Printf("  Build time: %s\n", BuildTime)
-			fmt.Printf("  Git commit: %s\n", GitCommit)
-			os.Exit(0)
+			result.action = "version"
+			return result
 		case "--help", "-h", "help":
-			printHelp()
-			os.Exit(0)
+			result.action = "help"
+			return result
 		case "--config", "-c":
-			if len(os.Args) < 3 {
-				fmt.Fprintf(os.Stderr, "Error: --config requires a path argument\n")
-				os.Exit(1)
+			if len(args) < 1 {
+				result.err = fmt.Errorf("--config requires a path argument")
+				return result
 			}
-			config.ConfigFilePath = os.Args[2]
-			// Remove the --config and path from args so normal startup continues
-			os.Args = append(os.Args[:1], os.Args[3:]...)
+			result.configPath = args[0]
+			args = args[1:]
 		case "--print-config":
-			handlePrintConfig()
-			os.Exit(0)
+			result.action = "print-config"
 		case "--validate-config":
-			if len(os.Args) < 3 {
-				fmt.Fprintf(os.Stderr, "Error: --validate-config requires a path argument\n")
-				os.Exit(1)
+			if len(args) < 1 {
+				result.err = fmt.Errorf("--validate-config requires a path argument")
+				return result
 			}
-			handleValidateConfig(os.Args[2])
-			os.Exit(0)
+			result.action = "validate-config"
+			result.validatePath = args[0]
+			args = args[1:]
 		default:
 			// Check if it's --config=path format
 			if len(arg) > 9 && arg[:9] == "--config=" {
-				config.ConfigFilePath = arg[9:]
+				result.configPath = arg[9:]
 			} else {
-				// Unknown flag
-				fmt.Fprintf(os.Stderr, "Error: unknown flag '%s'\n\n", arg)
-				printHelp()
-				os.Exit(1)
+				result.err = fmt.Errorf("unknown flag '%s'", arg)
+				return result
 			}
 		}
+	}
+
+	return result
+}
+
+// ===== Main Entry Point =====
+
+func main() {
+	// Parse command-line arguments
+	parsed := parseArgs(os.Args[1:])
+
+	// Handle parsing errors
+	if parsed.err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n\n", parsed.err)
+		printHelp()
+		os.Exit(1)
+	}
+
+	// Set config path if specified
+	if parsed.configPath != "" {
+		config.ConfigFilePath = parsed.configPath
+	}
+
+	// Handle immediate actions
+	switch parsed.action {
+	case "version":
+		fmt.Printf("mysql-mcp-server %s\n", Version)
+		fmt.Printf("  Build time: %s\n", BuildTime)
+		fmt.Printf("  Git commit: %s\n", GitCommit)
+		os.Exit(0)
+	case "help":
+		printHelp()
+		os.Exit(0)
+	case "print-config":
+		handlePrintConfig()
+		os.Exit(0)
+	case "validate-config":
+		handleValidateConfig(parsed.validatePath)
+		os.Exit(0)
 	}
 
 	var err error
