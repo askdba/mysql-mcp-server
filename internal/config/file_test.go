@@ -260,6 +260,81 @@ func TestFileConfigToConfig(t *testing.T) {
 	}
 }
 
+// TestMinimalConfigDefaults verifies that a minimal config file (connections only)
+// properly receives default values for all duration fields to avoid zero-value issues
+// where context.WithTimeout() would create immediately-expired contexts.
+func TestMinimalConfigDefaults(t *testing.T) {
+	// Minimal config with only connections - no query, pool, http settings
+	fc := &FileConfig{
+		Connections: map[string]FileConnectionConfig{
+			"default": {
+				DSN:         "user:pass@tcp(localhost:3306)/db",
+				Description: "Minimal config",
+			},
+		},
+		// All other fields are zero values
+	}
+
+	cfg := fc.ToConfig()
+
+	// Verify all duration fields have non-zero defaults
+	// These are critical - zero values would cause immediate timeouts
+	if cfg.QueryTimeout == 0 {
+		t.Errorf("QueryTimeout should have default value, got 0")
+	}
+	if cfg.QueryTimeout != time.Duration(DefaultQueryTimeoutSecs)*time.Second {
+		t.Errorf("expected QueryTimeout %ds, got %v", DefaultQueryTimeoutSecs, cfg.QueryTimeout)
+	}
+
+	if cfg.ConnMaxLifetime == 0 {
+		t.Errorf("ConnMaxLifetime should have default value, got 0")
+	}
+	if cfg.ConnMaxLifetime != time.Duration(DefaultConnMaxLifetimeMins)*time.Minute {
+		t.Errorf("expected ConnMaxLifetime %dm, got %v", DefaultConnMaxLifetimeMins, cfg.ConnMaxLifetime)
+	}
+
+	if cfg.ConnMaxIdleTime == 0 {
+		t.Errorf("ConnMaxIdleTime should have default value, got 0")
+	}
+	if cfg.ConnMaxIdleTime != time.Duration(DefaultConnMaxIdleTimeMins)*time.Minute {
+		t.Errorf("expected ConnMaxIdleTime %dm, got %v", DefaultConnMaxIdleTimeMins, cfg.ConnMaxIdleTime)
+	}
+
+	if cfg.PingTimeout == 0 {
+		t.Errorf("PingTimeout should have default value, got 0")
+	}
+	if cfg.PingTimeout != time.Duration(DefaultPingTimeoutSecs)*time.Second {
+		t.Errorf("expected PingTimeout %ds, got %v", DefaultPingTimeoutSecs, cfg.PingTimeout)
+	}
+
+	if cfg.HTTPRequestTimeout == 0 {
+		t.Errorf("HTTPRequestTimeout should have default value, got 0")
+	}
+	if cfg.HTTPRequestTimeout != time.Duration(DefaultHTTPRequestTimeoutS)*time.Second {
+		t.Errorf("expected HTTPRequestTimeout %ds, got %v", DefaultHTTPRequestTimeoutS, cfg.HTTPRequestTimeout)
+	}
+
+	// Also verify integer defaults
+	if cfg.MaxRows != DefaultMaxRows {
+		t.Errorf("expected MaxRows %d, got %d", DefaultMaxRows, cfg.MaxRows)
+	}
+	if cfg.MaxOpenConns != DefaultMaxOpenConns {
+		t.Errorf("expected MaxOpenConns %d, got %d", DefaultMaxOpenConns, cfg.MaxOpenConns)
+	}
+	if cfg.MaxIdleConns != DefaultMaxIdleConns {
+		t.Errorf("expected MaxIdleConns %d, got %d", DefaultMaxIdleConns, cfg.MaxIdleConns)
+	}
+	if cfg.HTTPPort != DefaultHTTPPort {
+		t.Errorf("expected HTTPPort %d, got %d", DefaultHTTPPort, cfg.HTTPPort)
+	}
+	if cfg.RateLimitRPS != float64(DefaultRateLimitRPS) {
+		t.Errorf("expected RateLimitRPS %d, got %f", DefaultRateLimitRPS, cfg.RateLimitRPS)
+	}
+	if cfg.RateLimitBurst != DefaultRateLimitBurst {
+		t.Errorf("expected RateLimitBurst %d, got %d", DefaultRateLimitBurst, cfg.RateLimitBurst)
+	}
+}
+
 func TestValidateConfigFile(t *testing.T) {
 	// Valid config
 	validContent := `
@@ -417,4 +492,3 @@ func containsHelper(s, substr string) bool {
 	}
 	return false
 }
-

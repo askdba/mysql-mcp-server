@@ -197,13 +197,18 @@ func ValidateConfigFile(path string) error {
 // Values from FileConfig are used as base, can be overridden by env vars.
 func (fc *FileConfig) ToConfig() *Config {
 	cfg := &Config{
-		// Set defaults first
-		MaxRows:        DefaultMaxRows,
-		MaxOpenConns:   DefaultMaxOpenConns,
-		MaxIdleConns:   DefaultMaxIdleConns,
-		HTTPPort:       DefaultHTTPPort,
-		RateLimitRPS:   float64(DefaultRateLimitRPS),
-		RateLimitBurst: DefaultRateLimitBurst,
+		// Set defaults first (must include all fields to avoid zero-value issues)
+		MaxRows:            DefaultMaxRows,
+		QueryTimeout:       time.Duration(DefaultQueryTimeoutSecs) * time.Second,
+		MaxOpenConns:       DefaultMaxOpenConns,
+		MaxIdleConns:       DefaultMaxIdleConns,
+		ConnMaxLifetime:    time.Duration(DefaultConnMaxLifetimeMins) * time.Minute,
+		ConnMaxIdleTime:    time.Duration(DefaultConnMaxIdleTimeMins) * time.Minute,
+		PingTimeout:        time.Duration(DefaultPingTimeoutSecs) * time.Second,
+		HTTPPort:           DefaultHTTPPort,
+		HTTPRequestTimeout: time.Duration(DefaultHTTPRequestTimeoutS) * time.Second,
+		RateLimitRPS:       float64(DefaultRateLimitRPS),
+		RateLimitBurst:     DefaultRateLimitBurst,
 	}
 
 	// Apply file config values (if set)
