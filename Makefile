@@ -110,6 +110,33 @@ test-integration-all:
 	@$(MAKE) test-integration-90
 	@echo "$(GREEN)✔ All integration tests complete$(RESET)"
 
+# Sakila database integration tests
+test-sakila: test-mysql-up
+	@echo "$(BLUE)🎬 Running Sakila database integration tests...$(RESET)"
+	@MYSQL_TEST_DSN="root:testpass@tcp(localhost:3306)/sakila?parseTime=true&multiStatements=true" \
+		go test -tags=integration -v -run "Sakila" ./tests/integration/...; \
+		TEST_EXIT=$$?; \
+		docker compose -f docker-compose.test.yml down; \
+		exit $$TEST_EXIT
+
+test-sakila-84:
+	@echo "$(BLUE)🎬 Running Sakila tests against MySQL 8.4...$(RESET)"
+	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 90 mysql84
+	@MYSQL_TEST_DSN="root:testpass@tcp(localhost:3307)/sakila?parseTime=true&multiStatements=true" \
+		go test -tags=integration -v -run "Sakila" ./tests/integration/...; \
+		TEST_EXIT=$$?; \
+		docker compose -f docker-compose.test.yml stop mysql84; \
+		exit $$TEST_EXIT
+
+test-sakila-90:
+	@echo "$(BLUE)🎬 Running Sakila tests against MySQL 9.0...$(RESET)"
+	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 90 mysql90
+	@MYSQL_TEST_DSN="root:testpass@tcp(localhost:3308)/sakila?parseTime=true&multiStatements=true" \
+		go test -tags=integration -v -run "Sakila" ./tests/integration/...; \
+		TEST_EXIT=$$?; \
+		docker compose -f docker-compose.test.yml stop mysql90; \
+		exit $$TEST_EXIT
+
 # Docker Compose helpers for test databases
 test-mysql-up:
 	@echo "$(CYAN)🐳 Starting MySQL test containers...$(RESET)"
@@ -275,6 +302,9 @@ help:
 	@echo "  make test-integration-84  - Test against MySQL 8.4"
 	@echo "  make test-integration-90  - Test against MySQL 9.0"
 	@echo "  make test-integration-all - Test against all MySQL versions"
+	@echo "  make test-sakila       - Run Sakila database tests (MySQL 8.0)"
+	@echo "  make test-sakila-84    - Run Sakila tests against MySQL 8.4"
+	@echo "  make test-sakila-90    - Run Sakila tests against MySQL 9.0"
 	@echo "  make coverage          - Run tests with coverage report"
 	@echo "  make coverage-html     - Generate HTML coverage report"
 	@echo ""

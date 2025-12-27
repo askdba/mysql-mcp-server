@@ -7,6 +7,10 @@
 #   Run tests against MySQL 8.0: MYSQL_TEST_DSN="root:testpass@tcp(localhost:3306)/testdb?parseTime=true" go test -tags=integration ./...
 #   Run tests against MySQL 8.4: MYSQL_TEST_DSN="root:testpass@tcp(localhost:3307)/testdb?parseTime=true" go test -tags=integration ./...
 #   Run tests against MySQL 9.0: MYSQL_TEST_DSN="root:testpass@tcp(localhost:3308)/testdb?parseTime=true" go test -tags=integration ./...
+#
+# Sakila Database:
+#   The Sakila sample database is also loaded for realistic integration testing.
+#   Access via: MYSQL_SAKILA_DSN="root:testpass@tcp(localhost:3306)/sakila?parseTime=true"
 
 version: '3.8'
 
@@ -25,6 +29,8 @@ services:
     volumes:
       - mysql80_data:/var/lib/mysql
       - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./tests/sql/sakila-schema.sql:/docker-entrypoint-initdb.d/02-sakila-schema.sql:ro
+      - ./tests/sql/sakila-data.sql:/docker-entrypoint-initdb.d/03-sakila-data.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass"]
       interval: 10s
@@ -50,6 +56,8 @@ services:
     volumes:
       - mysql84_data:/var/lib/mysql
       - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./tests/sql/sakila-schema.sql:/docker-entrypoint-initdb.d/02-sakila-schema.sql:ro
+      - ./tests/sql/sakila-data.sql:/docker-entrypoint-initdb.d/03-sakila-data.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass"]
       interval: 10s
@@ -74,6 +82,8 @@ services:
     volumes:
       - mysql90_data:/var/lib/mysql
       - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./tests/sql/sakila-schema.sql:/docker-entrypoint-initdb.d/02-sakila-schema.sql:ro
+      - ./tests/sql/sakila-data.sql:/docker-entrypoint-initdb.d/03-sakila-data.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass"]
       interval: 10s
