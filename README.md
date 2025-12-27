@@ -128,6 +128,71 @@ export MYSQL_CONNECTIONS='[
 ]'
 ```
 
+### Configuration File
+
+As an alternative to environment variables, you can use a YAML or JSON configuration file.
+
+**Config file search order:**
+1. `--config /path/to/config.yaml` (command line flag)
+2. `MYSQL_MCP_CONFIG` environment variable
+3. `./mysql-mcp-server.yaml` (current directory)
+4. `~/.config/mysql-mcp-server/config.yaml` (user config)
+5. `/etc/mysql-mcp-server/config.yaml` (system config)
+
+**Example config file (`mysql-mcp-server.yaml`):**
+
+```yaml
+# Database connections
+connections:
+  default:
+    dsn: "user:pass@tcp(localhost:3306)/mydb?parseTime=true"
+    description: "Local development database"
+  production:
+    dsn: "readonly:pass@tcp(prod:3306)/prod?parseTime=true"
+    description: "Production (read-only)"
+
+# Query settings
+query:
+  max_rows: 200
+  timeout_seconds: 30
+
+# Connection pool
+pool:
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_lifetime_minutes: 30
+
+# Features
+features:
+  extended_tools: true
+  vector_tools: false
+
+# HTTP/REST API (optional)
+http:
+  enabled: false
+  port: 9306
+```
+
+**Command line options:**
+
+```bash
+# Use specific config file
+mysql-mcp-server --config /path/to/config.yaml
+
+# Validate config file
+mysql-mcp-server --validate-config /path/to/config.yaml
+
+# Print current configuration as YAML
+mysql-mcp-server --print-config
+```
+
+**Priority:** Environment variables override config file values, allowing:
+- Base configuration in file
+- Environment-specific overrides via env vars
+- Docker/K8s secret injection via env vars
+
+See [`examples/config.yaml`](examples/config.yaml) and [`examples/config.json`](examples/config.json) for complete examples.
+
 Example:
 
 ```bash

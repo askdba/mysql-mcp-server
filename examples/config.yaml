@@ -1,0 +1,56 @@
+# mysql-mcp-server configuration file
+# Copy this file to one of:
+#   ./mysql-mcp-server.yaml (current directory)
+#   ~/.config/mysql-mcp-server/config.yaml (user config)
+#   /etc/mysql-mcp-server/config.yaml (system config)
+#
+# Or specify with: mysql-mcp-server --config /path/to/config.yaml
+#
+# Environment variables override config file values.
+
+# Database connections
+# Define one or more MySQL connections
+connections:
+  default:
+    dsn: "root:password@tcp(localhost:3306)/mydb?parseTime=true"
+    description: "Local development database"
+  
+  # Additional connections (optional)
+  # production:
+  #   dsn: "readonly:pass@tcp(prod-server:3306)/prod?parseTime=true"
+  #   description: "Production database (read-only)"
+  #   read_only: true
+
+# Query settings
+query:
+  max_rows: 200              # Maximum rows returned per query
+  timeout_seconds: 30        # Query timeout
+
+# Connection pool settings
+pool:
+  max_open_conns: 10         # Maximum open connections
+  max_idle_conns: 5          # Maximum idle connections
+  conn_max_lifetime_minutes: 30   # Connection max lifetime
+  conn_max_idle_time_minutes: 5   # Max idle time before closing
+  ping_timeout_seconds: 5    # Database ping timeout
+
+# Feature flags
+features:
+  extended_tools: false      # Enable extended tools (list_indexes, etc.)
+  vector_tools: false        # Enable vector search tools (MySQL 9.0+)
+
+# Logging settings
+logging:
+  json_format: false         # Enable JSON structured logging
+  audit_log_path: ""         # Path to audit log file (empty = disabled)
+
+# HTTP/REST API settings (optional)
+http:
+  enabled: false             # Enable REST API mode
+  port: 9306                 # HTTP port
+  request_timeout_seconds: 60
+  rate_limit:
+    enabled: false           # Enable rate limiting
+    rps: 100                 # Requests per second
+    burst: 200               # Burst size
+

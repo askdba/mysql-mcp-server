@@ -1,0 +1,38 @@
+{
+  "connections": {
+    "default": {
+      "dsn": "root:password@tcp(localhost:3306)/mydb?parseTime=true",
+      "description": "Local development database"
+    }
+  },
+  "query": {
+    "max_rows": 200,
+    "timeout_seconds": 30
+  },
+  "pool": {
+    "max_open_conns": 10,
+    "max_idle_conns": 5,
+    "conn_max_lifetime_minutes": 30,
+    "conn_max_idle_time_minutes": 5,
+    "ping_timeout_seconds": 5
+  },
+  "features": {
+    "extended_tools": false,
+    "vector_tools": false
+  },
+  "logging": {
+    "json_format": false,
+    "audit_log_path": ""
+  },
+  "http": {
+    "enabled": false,
+    "port": 9306,
+    "request_timeout_seconds": 60,
+    "rate_limit": {
+      "enabled": false,
+      "rps": 100,
+      "burst": 200
+    }
+  }
+}
+

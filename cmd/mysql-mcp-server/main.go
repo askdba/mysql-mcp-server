@@ -53,11 +53,34 @@ func main() {
 		case "--help", "-h", "help":
 			printHelp()
 			os.Exit(0)
+		case "--config", "-c":
+			if len(os.Args) < 3 {
+				fmt.Fprintf(os.Stderr, "Error: --config requires a path argument\n")
+				os.Exit(1)
+			}
+			config.ConfigFilePath = os.Args[2]
+			// Remove the --config and path from args so normal startup continues
+			os.Args = append(os.Args[:1], os.Args[3:]...)
+		case "--print-config":
+			handlePrintConfig()
+			os.Exit(0)
+		case "--validate-config":
+			if len(os.Args) < 3 {
+				fmt.Fprintf(os.Stderr, "Error: --validate-config requires a path argument\n")
+				os.Exit(1)
+			}
+			handleValidateConfig(os.Args[2])
+			os.Exit(0)
 		default:
-			// Unknown flag
-			fmt.Fprintf(os.Stderr, "Error: unknown flag '%s'\n\n", arg)
-			printHelp()
-			os.Exit(1)
+			// Check if it's --config=path format
+			if len(arg) > 9 && arg[:9] == "--config=" {
+				config.ConfigFilePath = arg[9:]
+			} else {
+				// Unknown flag
+				fmt.Fprintf(os.Stderr, "Error: unknown flag '%s'\n\n", arg)
+				printHelp()
+				os.Exit(1)
+			}
 		}
 	}
 
@@ -291,6 +314,25 @@ func registerExtendedTools(server *mcp.Server) {
 	}, toolListVariables)
 }
 
+// ===== Config File Commands =====
+
+func handlePrintConfig() {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Print(config.PrintConfig(cfg))
+}
+
+func handleValidateConfig(path string) {
+	if err := config.ValidateConfigFile(path); err != nil {
+		fmt.Fprintf(os.Stderr, "Config validation failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Config file %s is valid\n", path)
+}
+
 // ===== Help and Usage =====
 
 func printHelp() {
@@ -300,17 +342,27 @@ USAGE:
     mysql-mcp-server [OPTIONS]
 
 OPTIONS:
-    -h, --help      Show this help message
-    -v, --version   Show version information
+    -h, --help                  Show this help message
+    -v, --version               Show version information
+    -c, --config PATH           Use config file at PATH
+    --print-config              Print current configuration as YAML
+    --validate-config PATH      Validate config file at PATH
 
 DESCRIPTION:
     A fast, read-only MySQL Server for the Model Context Protocol (MCP).
     Exposes safe MySQL introspection tools to Claude Desktop via MCP.
 
 CONFIGURATION:
-    All configuration is done via environment variables.
+    Configuration can be provided via config file or environment variables.
+    Environment variables take precedence over config file values.
 
-    Required:
+    Config file search order:
+        1. --config flag or MYSQL_MCP_CONFIG env var
+        2. ./mysql-mcp-server.yaml (current directory)
+        3. ~/.config/mysql-mcp-server/config.yaml (user config)
+        4. /etc/mysql-mcp-server/config.yaml (system config)
+
+    Required (via env var or config file):
         MYSQL_DSN                    MySQL DSN (e.g., user:pass@tcp(localhost:3306)/db)
 
     Optional:
@@ -347,6 +399,15 @@ EXAMPLES:
     # Basic usage with single connection
     export MYSQL_DSN="root:password@tcp(127.0.0.1:3306)/mysql?parseTime=true"
     mysql-mcp-server
+
+    # With config file
+    mysql-mcp-server --config /path/to/config.yaml
+
+    # Validate a config file
+    mysql-mcp-server --validate-config /path/to/config.yaml
+
+    # Print current configuration
+    mysql-mcp-server --print-config
 
     # With extended tools enabled
     export MYSQL_DSN="user:pass@tcp(localhost:3306)/mydb"

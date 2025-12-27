@@ -68,39 +68,109 @@ type Config struct {
 	AuditLogPath string
 }
 
-// Load reads configuration from environment variables.
+// Load reads configuration from config file (if present) and environment variables.
+// Priority: Environment variables > Config file > Defaults
 func Load() (*Config, error) {
-	cfg := &Config{
-		MaxRows:            getEnvInt("MYSQL_MAX_ROWS", DefaultMaxRows),
-		QueryTimeout:       time.Duration(getEnvInt("MYSQL_QUERY_TIMEOUT_SECONDS", DefaultQueryTimeoutSecs)) * time.Second,
-		MaxOpenConns:       getEnvInt("MYSQL_MAX_OPEN_CONNS", DefaultMaxOpenConns),
-		MaxIdleConns:       getEnvInt("MYSQL_MAX_IDLE_CONNS", DefaultMaxIdleConns),
-		ConnMaxLifetime:    time.Duration(getEnvInt("MYSQL_CONN_MAX_LIFETIME_MINUTES", DefaultConnMaxLifetimeMins)) * time.Minute,
-		ConnMaxIdleTime:    time.Duration(getEnvInt("MYSQL_CONN_MAX_IDLE_TIME_MINUTES", DefaultConnMaxIdleTimeMins)) * time.Minute,
-		PingTimeout:        time.Duration(getEnvInt("MYSQL_PING_TIMEOUT_SECONDS", DefaultPingTimeoutSecs)) * time.Second,
-		ExtendedMode:       getEnvBool("MYSQL_MCP_EXTENDED"),
-		VectorMode:         getEnvBool("MYSQL_MCP_VECTOR"),
-		HTTPMode:           getEnvBool("MYSQL_MCP_HTTP"),
-		JSONLogging:        getEnvBool("MYSQL_MCP_JSON_LOGS"),
-		HTTPPort:           getEnvInt("MYSQL_HTTP_PORT", DefaultHTTPPort),
-		HTTPRequestTimeout: time.Duration(getEnvInt("MYSQL_HTTP_REQUEST_TIMEOUT_SECONDS", DefaultHTTPRequestTimeoutS)) * time.Second,
-		RateLimitEnabled:   getEnvBool("MYSQL_HTTP_RATE_LIMIT"),
-		RateLimitRPS:       float64(getEnvInt("MYSQL_HTTP_RATE_LIMIT_RPS", DefaultRateLimitRPS)),
-		RateLimitBurst:     getEnvInt("MYSQL_HTTP_RATE_LIMIT_BURST", DefaultRateLimitBurst),
-		AuditLogPath:       strings.TrimSpace(os.Getenv("MYSQL_MCP_AUDIT_LOG")),
+	var cfg *Config
+
+	// Try to load config file first
+	if configPath := FindConfigFile(); configPath != "" {
+		fileCfg, err := LoadConfigFile(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load config file %s: %w", configPath, err)
+		}
+		cfg = fileCfg.ToConfig()
+	} else {
+		// No config file, start with defaults
+		cfg = &Config{
+			MaxRows:            DefaultMaxRows,
+			QueryTimeout:       time.Duration(DefaultQueryTimeoutSecs) * time.Second,
+			MaxOpenConns:       DefaultMaxOpenConns,
+			MaxIdleConns:       DefaultMaxIdleConns,
+			ConnMaxLifetime:    time.Duration(DefaultConnMaxLifetimeMins) * time.Minute,
+			ConnMaxIdleTime:    time.Duration(DefaultConnMaxIdleTimeMins) * time.Minute,
+			PingTimeout:        time.Duration(DefaultPingTimeoutSecs) * time.Second,
+			HTTPPort:           DefaultHTTPPort,
+			HTTPRequestTimeout: time.Duration(DefaultHTTPRequestTimeoutS) * time.Second,
+			RateLimitRPS:       float64(DefaultRateLimitRPS),
+			RateLimitBurst:     DefaultRateLimitBurst,
+		}
 	}
 
-	// Load connections
-	conns, err := loadConnections()
+	// Apply environment variable overrides (env vars take precedence)
+	applyEnvOverrides(cfg)
+
+	// Load connections from environment (if any defined, they override file config)
+	envConns, err := loadConnections()
 	if err != nil {
 		return nil, err
 	}
-	if len(conns) == 0 {
-		return nil, fmt.Errorf("no MySQL connections configured. Set MYSQL_DSN or MYSQL_CONNECTIONS")
+	if len(envConns) > 0 {
+		cfg.Connections = envConns
 	}
-	cfg.Connections = conns
+
+	// Ensure we have at least one connection
+	if len(cfg.Connections) == 0 {
+		return nil, fmt.Errorf("no MySQL connections configured. Set MYSQL_DSN, MYSQL_CONNECTIONS, or use a config file")
+	}
 
 	return cfg, nil
+}
+
+// applyEnvOverrides applies environment variable overrides to the config.
+// Only overrides values if the environment variable is explicitly set.
+func applyEnvOverrides(cfg *Config) {
+	if v := os.Getenv("MYSQL_MAX_ROWS"); v != "" {
+		cfg.MaxRows = getEnvInt("MYSQL_MAX_ROWS", cfg.MaxRows)
+	}
+	if v := os.Getenv("MYSQL_QUERY_TIMEOUT_SECONDS"); v != "" {
+		cfg.QueryTimeout = time.Duration(getEnvInt("MYSQL_QUERY_TIMEOUT_SECONDS", int(cfg.QueryTimeout.Seconds()))) * time.Second
+	}
+	if v := os.Getenv("MYSQL_MAX_OPEN_CONNS"); v != "" {
+		cfg.MaxOpenConns = getEnvInt("MYSQL_MAX_OPEN_CONNS", cfg.MaxOpenConns)
+	}
+	if v := os.Getenv("MYSQL_MAX_IDLE_CONNS"); v != "" {
+		cfg.MaxIdleConns = getEnvInt("MYSQL_MAX_IDLE_CONNS", cfg.MaxIdleConns)
+	}
+	if v := os.Getenv("MYSQL_CONN_MAX_LIFETIME_MINUTES"); v != "" {
+		cfg.ConnMaxLifetime = time.Duration(getEnvInt("MYSQL_CONN_MAX_LIFETIME_MINUTES", int(cfg.ConnMaxLifetime.Minutes()))) * time.Minute
+	}
+	if v := os.Getenv("MYSQL_CONN_MAX_IDLE_TIME_MINUTES"); v != "" {
+		cfg.ConnMaxIdleTime = time.Duration(getEnvInt("MYSQL_CONN_MAX_IDLE_TIME_MINUTES", int(cfg.ConnMaxIdleTime.Minutes()))) * time.Minute
+	}
+	if v := os.Getenv("MYSQL_PING_TIMEOUT_SECONDS"); v != "" {
+		cfg.PingTimeout = time.Duration(getEnvInt("MYSQL_PING_TIMEOUT_SECONDS", int(cfg.PingTimeout.Seconds()))) * time.Second
+	}
+	if v := os.Getenv("MYSQL_MCP_EXTENDED"); v != "" {
+		cfg.ExtendedMode = getEnvBool("MYSQL_MCP_EXTENDED")
+	}
+	if v := os.Getenv("MYSQL_MCP_VECTOR"); v != "" {
+		cfg.VectorMode = getEnvBool("MYSQL_MCP_VECTOR")
+	}
+	if v := os.Getenv("MYSQL_MCP_HTTP"); v != "" {
+		cfg.HTTPMode = getEnvBool("MYSQL_MCP_HTTP")
+	}
+	if v := os.Getenv("MYSQL_MCP_JSON_LOGS"); v != "" {
+		cfg.JSONLogging = getEnvBool("MYSQL_MCP_JSON_LOGS")
+	}
+	if v := os.Getenv("MYSQL_HTTP_PORT"); v != "" {
+		cfg.HTTPPort = getEnvInt("MYSQL_HTTP_PORT", cfg.HTTPPort)
+	}
+	if v := os.Getenv("MYSQL_HTTP_REQUEST_TIMEOUT_SECONDS"); v != "" {
+		cfg.HTTPRequestTimeout = time.Duration(getEnvInt("MYSQL_HTTP_REQUEST_TIMEOUT_SECONDS", int(cfg.HTTPRequestTimeout.Seconds()))) * time.Second
+	}
+	if v := os.Getenv("MYSQL_HTTP_RATE_LIMIT"); v != "" {
+		cfg.RateLimitEnabled = getEnvBool("MYSQL_HTTP_RATE_LIMIT")
+	}
+	if v := os.Getenv("MYSQL_HTTP_RATE_LIMIT_RPS"); v != "" {
+		cfg.RateLimitRPS = float64(getEnvInt("MYSQL_HTTP_RATE_LIMIT_RPS", int(cfg.RateLimitRPS)))
+	}
+	if v := os.Getenv("MYSQL_HTTP_RATE_LIMIT_BURST"); v != "" {
+		cfg.RateLimitBurst = getEnvInt("MYSQL_HTTP_RATE_LIMIT_BURST", cfg.RateLimitBurst)
+	}
+	if v := os.Getenv("MYSQL_MCP_AUDIT_LOG"); v != "" {
+		cfg.AuditLogPath = strings.TrimSpace(v)
+	}
 }
 
 // loadConnections loads DSN configurations from environment variables.
