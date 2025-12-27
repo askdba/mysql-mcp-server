@@ -718,6 +718,35 @@ make test-integration-90
 make test-integration-all
 ```
 
+### Sakila Database Tests
+
+The [Sakila sample database](https://dev.mysql.com/doc/sakila/en/) provides comprehensive integration testing with a realistic DVD rental store schema featuring:
+- 16 tables with foreign key relationships
+- Views, stored procedures, and triggers
+- FULLTEXT indexes and ENUM/SET types
+- Sample data for complex query testing
+
+**Run Sakila tests:**
+
+```bash
+# Against MySQL 8.0
+make test-sakila
+
+# Against MySQL 8.4
+make test-sakila-84
+
+# Against MySQL 9.0
+make test-sakila-90
+```
+
+The Sakila tests cover:
+- Multi-table JOINs (film→actors, customer→address→city→country)
+- Aggregation queries (COUNT, SUM, AVG, GROUP BY)
+- Subqueries (IN, NOT IN, correlated)
+- View queries
+- FULLTEXT search
+- Index and foreign key verification
+
 ### Security Tests
 
 Run SQL injection and validation security tests:
@@ -767,11 +796,20 @@ go test -v -tags=integration ./tests/integration/...
 
 ### Test Database Schema
 
-Integration tests use `tests/sql/init.sql` which creates:
+Integration tests use two databases:
+
+**testdb** (`tests/sql/init.sql`):
 - Tables: `users`, `orders`, `products`, `special_data`
 - Views: `user_orders`
 - Stored procedures: `get_user_by_id`
-- Sample test data
+- Sample test data for basic integration tests
+
+**sakila** (`tests/sql/sakila-schema.sql`, `tests/sql/sakila-data.sql`):
+- 16 tables: `actor`, `film`, `customer`, `rental`, `payment`, `inventory`, etc.
+- 6 views: `film_list`, `customer_list`, `staff_list`, `sales_by_store`, etc.
+- Stored functions and procedures
+- FULLTEXT indexes on `film_text`
+- Realistic sample data (50 actors, 30 films, 10 customers, 20 rentals)
 
 ## Docker
 
