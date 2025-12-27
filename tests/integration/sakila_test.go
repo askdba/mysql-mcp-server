@@ -8,8 +8,8 @@ package integration
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -45,71 +45,29 @@ func getSakilaDSN(t *testing.T) string {
 	return dsn
 }
 
-// setupSakilaSchema loads the Sakila schema and data into the database
-func setupSakilaSchema(db *sql.DB) error {
+// verifySakilaLoaded checks if the Sakila database was loaded by docker-compose.
+// The Sakila schema SQL contains DELIMITER directives for stored procedures and
+// triggers, which are MySQL client-side commands that cannot be executed via
+// db.ExecContext(). Therefore, Sakila must be pre-loaded via docker-compose
+// (which uses the mysql client to process the SQL files on container startup).
+func verifySakilaLoaded(db *sql.DB) error {
 	ctx := context.Background()
 
-	// Get the path to SQL files relative to this test file
-	// The SQL files are in tests/sql/
-	sqlDir := filepath.Join("..", "..", "tests", "sql")
-
-	// Check if sakila already exists
+	// Check if sakila database exists
 	var dbName string
 	err := db.QueryRowContext(ctx, "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = 'sakila'").Scan(&dbName)
-	if err == nil && dbName == "sakila" {
-		// Sakila already exists, check if it has data
-		var actorCount int
-		err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sakila.actor").Scan(&actorCount)
-		if err == nil && actorCount > 0 {
-			// Database already set up
-			return nil
-		}
+	if err != nil {
+		return fmt.Errorf("sakila database not found - run tests via 'make test-sakila' which uses docker-compose to load the schema")
 	}
 
-	// Load schema file
-	schemaPath := filepath.Join(sqlDir, "sakila-schema.sql")
-	schemaSQL, err := os.ReadFile(schemaPath)
+	// Verify it has data (actor table is a good indicator)
+	var actorCount int
+	err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sakila.actor").Scan(&actorCount)
 	if err != nil {
-		return err
+		return fmt.Errorf("sakila.actor table not found: %w", err)
 	}
-
-	// Execute schema (multi-statement)
-	// Note: For multi-statement execution, we need multiStatements=true in DSN
-	// Since we can't guarantee that, we'll execute statements one at a time
-	// For now, we'll use a simpler approach - execute the whole file if possible
-
-	// Try to execute using mysql command or statement-by-statement
-	// For simplicity in tests, we'll execute the statements we need directly
-
-	// Create sakila database
-	_, err = db.ExecContext(ctx, "CREATE DATABASE IF NOT EXISTS sakila")
-	if err != nil {
-		return err
-	}
-
-	_, err = db.ExecContext(ctx, "USE sakila")
-	if err != nil {
-		return err
-	}
-
-	// Execute schema SQL (this requires multiStatements=true in DSN)
-	_, err = db.ExecContext(ctx, string(schemaSQL))
-	if err != nil {
-		// If multi-statement fails, the DSN might not support it
-		// In that case, we'll skip and let the docker-compose handle it
-		return err
-	}
-
-	// Load data file
-	dataPath := filepath.Join(sqlDir, "sakila-data.sql")
-	dataSQL, err := os.ReadFile(dataPath)
-	if err != nil {
-		return err
-	}
-
-	_, err = db.ExecContext(ctx, string(dataSQL))
-	if err != nil {
-		return err
+	if actorCount == 0 {
+		return fmt.Errorf("sakila database is empty - ensure docker-compose loaded the data files")
 	}
 
 	return nil
@@ -151,14 +109,12 @@ func setupSakilaDB(t *testing.T) *sql.DB {
 		}
 	}
 
-	// Setup Sakila schema once per test run
+	// Verify Sakila schema was loaded (must be done via docker-compose)
 	sakilaSetupOnce.Do(func() {
-		sakilaSetupErr = setupSakilaSchema(db)
+		sakilaSetupErr = verifySakilaLoaded(db)
 	})
 	if sakilaSetupErr != nil {
-		// Schema setup failed - this is expected if multiStatements isn't enabled
-		// Tests will still work if sakila was loaded via docker-compose
-		t.Logf("Sakila setup from Go failed (expected if using docker-compose): %v", sakilaSetupErr)
+		t.Skipf("Sakila database not available: %v", sakilaSetupErr)
 	}
 
 	// Switch to sakila database
