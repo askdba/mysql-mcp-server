@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -307,6 +308,27 @@ func TestHTTPRunQueryInvalidJSON(t *testing.T) {
 	resp := w.Result()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected status 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestHTTPRunQueryBodyTooLarge(t *testing.T) {
+	_, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	// Build a JSON body slightly larger than maxJSONRequestBodyBytes.
+	// The handler should reject it before attempting to execute any query.
+	oversizeSQL := strings.Repeat("A", int(maxJSONRequestBodyBytes)+128)
+	body := `{"sql":"` + oversizeSQL + `"}`
+
+	req := httptest.NewRequest(http.MethodPost, "/api/query", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	httpRunQuery(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected status 413, got %d", resp.StatusCode)
 	}
 }
 

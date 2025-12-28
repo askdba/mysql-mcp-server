@@ -7,6 +7,99 @@ import (
 	"strings"
 )
 
+// stripSQLLiterals replaces the contents of SQL string/identifier literals with spaces.
+// This allows simple pattern checks (like semicolons/comments) without false-positives
+// on characters that appear inside quoted strings.
+//
+// Supported literals:
+// - single quotes: '...'
+// - double quotes: "..." (may be string or identifier depending on SQL mode)
+// - backticks: `...` (identifier quoting)
+func stripSQLLiterals(s string) string {
+	if s == "" {
+		return s
+	}
+
+	b := []byte(s)
+	const (
+		modeNone = iota
+		modeSingle
+		modeDouble
+		modeBacktick
+	)
+	mode := modeNone
+
+	for i := 0; i < len(b); i++ {
+		switch mode {
+		case modeNone:
+			switch b[i] {
+			case '\'':
+				mode = modeSingle
+			case '"':
+				mode = modeDouble
+			case '`':
+				mode = modeBacktick
+			}
+		case modeSingle:
+			// Preserve the quote itself, blank everything else.
+			if b[i] != '\'' {
+				b[i] = ' '
+			}
+			// Backslash escape: \' or \\ etc.
+			if b[i] == ' ' && i > 0 && b[i-1] == '\\' {
+				// already blanked; continue
+			}
+			// Handle end / doubled quote escape ('')
+			if i < len(b) && s[i] == '\'' {
+				// If doubled quote, keep string mode and skip the next quote.
+				if i+1 < len(b) && s[i+1] == '\'' {
+					i++
+					b[i] = ' '
+					continue
+				}
+				mode = modeNone
+			}
+		case modeDouble:
+			if b[i] != '"' {
+				b[i] = ' '
+			}
+			// Handle end / doubled quote escape ("")
+			if i < len(b) && s[i] == '"' {
+				if i+1 < len(b) && s[i+1] == '"' {
+					i++
+					b[i] = ' '
+					continue
+				}
+				mode = modeNone
+			}
+		case modeBacktick:
+			if b[i] != '`' {
+				b[i] = ' '
+			}
+			// Handle end / escaped backtick via double backtick (``)
+			if i < len(b) && s[i] == '`' {
+				if i+1 < len(b) && s[i+1] == '`' {
+					i++
+					b[i] = ' '
+					continue
+				}
+				mode = modeNone
+			}
+		}
+
+		// Handle backslash escaping inside single/double quoted strings
+		if mode == modeSingle || mode == modeDouble {
+			// If we see a backslash, skip the next char (it's escaped)
+			if i < len(b) && s[i] == '\\' && i+1 < len(b) {
+				i++
+				b[i] = ' '
+			}
+		}
+	}
+
+	return string(b)
+}
+
 // SQLValidationError contains details about why a query was rejected.
 type SQLValidationError struct {
 	Reason  string
@@ -98,9 +191,11 @@ func ValidateSQL(sqlText string) error {
 		return &SQLValidationError{Reason: "empty query"}
 	}
 
+	scan := stripSQLLiterals(s)
+
 	// Check for multi-statement attacks (semicolon-separated queries)
 	// Allow semicolon only at the very end (single statement)
-	cleaned := strings.TrimRight(s, "; \t\n\r")
+	cleaned := strings.TrimRight(scan, "; \t\n\r")
 	if strings.Contains(cleaned, ";") {
 		return &SQLValidationError{
 			Reason:  "multi-statement queries are not allowed",
@@ -110,7 +205,13 @@ func ValidateSQL(sqlText string) error {
 
 	// Check against blocked patterns
 	for _, pattern := range blockedPatterns {
-		if pattern.MatchString(s) {
+		target := s
+		// For patterns that aren't anchored at the start, scan the version with
+		// string/identifier literals removed to avoid false positives.
+		if !strings.Contains(pattern.String(), "^") {
+			target = scan
+		}
+		if pattern.MatchString(target) {
 			return &SQLValidationError{
 				Reason:  "query contains blocked pattern",
 				Pattern: pattern.String(),
@@ -262,15 +363,16 @@ func ValidateWhereClause(where string) error {
 		return nil
 	}
 
+	scan := stripSQLLiterals(where)
 	for _, dp := range dangerousWherePatterns {
-		if dp.pattern.MatchString(where) {
+		if dp.pattern.MatchString(scan) {
 			return fmt.Errorf("forbidden pattern detected: %s", dp.reason)
 		}
 	}
 
 	// Check for balanced parentheses (basic sanity check)
-	openParens := strings.Count(where, "(")
-	closeParens := strings.Count(where, ")")
+	openParens := strings.Count(scan, "(")
+	closeParens := strings.Count(scan, ")")
 	if openParens != closeParens {
 		return fmt.Errorf("unbalanced parentheses in WHERE clause")
 	}

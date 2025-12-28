@@ -4,6 +4,7 @@ package api
 import (
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -128,30 +129,47 @@ func (rl *RateLimiter) Stats() map[string]interface{} {
 // It checks X-Forwarded-For and X-Real-IP headers first (for reverse proxies),
 // then falls back to RemoteAddr.
 func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header (may contain multiple IPs)
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP (original client)
-		if idx := len(xff); idx > 0 {
-			for i, c := range xff {
-				if c == ',' {
-					return xff[:i]
-				}
-			}
-			return xff
+	remoteIPStr := strings.TrimSpace(r.RemoteAddr)
+	remoteIP := net.ParseIP(remoteIPStr)
+	if remoteIP == nil {
+		// Fall back to RemoteAddr parsing (common "ip:port" case)
+		if host, _, err := net.SplitHostPort(remoteIPStr); err == nil {
+			remoteIP = net.ParseIP(host)
 		}
 	}
 
-	// Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+	// Only trust proxy headers when the direct peer is loopback.
+	// Otherwise, clients can spoof X-Forwarded-For/X-Real-IP to bypass per-IP
+	// rate limits and cause unbounded bucket growth.
+	if remoteIP != nil && remoteIP.IsLoopback() {
+		// Check X-Forwarded-For header (may contain multiple IPs)
+		if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+			first := xff
+			if idx := strings.IndexByte(xff, ','); idx >= 0 {
+				first = xff[:idx]
+			}
+			first = strings.TrimSpace(first)
+			if ip := net.ParseIP(first); ip != nil {
+				return first
+			}
+		}
+
+		// Check X-Real-IP header
+		if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" {
+			if ip := net.ParseIP(xri); ip != nil {
+				return xri
+			}
+		}
 	}
 
-	// Fall back to RemoteAddr
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
+	// Fall back to RemoteAddr (best-effort)
+	if remoteIP != nil {
+		return remoteIP.String()
 	}
-	return ip
+	if host, _, err := net.SplitHostPort(remoteIPStr); err == nil {
+		return host
+	}
+	return remoteIPStr
 }
 
 // WithRateLimit returns middleware that applies rate limiting.

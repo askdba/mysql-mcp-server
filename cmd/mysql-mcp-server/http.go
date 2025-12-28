@@ -4,7 +4,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -15,10 +17,33 @@ import (
 	"github.com/askdba/mysql-mcp-server/internal/api"
 )
 
+const maxJSONRequestBodyBytes int64 = 1 << 20 // 1 MiB
+
 // httpContext returns a context with timeout for HTTP handlers.
 // Uses the request's context as parent to properly handle client disconnects.
 func httpContext(r *http.Request) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(r.Context(), cfg.HTTPRequestTimeout)
+}
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONRequestBodyBytes)
+
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	if err := dec.Decode(dst); err != nil {
+		return err
+	}
+
+	// Reject trailing data (helps avoid JSON request smuggling / ambiguity)
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("request body must contain a single JSON object")
+		}
+		return err
+	}
+
+	return nil
 }
 
 // ===== Core HTTP Handlers =====
@@ -65,7 +90,12 @@ func httpDescribeTable(w http.ResponseWriter, r *http.Request) {
 // httpRunQuery handles POST /api/query with JSON body {"sql": "...", "database": "...", "max_rows": N}
 func httpRunQuery(w http.ResponseWriter, r *http.Request) {
 	var input RunQueryInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeJSONBody(w, r, &input); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			api.WriteError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return
+		}
 		api.WriteBadRequest(w, "invalid JSON body: "+err.Error())
 		return
 	}
@@ -122,7 +152,12 @@ func httpListConnections(w http.ResponseWriter, r *http.Request) {
 // httpUseConnection handles POST /api/connections/use with JSON body {"name": "..."}
 func httpUseConnection(w http.ResponseWriter, r *http.Request) {
 	var input UseConnectionInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeJSONBody(w, r, &input); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			api.WriteError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return
+		}
 		api.WriteBadRequest(w, "invalid JSON body: "+err.Error())
 		return
 	}
@@ -173,7 +208,12 @@ func httpShowCreateTable(w http.ResponseWriter, r *http.Request) {
 // httpExplainQuery handles POST /api/explain with JSON body {"sql": "...", "database": "..."}
 func httpExplainQuery(w http.ResponseWriter, r *http.Request) {
 	var input ExplainQueryInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeJSONBody(w, r, &input); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			api.WriteError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return
+		}
 		api.WriteBadRequest(w, "invalid JSON body: "+err.Error())
 		return
 	}
@@ -328,7 +368,12 @@ func httpListVariables(w http.ResponseWriter, r *http.Request) {
 // httpVectorSearch handles POST /api/vector/search
 func httpVectorSearch(w http.ResponseWriter, r *http.Request) {
 	var input VectorSearchInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeJSONBody(w, r, &input); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			api.WriteError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return
+		}
 		api.WriteBadRequest(w, "invalid JSON body: "+err.Error())
 		return
 	}

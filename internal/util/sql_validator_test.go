@@ -21,6 +21,9 @@ func TestValidateSQL(t *testing.T) {
 		{"explain query", "EXPLAIN SELECT * FROM users", false},
 		{"select lowercase", "select * from users", false},
 		{"trailing semicolon", "SELECT * FROM users;", false},
+		{"semicolon inside string literal", "SELECT ';' AS semi", false},
+		{"comment marker inside string literal", "SELECT '/* not a comment */' AS txt", false},
+		{"double hyphen inside string literal", "SELECT '-- not a comment' AS txt", false},
 
 		// Invalid queries - DDL
 		{"create table", "CREATE TABLE users (id INT)", true},
@@ -145,6 +148,9 @@ func TestValidateWhereClause(t *testing.T) {
 		{"multiple conditions", "id = 1 AND status = 'active'", false},
 		{"with parentheses", "(id = 1 OR id = 2) AND status = 'active'", false},
 		{"with IN clause", "id IN (1, 2, 3)", false},
+		{"semicolon in string literal", "note = ';' AND id = 1", false},
+		{"comment marker in string literal", "note = '/* ok */' AND id = 1", false},
+		{"double hyphen in string literal", "note = '-- ok' AND id = 1", false},
 
 		// Invalid patterns
 		{"with semicolon", "id = 1; DROP TABLE users", true},
