@@ -65,8 +65,10 @@ type FileFeatureConfig struct {
 
 // FileLoggingConfig represents logging settings in the config file.
 type FileLoggingConfig struct {
-	JSONFormat   bool   `yaml:"json_format" json:"json_format"`
-	AuditLogPath string `yaml:"audit_log_path" json:"audit_log_path"`
+	JSONFormat    bool   `yaml:"json_format" json:"json_format"`
+	AuditLogPath  string `yaml:"audit_log_path" json:"audit_log_path"`
+	TokenTracking bool   `yaml:"token_tracking" json:"token_tracking"`
+	TokenModel    string `yaml:"token_model" json:"token_model"`
 }
 
 // FileHTTPConfig represents HTTP settings in the config file.
@@ -217,6 +219,7 @@ func (fc *FileConfig) ToConfig() *Config {
 		HTTPRequestTimeout: time.Duration(DefaultHTTPRequestTimeoutS) * time.Second,
 		RateLimitRPS:       float64(DefaultRateLimitRPS),
 		RateLimitBurst:     DefaultRateLimitBurst,
+		TokenModel:         "cl100k_base",
 	}
 
 	// Apply file config values (if set)
@@ -248,6 +251,10 @@ func (fc *FileConfig) ToConfig() *Config {
 
 	cfg.JSONLogging = fc.Logging.JSONFormat
 	cfg.AuditLogPath = fc.Logging.AuditLogPath
+	cfg.TokenTracking = fc.Logging.TokenTracking
+	if strings.TrimSpace(fc.Logging.TokenModel) != "" {
+		cfg.TokenModel = strings.TrimSpace(fc.Logging.TokenModel)
+	}
 
 	cfg.HTTPMode = fc.HTTP.Enabled
 	if fc.HTTP.Port > 0 {
@@ -314,8 +321,10 @@ func PrintConfig(cfg *Config) string {
 			VectorTools:   cfg.VectorMode,
 		},
 		Logging: FileLoggingConfig{
-			JSONFormat:   cfg.JSONLogging,
-			AuditLogPath: cfg.AuditLogPath,
+			JSONFormat:    cfg.JSONLogging,
+			AuditLogPath:  cfg.AuditLogPath,
+			TokenTracking: cfg.TokenTracking,
+			TokenModel:    cfg.TokenModel,
 		},
 		HTTP: FileHTTPConfig{
 			Enabled:               cfg.HTTPMode,

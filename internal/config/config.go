@@ -55,6 +55,10 @@ type Config struct {
 	HTTPMode     bool
 	JSONLogging  bool
 
+	// Token estimation (optional, disabled by default)
+	TokenTracking bool
+	TokenModel    string
+
 	// HTTP settings
 	HTTPPort           int
 	HTTPRequestTimeout time.Duration
@@ -94,6 +98,7 @@ func Load() (*Config, error) {
 			HTTPRequestTimeout: time.Duration(DefaultHTTPRequestTimeoutS) * time.Second,
 			RateLimitRPS:       float64(DefaultRateLimitRPS),
 			RateLimitBurst:     DefaultRateLimitBurst,
+			TokenModel:         "cl100k_base",
 		}
 	}
 
@@ -152,6 +157,12 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("MYSQL_MCP_JSON_LOGS"); v != "" {
 		cfg.JSONLogging = getEnvBool("MYSQL_MCP_JSON_LOGS")
+	}
+	if v := os.Getenv("MYSQL_MCP_TOKEN_TRACKING"); v != "" {
+		cfg.TokenTracking = getEnvBool("MYSQL_MCP_TOKEN_TRACKING")
+	}
+	if v := os.Getenv("MYSQL_MCP_TOKEN_MODEL"); v != "" {
+		cfg.TokenModel = strings.TrimSpace(v)
 	}
 	if v := os.Getenv("MYSQL_HTTP_PORT"); v != "" {
 		cfg.HTTPPort = getEnvInt("MYSQL_HTTP_PORT", cfg.HTTPPort)

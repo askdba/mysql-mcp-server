@@ -62,6 +62,8 @@ type AuditEntry struct {
 	Query      string `json:"query,omitempty"`
 	DurationMs int64  `json:"duration_ms"`
 	RowCount   int    `json:"row_count,omitempty"`
+	InputTokens  int `json:"input_tokens,omitempty"`
+	OutputTokens int `json:"output_tokens,omitempty"`
 	Success    bool   `json:"success"`
 	Error      string `json:"error,omitempty"`
 }
@@ -133,7 +135,7 @@ func (t *QueryTimer) ElapsedMs() int64 {
 }
 
 // LogSuccess logs a successful query execution.
-func (t *QueryTimer) LogSuccess(rowCount int, query string) {
+func (t *QueryTimer) LogSuccess(rowCount int, query string, tokens *TokenUsage) {
 	fields := map[string]interface{}{
 		"tool":        t.tool,
 		"duration_ms": t.ElapsedMs(),
@@ -142,11 +144,19 @@ func (t *QueryTimer) LogSuccess(rowCount int, query string) {
 	if query != "" && len(query) <= 200 {
 		fields["query"] = query
 	}
+	if tokens != nil && tokenTracking {
+		fields["tokens"] = map[string]interface{}{
+			"input_estimated":  tokens.InputEstimated,
+			"output_estimated": tokens.OutputEstimated,
+			"total_estimated":  tokens.TotalEstimated,
+			"model":            tokens.Model,
+		}
+	}
 	logInfo("query executed", fields)
 }
 
 // LogError logs a failed query execution.
-func (t *QueryTimer) LogError(err error, query string) {
+func (t *QueryTimer) LogError(err error, query string, tokens *TokenUsage) {
 	fields := map[string]interface{}{
 		"tool":        t.tool,
 		"duration_ms": t.ElapsedMs(),
@@ -154,6 +164,14 @@ func (t *QueryTimer) LogError(err error, query string) {
 	}
 	if query != "" && len(query) <= 200 {
 		fields["query"] = query
+	}
+	if tokens != nil && tokenTracking {
+		fields["tokens"] = map[string]interface{}{
+			"input_estimated":  tokens.InputEstimated,
+			"output_estimated": tokens.OutputEstimated,
+			"total_estimated":  tokens.TotalEstimated,
+			"model":            tokens.Model,
+		}
 	}
 	logError("query failed", fields)
 }

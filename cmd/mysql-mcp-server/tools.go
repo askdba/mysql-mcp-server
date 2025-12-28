@@ -184,6 +184,13 @@ func toolRunQuery(
 		return nil, QueryResult{}, fmt.Errorf("sql is required")
 	}
 
+	// Token estimation (optional)
+	inputTokens, _ := estimateTokensForValue(input)
+	tokens := &TokenUsage{
+		InputEstimated: inputTokens,
+		Model:          tokenModel,
+	}
+
 	// Enhanced SQL validation using parser + regex defense-in-depth
 	if err := util.ValidateSQLCombined(sqlText); err != nil {
 		logWarn("query rejected by validator", map[string]interface{}{
@@ -194,6 +201,7 @@ func toolRunQuery(
 			auditLogger.Log(&AuditEntry{
 				Tool:    "run_query",
 				Query:   util.TruncateQuery(sqlText, 500),
+				InputTokens: inputTokens,
 				Success: false,
 				Error:   err.Error(),
 			})
@@ -238,13 +246,14 @@ func toolRunQuery(
 	}
 
 	if err != nil {
-		timer.LogError(err, sqlText)
+		timer.LogError(err, sqlText, tokens)
 		if auditLogger != nil {
 			auditLogger.Log(&AuditEntry{
 				Tool:       "run_query",
 				Database:   database,
 				Query:      util.TruncateQuery(sqlText, 500),
 				DurationMs: timer.ElapsedMs(),
+				InputTokens:  inputTokens,
 				Success:    false,
 				Error:      err.Error(),
 			})
@@ -288,8 +297,13 @@ func toolRunQuery(
 		return nil, QueryResult{}, err
 	}
 
+	// Token estimation for output (optional)
+	outputTokens, _ := estimateTokensForValue(result)
+	tokens.OutputEstimated = outputTokens
+	tokens.TotalEstimated = inputTokens + outputTokens
+
 	// Log success
-	timer.LogSuccess(len(result.Rows), sqlText)
+	timer.LogSuccess(len(result.Rows), sqlText, tokens)
 	if auditLogger != nil {
 		auditLogger.Log(&AuditEntry{
 			Tool:       "run_query",
@@ -297,6 +311,8 @@ func toolRunQuery(
 			Query:      util.TruncateQuery(sqlText, 500),
 			DurationMs: timer.ElapsedMs(),
 			RowCount:   len(result.Rows),
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
 			Success:    true,
 		})
 	}

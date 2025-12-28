@@ -52,7 +52,7 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) err
 func httpListDatabases(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolListDatabases(ctx, nil, ListDatabasesInput{})
+	_, out, err := toolListDatabasesWrapped(ctx, nil, ListDatabasesInput{})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -65,7 +65,7 @@ func httpListTables(w http.ResponseWriter, r *http.Request) {
 	database := r.URL.Query().Get("database")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolListTables(ctx, nil, ListTablesInput{Database: database})
+	_, out, err := toolListTablesWrapped(ctx, nil, ListTablesInput{Database: database})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -79,7 +79,7 @@ func httpDescribeTable(w http.ResponseWriter, r *http.Request) {
 	table := r.URL.Query().Get("table")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolDescribeTable(ctx, nil, DescribeTableInput{Database: database, Table: table})
+	_, out, err := toolDescribeTableWrapped(ctx, nil, DescribeTableInput{Database: database, Table: table})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -105,7 +105,7 @@ func httpRunQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolRunQuery(ctx, nil, input)
+	_, out, err := toolRunQueryWrapped(ctx, nil, input)
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -117,7 +117,7 @@ func httpRunQuery(w http.ResponseWriter, r *http.Request) {
 func httpPing(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolPing(ctx, nil, PingInput{})
+	_, out, err := toolPingWrapped(ctx, nil, PingInput{})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -129,7 +129,7 @@ func httpPing(w http.ResponseWriter, r *http.Request) {
 func httpServerInfo(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolServerInfo(ctx, nil, ServerInfoInput{})
+	_, out, err := toolServerInfoWrapped(ctx, nil, ServerInfoInput{})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -141,7 +141,7 @@ func httpServerInfo(w http.ResponseWriter, r *http.Request) {
 func httpListConnections(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolListConnections(ctx, nil, ListConnectionsInput{})
+	_, out, err := toolListConnectionsWrapped(ctx, nil, ListConnectionsInput{})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -167,7 +167,7 @@ func httpUseConnection(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolUseConnection(ctx, nil, input)
+	_, out, err := toolUseConnectionWrapped(ctx, nil, input)
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -183,7 +183,7 @@ func httpListIndexes(w http.ResponseWriter, r *http.Request) {
 	table := r.URL.Query().Get("table")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolListIndexes(ctx, nil, ListIndexesInput{Database: database, Table: table})
+	_, out, err := toolListIndexesWrapped(ctx, nil, ListIndexesInput{Database: database, Table: table})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -197,7 +197,7 @@ func httpShowCreateTable(w http.ResponseWriter, r *http.Request) {
 	table := r.URL.Query().Get("table")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolShowCreateTable(ctx, nil, ShowCreateTableInput{Database: database, Table: table})
+	_, out, err := toolShowCreateTableWrapped(ctx, nil, ShowCreateTableInput{Database: database, Table: table})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -223,7 +223,7 @@ func httpExplainQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolExplainQuery(ctx, nil, input)
+	_, out, err := toolExplainQueryWrapped(ctx, nil, input)
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -236,7 +236,7 @@ func httpListViews(w http.ResponseWriter, r *http.Request) {
 	database := r.URL.Query().Get("database")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolListViews(ctx, nil, ListViewsInput{Database: database})
+	_, out, err := toolListViewsWrapped(ctx, nil, ListViewsInput{Database: database})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -249,7 +249,7 @@ func httpListTriggers(w http.ResponseWriter, r *http.Request) {
 	database := r.URL.Query().Get("database")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolListTriggers(ctx, nil, ListTriggersInput{Database: database})
+	_, out, err := toolListTriggersWrapped(ctx, nil, ListTriggersInput{Database: database})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -262,7 +262,7 @@ func httpListProcedures(w http.ResponseWriter, r *http.Request) {
 	database := r.URL.Query().Get("database")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolListProcedures(ctx, nil, ListProceduresInput{Database: database})
+	_, out, err := toolListProceduresWrapped(ctx, nil, ListProceduresInput{Database: database})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -275,7 +275,7 @@ func httpListFunctions(w http.ResponseWriter, r *http.Request) {
 	database := r.URL.Query().Get("database")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolListFunctions(ctx, nil, ListFunctionsInput{Database: database})
+	_, out, err := toolListFunctionsWrapped(ctx, nil, ListFunctionsInput{Database: database})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -289,7 +289,7 @@ func httpListPartitions(w http.ResponseWriter, r *http.Request) {
 	table := r.URL.Query().Get("table")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolListPartitions(ctx, nil, ListPartitionsInput{Database: database, Table: table})
+	_, out, err := toolListPartitionsWrapped(ctx, nil, ListPartitionsInput{Database: database, Table: table})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -302,7 +302,7 @@ func httpDatabaseSize(w http.ResponseWriter, r *http.Request) {
 	database := r.URL.Query().Get("database")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolDatabaseSize(ctx, nil, DatabaseSizeInput{Database: database})
+	_, out, err := toolDatabaseSizeWrapped(ctx, nil, DatabaseSizeInput{Database: database})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -315,7 +315,7 @@ func httpTableSize(w http.ResponseWriter, r *http.Request) {
 	database := r.URL.Query().Get("database")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolTableSize(ctx, nil, TableSizeInput{Database: database})
+	_, out, err := toolTableSizeWrapped(ctx, nil, TableSizeInput{Database: database})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -329,7 +329,7 @@ func httpForeignKeys(w http.ResponseWriter, r *http.Request) {
 	table := r.URL.Query().Get("table")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolForeignKeys(ctx, nil, ForeignKeysInput{Database: database, Table: table})
+	_, out, err := toolForeignKeysWrapped(ctx, nil, ForeignKeysInput{Database: database, Table: table})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -342,7 +342,7 @@ func httpListStatus(w http.ResponseWriter, r *http.Request) {
 	pattern := r.URL.Query().Get("pattern")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolListStatus(ctx, nil, ListStatusInput{Pattern: pattern})
+	_, out, err := toolListStatusWrapped(ctx, nil, ListStatusInput{Pattern: pattern})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -355,7 +355,7 @@ func httpListVariables(w http.ResponseWriter, r *http.Request) {
 	pattern := r.URL.Query().Get("pattern")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolListVariables(ctx, nil, ListVariablesInput{Pattern: pattern})
+	_, out, err := toolListVariablesWrapped(ctx, nil, ListVariablesInput{Pattern: pattern})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -379,7 +379,7 @@ func httpVectorSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolVectorSearch(ctx, nil, input)
+	_, out, err := toolVectorSearchWrapped(ctx, nil, input)
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return
@@ -392,7 +392,7 @@ func httpVectorInfo(w http.ResponseWriter, r *http.Request) {
 	database := r.URL.Query().Get("database")
 	ctx, cancel := httpContext(r)
 	defer cancel()
-	_, out, err := toolVectorInfo(ctx, nil, VectorInfoInput{Database: database})
+	_, out, err := toolVectorInfoWrapped(ctx, nil, VectorInfoInput{Database: database})
 	if err != nil {
 		api.WriteInternalError(w, err.Error())
 		return

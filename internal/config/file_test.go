@@ -33,6 +33,8 @@ features:
 logging:
   json_format: true
   audit_log_path: "/var/log/audit.log"
+  token_tracking: true
+  token_model: "cl100k_base"
 
 http:
   enabled: true
@@ -99,6 +101,12 @@ http:
 	}
 	if cfg.Logging.AuditLogPath != "/var/log/audit.log" {
 		t.Errorf("unexpected audit_log_path: %s", cfg.Logging.AuditLogPath)
+	}
+	if !cfg.Logging.TokenTracking {
+		t.Error("expected token_tracking true")
+	}
+	if cfg.Logging.TokenModel != "cl100k_base" {
+		t.Errorf("unexpected token_model: %s", cfg.Logging.TokenModel)
 	}
 
 	// Verify HTTP settings
@@ -179,8 +187,10 @@ func TestFileConfigToConfig(t *testing.T) {
 			VectorTools:   false,
 		},
 		Logging: FileLoggingConfig{
-			JSONFormat:   true,
-			AuditLogPath: "/tmp/audit.log",
+			JSONFormat:    true,
+			AuditLogPath:  "/tmp/audit.log",
+			TokenTracking: true,
+			TokenModel:    "cl100k_base",
 		},
 		HTTP: FileHTTPConfig{
 			Enabled:               true,
@@ -243,6 +253,12 @@ func TestFileConfigToConfig(t *testing.T) {
 	}
 	if cfg.AuditLogPath != "/tmp/audit.log" {
 		t.Errorf("unexpected AuditLogPath: %s", cfg.AuditLogPath)
+	}
+	if !cfg.TokenTracking {
+		t.Error("expected TokenTracking true")
+	}
+	if cfg.TokenModel != "cl100k_base" {
+		t.Errorf("expected TokenModel cl100k_base, got %q", cfg.TokenModel)
 	}
 
 	// Verify HTTP

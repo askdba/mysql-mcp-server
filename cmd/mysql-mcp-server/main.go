@@ -36,6 +36,9 @@ var (
 	pingTimeout  time.Duration
 	extendedMode bool
 	jsonLogging  bool
+	tokenTracking bool
+	tokenModel    string
+	tokenEstimator TokenEstimator
 )
 
 // ===== Argument Parsing =====
@@ -145,6 +148,8 @@ func main() {
 	pingTimeout = cfg.PingTimeout
 	extendedMode = cfg.ExtendedMode
 	jsonLogging = cfg.JSONLogging
+	tokenTracking = cfg.TokenTracking
+	tokenModel = cfg.TokenModel
 
 	// Initialize audit logger
 	auditLogger, err = NewAuditLogger(cfg.AuditLogPath)
@@ -153,6 +158,19 @@ func main() {
 	}
 	if auditLogger.enabled {
 		defer auditLogger.Close()
+	}
+
+	// Initialize token estimator (optional)
+	if tokenTracking {
+		tokenEstimator, err = NewTokenEstimator(tokenModel)
+		if err != nil {
+			logWarn("token tracking requested but tokenizer init failed; disabling token tracking", map[string]interface{}{
+				"error": err.Error(),
+				"model": tokenModel,
+			})
+			tokenTracking = false
+			tokenEstimator = nil
+		}
 	}
 
 	// ---- Initialize Connection Manager ----
@@ -191,6 +209,8 @@ func main() {
 		"httpPort":         cfg.HTTPPort,
 		"jsonLogging":      jsonLogging,
 		"auditLogEnabled":  auditLogger.enabled,
+		"tokenTracking":    tokenTracking,
+		"tokenModel":       tokenModel,
 		"connections":      len(cfg.Connections),
 		"activeConnection": activeName,
 	})
@@ -238,44 +258,44 @@ func registerCoreTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_databases",
 		Description: "List accessible databases in the configured MySQL server",
-	}, toolListDatabases)
+	}, toolListDatabasesWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_tables",
 		Description: "List tables in a given database",
-	}, toolListTables)
+	}, toolListTablesWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "describe_table",
 		Description: "Describe columns of a given table",
-	}, toolDescribeTable)
+	}, toolDescribeTableWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "run_query",
 		Description: "Execute a read-only SQL query (SELECT/SHOW/DESCRIBE/EXPLAIN only)",
-	}, toolRunQuery)
+	}, toolRunQueryWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ping",
 		Description: "Test database connectivity and measure latency",
-	}, toolPing)
+	}, toolPingWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "server_info",
 		Description: "Get MySQL server version, uptime, and configuration details",
-	}, toolServerInfo)
+	}, toolServerInfoWrapped)
 }
 
 func registerConnectionTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_connections",
 		Description: "List all configured MySQL connections and show which is active",
-	}, toolListConnections)
+	}, toolListConnectionsWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "use_connection",
 		Description: "Switch to a different MySQL connection by name",
-	}, toolUseConnection)
+	}, toolUseConnectionWrapped)
 }
 
 func registerVectorTools(server *mcp.Server) {
@@ -284,12 +304,12 @@ func registerVectorTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "vector_search",
 		Description: "Perform similarity search on vector columns (MySQL 9.0+ required)",
-	}, toolVectorSearch)
+	}, toolVectorSearchWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "vector_info",
 		Description: "List vector columns and their properties in a database",
-	}, toolVectorInfo)
+	}, toolVectorInfoWrapped)
 }
 
 func registerExtendedTools(server *mcp.Server) {
@@ -298,67 +318,67 @@ func registerExtendedTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_indexes",
 		Description: "List indexes on a table",
-	}, toolListIndexes)
+	}, toolListIndexesWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "show_create_table",
 		Description: "Show the CREATE TABLE statement for a table",
-	}, toolShowCreateTable)
+	}, toolShowCreateTableWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "explain_query",
 		Description: "Get the execution plan for a SELECT query",
-	}, toolExplainQuery)
+	}, toolExplainQueryWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_views",
 		Description: "List views in a database",
-	}, toolListViews)
+	}, toolListViewsWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_triggers",
 		Description: "List triggers in a database",
-	}, toolListTriggers)
+	}, toolListTriggersWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_procedures",
 		Description: "List stored procedures in a database",
-	}, toolListProcedures)
+	}, toolListProceduresWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_functions",
 		Description: "List stored functions in a database",
-	}, toolListFunctions)
+	}, toolListFunctionsWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_partitions",
 		Description: "List partitions of a table",
-	}, toolListPartitions)
+	}, toolListPartitionsWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "database_size",
 		Description: "Get size information for databases",
-	}, toolDatabaseSize)
+	}, toolDatabaseSizeWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "table_size",
 		Description: "Get size information for tables",
-	}, toolTableSize)
+	}, toolTableSizeWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "foreign_keys",
 		Description: "List foreign key constraints",
-	}, toolForeignKeys)
+	}, toolForeignKeysWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_status",
 		Description: "List MySQL server status variables",
-	}, toolListStatus)
+	}, toolListStatusWrapped)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_variables",
 		Description: "List MySQL server configuration variables",
-	}, toolListVariables)
+	}, toolListVariablesWrapped)
 }
 
 // ===== Config File Commands =====
@@ -417,6 +437,8 @@ CONFIGURATION:
         MYSQL_QUERY_TIMEOUT_SECONDS  Query timeout in seconds (default: 30)
         MYSQL_MCP_EXTENDED           Enable extended tools (set to 1)
         MYSQL_MCP_JSON_LOGS          Enable JSON structured logging (set to 1)
+        MYSQL_MCP_TOKEN_TRACKING     Enable token usage estimation (set to 1)
+        MYSQL_MCP_TOKEN_MODEL        Tokenizer encoding to use (default: cl100k_base)
         MYSQL_MCP_AUDIT_LOG          Path to audit log file
         MYSQL_MCP_VECTOR             Enable vector tools for MySQL 9.0+ (set to 1)
         MYSQL_MCP_HTTP               Enable REST API mode (set to 1)

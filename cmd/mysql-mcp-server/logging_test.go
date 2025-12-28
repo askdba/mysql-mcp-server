@@ -43,7 +43,7 @@ func TestQueryTimerLogSuccess(t *testing.T) {
 	log.SetOutput(w)
 
 	timer := NewQueryTimer("test_query")
-	timer.LogSuccess(5, "SELECT * FROM test")
+	timer.LogSuccess(5, "SELECT * FROM test", nil)
 
 	w.Close()
 	os.Stderr = oldStderr
@@ -70,7 +70,7 @@ func TestQueryTimerLogError(t *testing.T) {
 	log.SetOutput(w)
 
 	timer := NewQueryTimer("test_query")
-	timer.LogError(os.ErrNotExist, "SELECT * FROM test")
+	timer.LogError(os.ErrNotExist, "SELECT * FROM test", nil)
 
 	w.Close()
 	os.Stderr = oldStderr

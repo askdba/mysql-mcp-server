@@ -21,6 +21,8 @@ func clearEnv() {
 		"MYSQL_MCP_VECTOR",
 		"MYSQL_MCP_HTTP",
 		"MYSQL_MCP_JSON_LOGS",
+		"MYSQL_MCP_TOKEN_TRACKING",
+		"MYSQL_MCP_TOKEN_MODEL",
 		"MYSQL_HTTP_PORT",
 		"MYSQL_MCP_AUDIT_LOG",
 	}
@@ -97,6 +99,14 @@ func TestLoadWithDefaults(t *testing.T) {
 	if cfg.JSONLogging {
 		t.Fatal("expected JSONLogging to be false by default")
 	}
+
+	// Token tracking should default to false, with a non-empty default model.
+	if cfg.TokenTracking {
+		t.Fatal("expected TokenTracking to be false by default")
+	}
+	if cfg.TokenModel == "" {
+		t.Fatal("expected TokenModel default to be non-empty")
+	}
 }
 
 func TestLoadOverridesFromEnv(t *testing.T) {
@@ -113,6 +123,8 @@ func TestLoadOverridesFromEnv(t *testing.T) {
 	os.Setenv("MYSQL_MCP_VECTOR", "1")
 	os.Setenv("MYSQL_MCP_HTTP", "1")
 	os.Setenv("MYSQL_MCP_JSON_LOGS", "1")
+	os.Setenv("MYSQL_MCP_TOKEN_TRACKING", "1")
+	os.Setenv("MYSQL_MCP_TOKEN_MODEL", "cl100k_base")
 	os.Setenv("MYSQL_HTTP_PORT", "8080")
 	os.Setenv("MYSQL_MCP_AUDIT_LOG", "/var/log/audit.log")
 
@@ -153,6 +165,12 @@ func TestLoadOverridesFromEnv(t *testing.T) {
 	}
 	if !cfg.JSONLogging {
 		t.Fatal("expected JSONLogging to be true")
+	}
+	if !cfg.TokenTracking {
+		t.Fatal("expected TokenTracking to be true")
+	}
+	if cfg.TokenModel != "cl100k_base" {
+		t.Fatalf("expected TokenModel=cl100k_base, got %q", cfg.TokenModel)
 	}
 	if cfg.HTTPPort != 8080 {
 		t.Fatalf("expected HTTPPort=8080, got %d", cfg.HTTPPort)
