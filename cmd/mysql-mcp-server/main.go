@@ -31,13 +31,13 @@ var (
 	auditLogger *AuditLogger
 
 	// Convenience aliases from config (for tool access)
-	maxRows      int
-	queryTimeout time.Duration
-	pingTimeout  time.Duration
-	extendedMode bool
-	jsonLogging  bool
-	tokenTracking bool
-	tokenModel    string
+	maxRows        int
+	queryTimeout   time.Duration
+	pingTimeout    time.Duration
+	extendedMode   bool
+	jsonLogging    bool
+	tokenTracking  bool
+	tokenModel     string
 	tokenEstimator TokenEstimator
 )
 

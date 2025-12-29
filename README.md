@@ -658,16 +658,48 @@ Each query is logged with timing, success/failure, and row counts.
 
 ### Token Usage Estimation (Optional)
 
-Enable estimated token counting for tool inputs/outputs:
+Enable estimated token counting for tool inputs/outputs to monitor LLM context usage:
 
 ```bash
 export MYSQL_MCP_TOKEN_TRACKING=1
-export MYSQL_MCP_TOKEN_MODEL=cl100k_base
+export MYSQL_MCP_TOKEN_MODEL=cl100k_base  # default, used by GPT-4/Claude
+```
+
+Or via YAML config file:
+
+```yaml
+logging:
+  token_tracking: true
+  token_model: "cl100k_base"
 ```
 
 When enabled:
 - JSON logs include a `tokens` object with estimated input/output/total tokens
 - Audit log entries for `run_query` include `input_tokens` and `output_tokens`
+- All other tools also emit token estimates when `token_tracking` is enabled
+
+**Example JSON log output:**
+
+```json
+{
+  "level": "INFO",
+  "msg": "query executed",
+  "tool": "run_query",
+  "duration_ms": 45,
+  "row_count": 10,
+  "tokens": {
+    "input_estimated": 25,
+    "output_estimated": 150,
+    "total_estimated": 175,
+    "model": "cl100k_base"
+  }
+}
+```
+
+**Notes:**
+- Token counts are *estimates* using tiktoken encoding, not actual LLM billing
+- For payloads exceeding 1MB, a heuristic (~4 bytes per token) is used to prevent memory spikes
+- The feature is disabled by default to avoid overhead when not needed
 
 ### Query Timing
 

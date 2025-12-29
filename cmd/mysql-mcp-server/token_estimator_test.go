@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -149,6 +150,7 @@ func TestEstimateTokensForValueLargePayload(t *testing.T) {
 
 	// Create a payload larger than maxTokenEstimationBytes (1MB)
 	// The function should fall back to heuristic (~4 bytes per token)
+	// The limited writer caps allocation at maxTokenEstimationBytes.
 	largeString := strings.Repeat("x", maxTokenEstimationBytes+1000)
 	largePayload := map[string]string{"data": largeString}
 
@@ -156,11 +158,11 @@ func TestEstimateTokensForValueLargePayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Should use heuristic: len(json) / 4
-	// The JSON will be slightly larger than the string due to {"data":"..."}
-	expectedMin := (maxTokenEstimationBytes + 1000) / 4
-	if n < expectedMin {
-		t.Errorf("expected at least %d tokens (heuristic), got %d", expectedMin, n)
+	// Should use heuristic based on the cap: maxTokenEstimationBytes / 4
+	// Since we stop serializing early, we don't know the actual size.
+	expected := maxTokenEstimationBytes / 4
+	if n != expected {
+		t.Errorf("expected %d tokens (heuristic from cap), got %d", expected, n)
 	}
 }
 
@@ -186,3 +188,53 @@ func TestTokenUsageStruct(t *testing.T) {
 	}
 }
 
+func TestLimitedWriterStopsEarly(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lw := &limitedWriter{buf: buf, limit: 100}
+
+	// Write data that fits within the limit
+	n, err := lw.Write([]byte("hello"))
+	if err != nil {
+		t.Fatalf("unexpected error for small write: %v", err)
+	}
+	if n != 5 {
+		t.Errorf("expected 5 bytes written, got %d", n)
+	}
+	if buf.Len() != 5 {
+		t.Errorf("expected buffer len 5, got %d", buf.Len())
+	}
+
+	// Write data that exceeds the limit
+	largeData := strings.Repeat("x", 200)
+	_, err = lw.Write([]byte(largeData))
+	if err != errLimitExceeded {
+		t.Fatalf("expected errLimitExceeded, got %v", err)
+	}
+
+	// Buffer should be capped at the limit
+	if buf.Len() != 100 {
+		t.Errorf("expected buffer capped at 100, got %d", buf.Len())
+	}
+}
+
+func TestLimitedWriterNoAllocationBeyondCap(t *testing.T) {
+	// This test verifies that the buffer doesn't grow beyond the limit,
+	// preventing memory spikes for large payloads.
+	buf := &bytes.Buffer{}
+	limit := 1024 // 1KB limit
+	lw := &limitedWriter{buf: buf, limit: limit}
+
+	// Try to write 10KB of data in chunks
+	chunk := strings.Repeat("a", 500)
+	for i := 0; i < 20; i++ {
+		_, err := lw.Write([]byte(chunk))
+		if err == errLimitExceeded {
+			break
+		}
+	}
+
+	// Buffer should never exceed the limit
+	if buf.Len() > limit {
+		t.Errorf("buffer exceeded limit: got %d, limit %d", buf.Len(), limit)
+	}
+}

@@ -56,16 +56,16 @@ func logError(message string, fields map[string]interface{}) {
 
 // AuditEntry represents an audit log entry for query tracking.
 type AuditEntry struct {
-	Timestamp  string `json:"timestamp"`
-	Tool       string `json:"tool"`
-	Database   string `json:"database,omitempty"`
-	Query      string `json:"query,omitempty"`
-	DurationMs int64  `json:"duration_ms"`
-	RowCount   int    `json:"row_count,omitempty"`
-	InputTokens  int `json:"input_tokens,omitempty"`
-	OutputTokens int `json:"output_tokens,omitempty"`
-	Success    bool   `json:"success"`
-	Error      string `json:"error,omitempty"`
+	Timestamp    string `json:"timestamp"`
+	Tool         string `json:"tool"`
+	Database     string `json:"database,omitempty"`
+	Query        string `json:"query,omitempty"`
+	DurationMs   int64  `json:"duration_ms"`
+	RowCount     int    `json:"row_count,omitempty"`
+	InputTokens  int    `json:"input_tokens,omitempty"`
+	OutputTokens int    `json:"output_tokens,omitempty"`
+	Success      bool   `json:"success"`
+	Error        string `json:"error,omitempty"`
 }
 
 // AuditLogger handles writing audit logs to a file.

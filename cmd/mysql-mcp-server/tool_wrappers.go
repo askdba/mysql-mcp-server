@@ -51,12 +51,12 @@ func wrapTool[I any, O any](toolName string, h mcp.ToolHandlerFor[I, O]) mcp.Too
 
 // Wrapped tool handlers used by both MCP and HTTP.
 var (
-	toolListDatabasesWrapped  = wrapTool("list_databases", toolListDatabases)
-	toolListTablesWrapped     = wrapTool("list_tables", toolListTables)
-	toolDescribeTableWrapped  = wrapTool("describe_table", toolDescribeTable)
-	toolRunQueryWrapped       = toolRunQuery // run_query has dedicated query/audit logs with tokens
-	toolPingWrapped           = wrapTool("ping", toolPing)
-	toolServerInfoWrapped     = wrapTool("server_info", toolServerInfo)
+	toolListDatabasesWrapped   = wrapTool("list_databases", toolListDatabases)
+	toolListTablesWrapped      = wrapTool("list_tables", toolListTables)
+	toolDescribeTableWrapped   = wrapTool("describe_table", toolDescribeTable)
+	toolRunQueryWrapped        = toolRunQuery // run_query has dedicated query/audit logs with tokens
+	toolPingWrapped            = wrapTool("ping", toolPing)
+	toolServerInfoWrapped      = wrapTool("server_info", toolServerInfo)
 	toolListConnectionsWrapped = wrapTool("list_connections", toolListConnections)
 	toolUseConnectionWrapped   = wrapTool("use_connection", toolUseConnection)
 
@@ -77,4 +77,3 @@ var (
 	toolListStatusWrapped      = wrapTool("list_status", toolListStatus)
 	toolListVariablesWrapped   = wrapTool("list_variables", toolListVariables)
 )
-

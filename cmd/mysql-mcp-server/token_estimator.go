@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -56,19 +58,46 @@ const (
 	maxTokenEstimationBytes = 1 << 20 // 1 MiB
 )
 
+// errLimitExceeded is returned by limitedWriter when the cap is hit.
+var errLimitExceeded = errors.New("size limit exceeded")
+
+// limitedWriter wraps a bytes.Buffer and stops writing once the limit is reached.
+type limitedWriter struct {
+	buf   *bytes.Buffer
+	limit int
+}
+
+func (w *limitedWriter) Write(p []byte) (int, error) {
+	if w.buf.Len()+len(p) > w.limit {
+		// Write only up to the limit, then return error to stop encoder.
+		remaining := w.limit - w.buf.Len()
+		if remaining > 0 {
+			w.buf.Write(p[:remaining])
+		}
+		return len(p), errLimitExceeded
+	}
+	return w.buf.Write(p)
+}
+
 func estimateTokensForValue(v any) (int, error) {
 	if !tokenTracking || tokenEstimator == nil {
 		return 0, nil
 	}
-	b, err := json.Marshal(v)
+
+	// Use a size-limited writer to avoid allocating huge buffers for large payloads.
+	buf := &bytes.Buffer{}
+	lw := &limitedWriter{buf: buf, limit: maxTokenEstimationBytes}
+	enc := json.NewEncoder(lw)
+
+	err := enc.Encode(v)
+	if errors.Is(err, errLimitExceeded) {
+		// Payload exceeded the cap; use heuristic based on the limit.
+		// We know it's at least maxTokenEstimationBytes, so estimate from that.
+		return maxTokenEstimationBytes / 4, nil
+	}
 	if err != nil {
 		return 0, err
 	}
-	if len(b) > maxTokenEstimationBytes {
-		// If it's too large to safely estimate with tokenizer, fall back to a
-		// conservative heuristic: ~4 bytes per token.
-		return len(b) / 4, nil
-	}
-	return tokenEstimator.Count(string(b))
-}
 
+	return tokenEstimator.Count(buf.String())
+}

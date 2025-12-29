@@ -549,4 +549,3 @@ func TestToolUseConnectionNotFound(t *testing.T) {
 
 	_ = result.mock
 }
-
