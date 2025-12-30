@@ -247,7 +247,7 @@ func toolRunQuery(
 	}
 
 	if err != nil {
-		timer.LogError(err, sqlText, tokens)
+		timer.LogError(err, sqlText, tokens, nil)
 		if auditLogger != nil {
 			auditLogger.Log(&AuditEntry{
 				Tool:        "run_query",
@@ -303,10 +303,13 @@ func toolRunQuery(
 	tokens.OutputEstimated = outputTokens
 	tokens.TotalEstimated = inputTokens + outputTokens
 
+	// Calculate efficiency metrics
+	eff := CalculateEfficiency(inputTokens, outputTokens, len(result.Rows))
+
 	// Log success
-	timer.LogSuccess(len(result.Rows), sqlText, tokens)
+	timer.LogSuccess(len(result.Rows), sqlText, tokens, eff)
 	if auditLogger != nil {
-		auditLogger.Log(&AuditEntry{
+		entry := &AuditEntry{
 			Tool:         "run_query",
 			Database:     database,
 			Query:        util.TruncateQuery(sqlText, 500),
@@ -315,7 +318,13 @@ func toolRunQuery(
 			InputTokens:  inputTokens,
 			OutputTokens: outputTokens,
 			Success:      true,
-		})
+		}
+		if eff != nil {
+			entry.TokensPerRow = eff.TokensPerRow
+			entry.IOEfficiency = eff.IOEfficiency
+			entry.CostEstimateUSD = eff.CostEstimateUSD
+		}
+		auditLogger.Log(entry)
 	}
 
 	return nil, result, nil

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -236,5 +237,127 @@ func TestLimitedWriterNoAllocationBeyondCap(t *testing.T) {
 	// Buffer should never exceed the limit
 	if buf.Len() > limit {
 		t.Errorf("buffer exceeded limit: got %d, limit %d", buf.Len(), limit)
+	}
+}
+
+func TestCalculateEfficiency(t *testing.T) {
+	// Enable token tracking for tests
+	oldTracking := tokenTracking
+	tokenTracking = true
+	defer func() { tokenTracking = oldTracking }()
+
+	tests := []struct {
+		name         string
+		inputTokens  int
+		outputTokens int
+		rowCount     int
+		wantPerRow   float64
+		wantIO       float64
+		wantCostMin  float64
+		wantCostMax  float64
+	}{
+		{
+			name:         "typical query",
+			inputTokens:  17,
+			outputTokens: 50,
+			rowCount:     5,
+			wantPerRow:   10.0,
+			wantIO:       2.94,
+			wantCostMin:  0.0,
+			wantCostMax:  0.001,
+		},
+		{
+			name:         "large result",
+			inputTokens:  100,
+			outputTokens: 2500,
+			rowCount:     10,
+			wantPerRow:   250.0,
+			wantIO:       25.0,
+			wantCostMin:  0.02,
+			wantCostMax:  0.03,
+		},
+		{
+			name:         "zero rows",
+			inputTokens:  50,
+			outputTokens: 10,
+			rowCount:     0,
+			wantPerRow:   0.0, // should be 0 when no rows
+			wantIO:       0.2,
+			wantCostMin:  0.0,
+			wantCostMax:  0.001,
+		},
+		{
+			name:         "zero input",
+			inputTokens:  0,
+			outputTokens: 100,
+			rowCount:     5,
+			wantPerRow:   20.0,
+			wantIO:       0.0, // should be 0 when no input
+			wantCostMin:  0.0,
+			wantCostMax:  0.01,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eff := CalculateEfficiency(tt.inputTokens, tt.outputTokens, tt.rowCount)
+			if eff == nil {
+				t.Fatal("CalculateEfficiency returned nil")
+			}
+
+			if eff.TokensPerRow != tt.wantPerRow {
+				t.Errorf("TokensPerRow = %v, want %v", eff.TokensPerRow, tt.wantPerRow)
+			}
+
+			if eff.IOEfficiency != tt.wantIO {
+				t.Errorf("IOEfficiency = %v, want %v", eff.IOEfficiency, tt.wantIO)
+			}
+
+			if eff.CostEstimateUSD < tt.wantCostMin || eff.CostEstimateUSD > tt.wantCostMax {
+				t.Errorf("CostEstimateUSD = %v, want between %v and %v",
+					eff.CostEstimateUSD, tt.wantCostMin, tt.wantCostMax)
+			}
+		})
+	}
+}
+
+func TestCalculateEfficiencyDisabled(t *testing.T) {
+	// Disable token tracking
+	oldTracking := tokenTracking
+	tokenTracking = false
+	defer func() { tokenTracking = oldTracking }()
+
+	eff := CalculateEfficiency(100, 500, 10)
+	if eff != nil {
+		t.Error("expected nil when token tracking is disabled")
+	}
+}
+
+func TestTokenEfficiencyStruct(t *testing.T) {
+	eff := TokenEfficiency{
+		TokensPerRow:    10.5,
+		IOEfficiency:    2.5,
+		CostEstimateUSD: 0.000125,
+	}
+
+	// Verify JSON marshaling
+	data, err := json.Marshal(eff)
+	if err != nil {
+		t.Fatalf("failed to marshal TokenEfficiency: %v", err)
+	}
+
+	var parsed TokenEfficiency
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal TokenEfficiency: %v", err)
+	}
+
+	if parsed.TokensPerRow != eff.TokensPerRow {
+		t.Errorf("TokensPerRow mismatch: got %v, want %v", parsed.TokensPerRow, eff.TokensPerRow)
+	}
+	if parsed.IOEfficiency != eff.IOEfficiency {
+		t.Errorf("IOEfficiency mismatch: got %v, want %v", parsed.IOEfficiency, eff.IOEfficiency)
+	}
+	if parsed.CostEstimateUSD != eff.CostEstimateUSD {
+		t.Errorf("CostEstimateUSD mismatch: got %v, want %v", parsed.CostEstimateUSD, eff.CostEstimateUSD)
 	}
 }

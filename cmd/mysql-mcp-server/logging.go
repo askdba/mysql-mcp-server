@@ -66,6 +66,10 @@ type AuditEntry struct {
 	OutputTokens int    `json:"output_tokens,omitempty"`
 	Success      bool   `json:"success"`
 	Error        string `json:"error,omitempty"`
+	// Token efficiency metrics
+	TokensPerRow    float64 `json:"tokens_per_row,omitempty"`
+	IOEfficiency    float64 `json:"io_efficiency,omitempty"`
+	CostEstimateUSD float64 `json:"cost_estimate_usd,omitempty"`
 }
 
 // AuditLogger handles writing audit logs to a file.
@@ -135,7 +139,7 @@ func (t *QueryTimer) ElapsedMs() int64 {
 }
 
 // LogSuccess logs a successful query execution.
-func (t *QueryTimer) LogSuccess(rowCount int, query string, tokens *TokenUsage) {
+func (t *QueryTimer) LogSuccess(rowCount int, query string, tokens *TokenUsage, efficiency *TokenEfficiency) {
 	fields := map[string]interface{}{
 		"tool":        t.tool,
 		"duration_ms": t.ElapsedMs(),
@@ -145,18 +149,24 @@ func (t *QueryTimer) LogSuccess(rowCount int, query string, tokens *TokenUsage) 
 		fields["query"] = query
 	}
 	if tokens != nil && tokenTracking {
-		fields["tokens"] = map[string]interface{}{
+		tokenFields := map[string]interface{}{
 			"input_estimated":  tokens.InputEstimated,
 			"output_estimated": tokens.OutputEstimated,
 			"total_estimated":  tokens.TotalEstimated,
 			"model":            tokens.Model,
 		}
+		if efficiency != nil {
+			tokenFields["tokens_per_row"] = efficiency.TokensPerRow
+			tokenFields["io_efficiency"] = efficiency.IOEfficiency
+			tokenFields["cost_estimate_usd"] = efficiency.CostEstimateUSD
+		}
+		fields["tokens"] = tokenFields
 	}
 	logInfo("query executed", fields)
 }
 
 // LogError logs a failed query execution.
-func (t *QueryTimer) LogError(err error, query string, tokens *TokenUsage) {
+func (t *QueryTimer) LogError(err error, query string, tokens *TokenUsage, efficiency *TokenEfficiency) {
 	fields := map[string]interface{}{
 		"tool":        t.tool,
 		"duration_ms": t.ElapsedMs(),
@@ -166,12 +176,18 @@ func (t *QueryTimer) LogError(err error, query string, tokens *TokenUsage) {
 		fields["query"] = query
 	}
 	if tokens != nil && tokenTracking {
-		fields["tokens"] = map[string]interface{}{
+		tokenFields := map[string]interface{}{
 			"input_estimated":  tokens.InputEstimated,
 			"output_estimated": tokens.OutputEstimated,
 			"total_estimated":  tokens.TotalEstimated,
 			"model":            tokens.Model,
 		}
+		if efficiency != nil {
+			tokenFields["tokens_per_row"] = efficiency.TokensPerRow
+			tokenFields["io_efficiency"] = efficiency.IOEfficiency
+			tokenFields["cost_estimate_usd"] = efficiency.CostEstimateUSD
+		}
+		fields["tokens"] = tokenFields
 	}
 	logError("query failed", fields)
 }
