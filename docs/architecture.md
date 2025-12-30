@@ -237,14 +237,37 @@ flowchart TB
 
 ### Config File Search Order
 
+The server searches for config files in the following order (first found wins):
+
 ```mermaid
-flowchart LR
-    A["./mysql-mcp-config.yaml"] --> B["./mysql-mcp-config.json"]
-    B --> C["~/.mysql-mcp-config.yaml"]
-    C --> D["~/.mysql-mcp-config.json"]
-    D --> E["~/.config/mysql-mcp/config.yaml"]
-    E --> F["~/.config/mysql-mcp/config.json"]
-    F --> G["First found wins"]
+flowchart TB
+    subgraph "1. Override (Highest Priority)"
+        A["--config flag"]
+        B["MYSQL_MCP_CONFIG env var"]
+    end
+    
+    subgraph "2. Current Directory"
+        C["./mysql-mcp-server.yaml"]
+        D["./mysql-mcp-server.yml"]
+        E["./mysql-mcp-server.json"]
+    end
+    
+    subgraph "3. User Config"
+        F["~/.config/mysql-mcp-server/config.yaml"]
+        G["~/.config/mysql-mcp-server/config.yml"]
+        H["~/.config/mysql-mcp-server/config.json"]
+    end
+    
+    subgraph "4. System Config (Lowest Priority)"
+        I["/etc/mysql-mcp-server/config.yaml"]
+        J["/etc/mysql-mcp-server/config.yml"]
+        K["/etc/mysql-mcp-server/config.json"]
+    end
+    
+    A --> C
+    B --> C
+    C --> D --> E --> F --> G --> H --> I --> J --> K
+    K --> L(["First found wins"])
 ```
 
 ---
