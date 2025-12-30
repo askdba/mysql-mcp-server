@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 
 	tiktoken "github.com/pkoukk/tiktoken-go"
@@ -77,22 +78,23 @@ func CalculateEfficiency(inputTokens, outputTokens, rowCount int) *TokenEfficien
 	// Tokens per row (only if we have rows)
 	if rowCount > 0 {
 		eff.TokensPerRow = float64(outputTokens) / float64(rowCount)
-		// Round to 2 decimal places
-		eff.TokensPerRow = float64(int(eff.TokensPerRow*100)) / 100
+		// Round to 2 decimal places using math.Round to avoid int overflow on 32-bit systems
+		eff.TokensPerRow = math.Round(eff.TokensPerRow*100) / 100
 	}
 
 	// IO Efficiency ratio (output/input, higher = more data per token spent)
 	if inputTokens > 0 {
 		eff.IOEfficiency = float64(outputTokens) / float64(inputTokens)
-		eff.IOEfficiency = float64(int(eff.IOEfficiency*100)) / 100
+		// Round to 2 decimal places using math.Round to avoid int overflow on 32-bit systems
+		eff.IOEfficiency = math.Round(eff.IOEfficiency*100) / 100
 	}
 
 	// Cost estimate in USD
 	inputCost := float64(inputTokens) / 1_000_000 * costPerMillionInputTokens
 	outputCost := float64(outputTokens) / 1_000_000 * costPerMillionOutputTokens
 	eff.CostEstimateUSD = inputCost + outputCost
-	// Round to 6 decimal places for micro-costs
-	eff.CostEstimateUSD = float64(int(eff.CostEstimateUSD*1_000_000)) / 1_000_000
+	// Round to 6 decimal places using math.Round to avoid int overflow on 32-bit systems
+	eff.CostEstimateUSD = math.Round(eff.CostEstimateUSD*1_000_000) / 1_000_000
 
 	return eff
 }
