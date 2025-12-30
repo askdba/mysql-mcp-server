@@ -40,6 +40,7 @@ type FileConnectionConfig struct {
 	DSN         string `yaml:"dsn" json:"dsn"`
 	Description string `yaml:"description" json:"description"`
 	ReadOnly    bool   `yaml:"read_only" json:"read_only"`
+	SSL         string `yaml:"ssl" json:"ssl"` // "true", "false", "skip-verify", or empty
 }
 
 // FileQueryConfig represents query settings in the config file.
@@ -295,6 +296,7 @@ func (fc *FileConfig) ToConfig() *Config {
 			DSN:         conn.DSN,
 			Description: conn.Description,
 			ReadOnly:    conn.ReadOnly,
+			SSL:         conn.SSL,
 		})
 	}
 
@@ -343,6 +345,7 @@ func PrintConfig(cfg *Config) string {
 			DSN:         maskDSN(conn.DSN),
 			Description: conn.Description,
 			ReadOnly:    conn.ReadOnly,
+			SSL:         conn.SSL,
 		}
 	}
 
@@ -362,6 +365,47 @@ func maskDSN(dsn string) string {
 		}
 	}
 	return dsn
+}
+
+// ApplySSLToDSN appends TLS configuration to a DSN based on the SSL setting.
+// SSL values:
+//   - "true" or "1": Enable TLS with certificate verification (tls=true)
+//   - "skip-verify": Enable TLS without certificate verification (tls=skip-verify)
+//   - "false", "0", or "": No change to DSN (use DSN as-is)
+//   - "preferred": Use TLS if available, fall back to unencrypted (tls=preferred)
+//
+// If the DSN already contains a tls= parameter, it is not modified.
+func ApplySSLToDSN(dsn, ssl string) string {
+	ssl = strings.TrimSpace(strings.ToLower(ssl))
+
+	// If SSL is empty, disabled, or DSN already has tls parameter, return as-is
+	if ssl == "" || ssl == "false" || ssl == "0" {
+		return dsn
+	}
+	if strings.Contains(dsn, "tls=") {
+		return dsn
+	}
+
+	// Determine the tls parameter value
+	var tlsValue string
+	switch ssl {
+	case "true", "1":
+		tlsValue = "true"
+	case "skip-verify":
+		tlsValue = "skip-verify"
+	case "preferred":
+		tlsValue = "preferred"
+	default:
+		// Unknown value, treat as true for safety
+		tlsValue = "true"
+	}
+
+	// Append tls parameter to DSN
+	// DSN format: user:pass@tcp(host:port)/db?param=value
+	if strings.Contains(dsn, "?") {
+		return dsn + "&tls=" + tlsValue
+	}
+	return dsn + "?tls=" + tlsValue
 }
 
 func secondsToDuration(s int) time.Duration {

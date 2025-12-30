@@ -14,12 +14,16 @@ connections:
   default:
     dsn: "root:password@tcp(localhost:3306)/mydb?parseTime=true"
     description: "Local development database"
+    # ssl: "true"           # Enable TLS with certificate verification
+    # ssl: "skip-verify"    # Enable TLS without certificate verification (self-signed certs)
+    # ssl: "preferred"      # Use TLS if available, fall back to unencrypted
   
   # Additional connections (optional)
   # production:
   #   dsn: "readonly:pass@tcp(prod-server:3306)/prod?parseTime=true"
   #   description: "Production database (read-only)"
   #   read_only: true
+  #   ssl: "true"           # Recommended for production connections
 
 # Query settings
 query:

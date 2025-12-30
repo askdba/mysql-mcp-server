@@ -574,3 +574,208 @@ func containsHelper(s, substr string) bool {
 	}
 	return false
 }
+
+func TestApplySSLToDSN(t *testing.T) {
+	tests := []struct {
+		name     string
+		dsn      string
+		ssl      string
+		expected string
+	}{
+		// Empty/disabled SSL - no change
+		{
+			name:     "empty ssl",
+			dsn:      "user:pass@tcp(localhost:3306)/db",
+			ssl:      "",
+			expected: "user:pass@tcp(localhost:3306)/db",
+		},
+		{
+			name:     "ssl false",
+			dsn:      "user:pass@tcp(localhost:3306)/db",
+			ssl:      "false",
+			expected: "user:pass@tcp(localhost:3306)/db",
+		},
+		{
+			name:     "ssl 0",
+			dsn:      "user:pass@tcp(localhost:3306)/db",
+			ssl:      "0",
+			expected: "user:pass@tcp(localhost:3306)/db",
+		},
+		// SSL enabled (true)
+		{
+			name:     "ssl true",
+			dsn:      "user:pass@tcp(localhost:3306)/db",
+			ssl:      "true",
+			expected: "user:pass@tcp(localhost:3306)/db?tls=true",
+		},
+		{
+			name:     "ssl 1",
+			dsn:      "user:pass@tcp(localhost:3306)/db",
+			ssl:      "1",
+			expected: "user:pass@tcp(localhost:3306)/db?tls=true",
+		},
+		{
+			name:     "ssl TRUE (case insensitive)",
+			dsn:      "user:pass@tcp(localhost:3306)/db",
+			ssl:      "TRUE",
+			expected: "user:pass@tcp(localhost:3306)/db?tls=true",
+		},
+		// Skip-verify
+		{
+			name:     "ssl skip-verify",
+			dsn:      "user:pass@tcp(localhost:3306)/db",
+			ssl:      "skip-verify",
+			expected: "user:pass@tcp(localhost:3306)/db?tls=skip-verify",
+		},
+		{
+			name:     "ssl SKIP-VERIFY (case insensitive)",
+			dsn:      "user:pass@tcp(localhost:3306)/db",
+			ssl:      "SKIP-VERIFY",
+			expected: "user:pass@tcp(localhost:3306)/db?tls=skip-verify",
+		},
+		// Preferred
+		{
+			name:     "ssl preferred",
+			dsn:      "user:pass@tcp(localhost:3306)/db",
+			ssl:      "preferred",
+			expected: "user:pass@tcp(localhost:3306)/db?tls=preferred",
+		},
+		// DSN with existing params
+		{
+			name:     "ssl true with existing params",
+			dsn:      "user:pass@tcp(localhost:3306)/db?parseTime=true",
+			ssl:      "true",
+			expected: "user:pass@tcp(localhost:3306)/db?parseTime=true&tls=true",
+		},
+		{
+			name:     "ssl skip-verify with existing params",
+			dsn:      "user:pass@tcp(localhost:3306)/db?charset=utf8mb4",
+			ssl:      "skip-verify",
+			expected: "user:pass@tcp(localhost:3306)/db?charset=utf8mb4&tls=skip-verify",
+		},
+		// DSN already has tls - no change
+		{
+			name:     "dsn already has tls=true",
+			dsn:      "user:pass@tcp(localhost:3306)/db?tls=true",
+			ssl:      "skip-verify",
+			expected: "user:pass@tcp(localhost:3306)/db?tls=true",
+		},
+		{
+			name:     "dsn already has tls=custom",
+			dsn:      "user:pass@tcp(localhost:3306)/db?tls=custom",
+			ssl:      "true",
+			expected: "user:pass@tcp(localhost:3306)/db?tls=custom",
+		},
+		// Unknown value defaults to true
+		{
+			name:     "unknown ssl value defaults to true",
+			dsn:      "user:pass@tcp(localhost:3306)/db",
+			ssl:      "unknown",
+			expected: "user:pass@tcp(localhost:3306)/db?tls=true",
+		},
+		// Whitespace handling
+		{
+			name:     "ssl with whitespace",
+			dsn:      "user:pass@tcp(localhost:3306)/db",
+			ssl:      "  true  ",
+			expected: "user:pass@tcp(localhost:3306)/db?tls=true",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ApplySSLToDSN(tt.dsn, tt.ssl)
+			if result != tt.expected {
+				t.Errorf("ApplySSLToDSN(%q, %q) = %q, want %q", tt.dsn, tt.ssl, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFileConfigToConfigWithSSL(t *testing.T) {
+	fc := &FileConfig{
+		Connections: map[string]FileConnectionConfig{
+			"default": {
+				DSN:         "user:pass@tcp(localhost:3306)/db",
+				Description: "Test",
+				SSL:         "true",
+			},
+			"production": {
+				DSN:         "prod:pass@tcp(prod:3306)/prod",
+				Description: "Production",
+				SSL:         "skip-verify",
+			},
+		},
+	}
+
+	cfg := fc.ToConfig()
+
+	// Find connections by name (order may vary based on sorting)
+	var defaultConn, prodConn *ConnectionConfig
+	for i := range cfg.Connections {
+		if cfg.Connections[i].Name == "default" {
+			defaultConn = &cfg.Connections[i]
+		}
+		if cfg.Connections[i].Name == "production" {
+			prodConn = &cfg.Connections[i]
+		}
+	}
+
+	if defaultConn == nil {
+		t.Fatal("expected 'default' connection")
+	}
+	if defaultConn.SSL != "true" {
+		t.Errorf("expected default SSL 'true', got %q", defaultConn.SSL)
+	}
+
+	if prodConn == nil {
+		t.Fatal("expected 'production' connection")
+	}
+	if prodConn.SSL != "skip-verify" {
+		t.Errorf("expected production SSL 'skip-verify', got %q", prodConn.SSL)
+	}
+}
+
+func TestLoadConfigFileWithSSL(t *testing.T) {
+	content := `
+connections:
+  default:
+    dsn: "user:pass@tcp(localhost:3306)/db"
+    description: "Test DB"
+    ssl: "skip-verify"
+  secure:
+    dsn: "secure:pass@tcp(secure:3306)/secure"
+    description: "Secure DB"
+    ssl: "true"
+`
+
+	tmpFile := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	cfg, err := LoadConfigFile(tmpFile)
+	if err != nil {
+		t.Fatalf("LoadConfigFile failed: %v", err)
+	}
+
+	if len(cfg.Connections) != 2 {
+		t.Errorf("expected 2 connections, got %d", len(cfg.Connections))
+	}
+
+	if conn, ok := cfg.Connections["default"]; ok {
+		if conn.SSL != "skip-verify" {
+			t.Errorf("expected default SSL 'skip-verify', got %q", conn.SSL)
+		}
+	} else {
+		t.Error("expected 'default' connection")
+	}
+
+	if conn, ok := cfg.Connections["secure"]; ok {
+		if conn.SSL != "true" {
+			t.Errorf("expected secure SSL 'true', got %q", conn.SSL)
+		}
+	} else {
+		t.Error("expected 'secure' connection")
+	}
+}

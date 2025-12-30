@@ -102,6 +102,37 @@ Environment variables:
 | MYSQL_CONN_MAX_IDLE_TIME_MINUTES | No | 5 | Max idle time before connection is closed |
 | MYSQL_PING_TIMEOUT_SECONDS | No | 5 | Database ping/health check timeout |
 | MYSQL_HTTP_REQUEST_TIMEOUT_SECONDS | No | 60 | HTTP request timeout in REST API mode |
+| MYSQL_SSL | No | – | Enable SSL/TLS for connections (true, false, skip-verify, preferred) |
+
+### SSL/TLS Configuration
+
+Enable encrypted connections to MySQL servers:
+
+| SSL Value | Description |
+|-----------|-------------|
+| `true` | Enable TLS with certificate verification |
+| `false` | Disable TLS (default) |
+| `skip-verify` | Enable TLS without certificate verification (self-signed certs) |
+| `preferred` | Use TLS if available, fall back to unencrypted |
+
+**Environment variable:**
+
+```bash
+# Enable SSL for all connections
+export MYSQL_SSL="true"
+
+# Or per-connection SSL
+export MYSQL_DSN_1_SSL="skip-verify"
+```
+
+**Config file:**
+
+```yaml
+connections:
+  production:
+    dsn: "user:pass@tcp(prod:3306)/db?parseTime=true"
+    ssl: "true"
+```
 
 ### Multi-DSN Configuration
 
@@ -115,6 +146,7 @@ export MYSQL_DSN="user:pass@tcp(localhost:3306)/db1?parseTime=true"
 export MYSQL_DSN_1="user:pass@tcp(prod-server:3306)/production?parseTime=true"
 export MYSQL_DSN_1_NAME="production"
 export MYSQL_DSN_1_DESC="Production database"
+export MYSQL_DSN_1_SSL="true"  # Enable SSL for this connection
 
 export MYSQL_DSN_2="user:pass@tcp(staging:3306)/staging?parseTime=true"
 export MYSQL_DSN_2_NAME="staging"
@@ -125,7 +157,7 @@ Or use JSON configuration:
 
 ```bash
 export MYSQL_CONNECTIONS='[
-  {"name": "production", "dsn": "user:pass@tcp(prod:3306)/db?parseTime=true", "description": "Production"},
+  {"name": "production", "dsn": "user:pass@tcp(prod:3306)/db?parseTime=true", "description": "Production", "ssl": "true"},
   {"name": "staging", "dsn": "user:pass@tcp(staging:3306)/db?parseTime=true", "description": "Staging"}
 ]'
 ```
@@ -152,6 +184,7 @@ connections:
   production:
     dsn: "readonly:pass@tcp(prod:3306)/prod?parseTime=true"
     description: "Production (read-only)"
+    ssl: "true"  # Enable TLS with certificate verification
 
 # Query settings
 query:

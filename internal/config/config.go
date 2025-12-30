@@ -31,6 +31,7 @@ type ConnectionConfig struct {
 	DSN         string `json:"dsn"`
 	Description string `json:"description,omitempty"`
 	ReadOnly    bool   `json:"read_only,omitempty"`
+	SSL         string `json:"ssl,omitempty"` // "true", "false", "skip-verify", or empty (use DSN as-is)
 }
 
 // Config holds all configuration for the MySQL MCP server.
@@ -198,11 +199,15 @@ func loadConnections() ([]ConnectionConfig, error) {
 
 	// Fall back to numbered DSN environment variables
 	// MYSQL_DSN (default), MYSQL_DSN_1, MYSQL_DSN_2, etc.
+	// Global SSL setting from MYSQL_SSL (applies to all env-defined connections)
+	globalSSL := os.Getenv("MYSQL_SSL")
+
 	if dsn := os.Getenv("MYSQL_DSN"); dsn != "" {
 		configs = append(configs, ConnectionConfig{
 			Name:        "default",
 			DSN:         dsn,
 			Description: "Default connection",
+			SSL:         globalSSL,
 		})
 	}
 
@@ -210,6 +215,7 @@ func loadConnections() ([]ConnectionConfig, error) {
 		dsnKey := fmt.Sprintf("MYSQL_DSN_%d", i)
 		nameKey := fmt.Sprintf("MYSQL_DSN_%d_NAME", i)
 		descKey := fmt.Sprintf("MYSQL_DSN_%d_DESC", i)
+		sslKey := fmt.Sprintf("MYSQL_DSN_%d_SSL", i)
 
 		dsn := os.Getenv(dsnKey)
 		if dsn == "" {
@@ -221,10 +227,17 @@ func loadConnections() ([]ConnectionConfig, error) {
 			name = fmt.Sprintf("connection_%d", i)
 		}
 
+		// Per-connection SSL overrides global
+		ssl := os.Getenv(sslKey)
+		if ssl == "" {
+			ssl = globalSSL
+		}
+
 		configs = append(configs, ConnectionConfig{
 			Name:        name,
 			DSN:         dsn,
 			Description: os.Getenv(descKey),
+			SSL:         ssl,
 		})
 	}
 

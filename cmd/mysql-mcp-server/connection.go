@@ -35,7 +35,10 @@ func (cm *ConnectionManager) AddConnectionWithPoolConfig(connCfg config.Connecti
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	conn, err := sql.Open("mysql", connCfg.DSN)
+	// Apply SSL/TLS settings to DSN if configured
+	dsn := config.ApplySSLToDSN(connCfg.DSN, connCfg.SSL)
+
+	conn, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return fmt.Errorf("failed to open connection %s: %w", connCfg.Name, err)
 	}
