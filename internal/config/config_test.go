@@ -25,6 +25,7 @@ func clearEnv() {
 		"MYSQL_MCP_TOKEN_MODEL",
 		"MYSQL_HTTP_PORT",
 		"MYSQL_MCP_AUDIT_LOG",
+		"MYSQL_SSL",
 	}
 	for _, v := range envVars {
 		os.Unsetenv(v)
@@ -34,6 +35,7 @@ func clearEnv() {
 		os.Unsetenv("MYSQL_DSN_" + string(rune('0'+i)))
 		os.Unsetenv("MYSQL_DSN_" + string(rune('0'+i)) + "_NAME")
 		os.Unsetenv("MYSQL_DSN_" + string(rune('0'+i)) + "_DESC")
+		os.Unsetenv("MYSQL_DSN_" + string(rune('0'+i)) + "_SSL")
 	}
 }
 
@@ -298,4 +300,92 @@ func TestGetEnvBool(t *testing.T) {
 	}
 
 	os.Unsetenv("TEST_BOOL")
+}
+
+func TestLoadJSONConnectionsWithGlobalSSL(t *testing.T) {
+	clearEnv()
+
+	// Set global SSL and JSON connections without SSL settings
+	os.Setenv("MYSQL_SSL", "true")
+	jsonConns := `[
+		{"name": "prod", "dsn": "user:pass@tcp(prod:3306)/db", "description": "Production"},
+		{"name": "staging", "dsn": "user:pass@tcp(staging:3306)/db", "description": "Staging"}
+	]`
+	os.Setenv("MYSQL_CONNECTIONS", jsonConns)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if len(cfg.Connections) != 2 {
+		t.Fatalf("expected 2 connections, got %d", len(cfg.Connections))
+	}
+
+	// Both connections should inherit global SSL
+	for _, conn := range cfg.Connections {
+		if conn.SSL != "true" {
+			t.Errorf("expected SSL 'true' for connection %s, got '%s'", conn.Name, conn.SSL)
+		}
+	}
+}
+
+func TestLoadJSONConnectionsWithPerConnectionSSL(t *testing.T) {
+	clearEnv()
+
+	// Set global SSL and JSON connections with mixed SSL settings
+	os.Setenv("MYSQL_SSL", "true")
+	jsonConns := `[
+		{"name": "prod", "dsn": "user:pass@tcp(prod:3306)/db", "description": "Production", "ssl": "skip-verify"},
+		{"name": "staging", "dsn": "user:pass@tcp(staging:3306)/db", "description": "Staging"}
+	]`
+	os.Setenv("MYSQL_CONNECTIONS", jsonConns)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if len(cfg.Connections) != 2 {
+		t.Fatalf("expected 2 connections, got %d", len(cfg.Connections))
+	}
+
+	// prod should keep its own SSL setting
+	if cfg.Connections[0].SSL != "skip-verify" {
+		t.Errorf("expected SSL 'skip-verify' for prod, got '%s'", cfg.Connections[0].SSL)
+	}
+
+	// staging should inherit global SSL
+	if cfg.Connections[1].SSL != "true" {
+		t.Errorf("expected SSL 'true' for staging, got '%s'", cfg.Connections[1].SSL)
+	}
+}
+
+func TestLoadNumberedDSNsWithGlobalSSL(t *testing.T) {
+	clearEnv()
+
+	os.Setenv("MYSQL_SSL", "skip-verify")
+	os.Setenv("MYSQL_DSN", "user:pass@tcp(localhost:3306)/default")
+	os.Setenv("MYSQL_DSN_1", "user:pass@tcp(server1:3306)/db1")
+	os.Setenv("MYSQL_DSN_1_NAME", "server1")
+	os.Setenv("MYSQL_DSN_1_SSL", "true") // Override global SSL
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if len(cfg.Connections) != 2 {
+		t.Fatalf("expected 2 connections, got %d", len(cfg.Connections))
+	}
+
+	// Default connection should use global SSL
+	if cfg.Connections[0].SSL != "skip-verify" {
+		t.Errorf("expected SSL 'skip-verify' for default, got '%s'", cfg.Connections[0].SSL)
+	}
+
+	// server1 should use its own SSL setting
+	if cfg.Connections[1].SSL != "true" {
+		t.Errorf("expected SSL 'true' for server1, got '%s'", cfg.Connections[1].SSL)
+	}
 }

@@ -382,8 +382,14 @@ func ApplySSLToDSN(dsn, ssl string) string {
 	if ssl == "" || ssl == "false" || ssl == "0" {
 		return dsn
 	}
-	if strings.Contains(dsn, "tls=") {
-		return dsn
+
+	// Check for existing tls= parameter only in the query string (after ?)
+	// to avoid false positives from passwords containing "tls="
+	if idx := strings.Index(dsn, "?"); idx != -1 {
+		queryString := dsn[idx:]
+		if strings.Contains(queryString, "tls=") {
+			return dsn
+		}
 	}
 
 	// Determine the tls parameter value

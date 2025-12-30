@@ -189,18 +189,25 @@ func applyEnvOverrides(cfg *Config) {
 func loadConnections() ([]ConnectionConfig, error) {
 	var configs []ConnectionConfig
 
+	// Global SSL setting from MYSQL_SSL (applies to all connections without explicit SSL)
+	globalSSL := os.Getenv("MYSQL_SSL")
+
 	// Check for JSON-based configuration first
 	if jsonConfig := os.Getenv("MYSQL_CONNECTIONS"); jsonConfig != "" {
 		if err := json.Unmarshal([]byte(jsonConfig), &configs); err != nil {
 			return nil, fmt.Errorf("failed to parse MYSQL_CONNECTIONS: %w", err)
+		}
+		// Apply global SSL to connections that don't have their own SSL setting
+		for i := range configs {
+			if configs[i].SSL == "" && globalSSL != "" {
+				configs[i].SSL = globalSSL
+			}
 		}
 		return configs, nil
 	}
 
 	// Fall back to numbered DSN environment variables
 	// MYSQL_DSN (default), MYSQL_DSN_1, MYSQL_DSN_2, etc.
-	// Global SSL setting from MYSQL_SSL (applies to all env-defined connections)
-	globalSSL := os.Getenv("MYSQL_SSL")
 
 	if dsn := os.Getenv("MYSQL_DSN"); dsn != "" {
 		configs = append(configs, ConnectionConfig{

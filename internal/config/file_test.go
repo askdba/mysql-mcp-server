@@ -666,6 +666,19 @@ func TestApplySSLToDSN(t *testing.T) {
 			ssl:      "true",
 			expected: "user:pass@tcp(localhost:3306)/db?tls=custom",
 		},
+		// Password containing "tls=" should NOT prevent SSL from being applied
+		{
+			name:     "password contains tls= should still apply ssl",
+			dsn:      "user:mytls=secret@tcp(localhost:3306)/db",
+			ssl:      "true",
+			expected: "user:mytls=secret@tcp(localhost:3306)/db?tls=true",
+		},
+		{
+			name:     "password contains tls= with existing params",
+			dsn:      "user:tls=pass@tcp(localhost:3306)/db?parseTime=true",
+			ssl:      "skip-verify",
+			expected: "user:tls=pass@tcp(localhost:3306)/db?parseTime=true&tls=skip-verify",
+		},
 		// Unknown value defaults to true
 		{
 			name:     "unknown ssl value defaults to true",
