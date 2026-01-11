@@ -45,10 +45,7 @@ func stripSQLLiterals(s string) string {
 			if b[i] != '\'' {
 				b[i] = ' '
 			}
-			// Backslash escape: \' or \\ etc.
-			if b[i] == ' ' && i > 0 && b[i-1] == '\\' {
-				// already blanked; continue
-			}
+			// Note: Backslash escapes (\' or \\) are already handled by blanking above.
 			// Handle end / doubled quote escape ('')
 			if i < len(b) && s[i] == '\'' {
 				// If doubled quote, keep string mode and skip the next quote.

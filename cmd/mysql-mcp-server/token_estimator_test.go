@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -208,7 +209,7 @@ func TestLimitedWriterStopsEarly(t *testing.T) {
 	// Write data that exceeds the limit
 	largeData := strings.Repeat("x", 200)
 	_, err = lw.Write([]byte(largeData))
-	if err != errLimitExceeded {
+	if !errors.Is(err, errLimitExceeded) {
 		t.Fatalf("expected errLimitExceeded, got %v", err)
 	}
 
@@ -229,7 +230,7 @@ func TestLimitedWriterNoAllocationBeyondCap(t *testing.T) {
 	chunk := strings.Repeat("a", 500)
 	for i := 0; i < 20; i++ {
 		_, err := lw.Write([]byte(chunk))
-		if err == errLimitExceeded {
+		if errors.Is(err, errLimitExceeded) {
 			break
 		}
 	}

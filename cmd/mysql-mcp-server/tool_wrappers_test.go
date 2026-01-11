@@ -125,7 +125,7 @@ func TestWrapToolWithError(t *testing.T) {
 	wrapped := wrapTool("test_tool", handler)
 	_, _, err = wrapped(context.Background(), nil, mockInput{Value: "test"})
 
-	if err != expectedErr {
+	if !errors.Is(err, expectedErr) {
 		t.Errorf("expected error %v, got %v", expectedErr, err)
 	}
 }
