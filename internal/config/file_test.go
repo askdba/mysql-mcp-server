@@ -633,12 +633,12 @@ func TestApplySSLToDSN(t *testing.T) {
 			ssl:      "SKIP-VERIFY",
 			expected: "user:pass@tcp(localhost:3306)/db?tls=skip-verify",
 		},
-		// Preferred
+		// Preferred (maps to skip-verify since go-sql-driver doesn't support tls=preferred)
 		{
-			name:     "ssl preferred",
+			name:     "ssl preferred maps to skip-verify",
 			dsn:      "user:pass@tcp(localhost:3306)/db",
 			ssl:      "preferred",
-			expected: "user:pass@tcp(localhost:3306)/db?tls=preferred",
+			expected: "user:pass@tcp(localhost:3306)/db?tls=skip-verify",
 		},
 		// DSN with existing params
 		{

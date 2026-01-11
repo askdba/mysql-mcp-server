@@ -113,7 +113,9 @@ Enable encrypted connections to MySQL servers:
 | `true` | Enable TLS with certificate verification |
 | `false` | Disable TLS (default) |
 | `skip-verify` | Enable TLS without certificate verification (self-signed certs) |
-| `preferred` | Use TLS if available, fall back to unencrypted |
+| `preferred` | Maps to `skip-verify` (Go MySQL driver limitation) |
+
+> **Note:** The Go MySQL driver doesn't support `tls=preferred`. When you specify `preferred`, it is automatically mapped to `skip-verify` to ensure TLS is enabled.
 
 **Environment variable:**
 
