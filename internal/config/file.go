@@ -371,8 +371,12 @@ func maskDSN(dsn string) string {
 // SSL values:
 //   - "true" or "1": Enable TLS with certificate verification (tls=true)
 //   - "skip-verify": Enable TLS without certificate verification (tls=skip-verify)
+//   - "preferred": Maps to skip-verify (Go MySQL driver doesn't support tls=preferred)
 //   - "false", "0", or "": No change to DSN (use DSN as-is)
-//   - "preferred": Use TLS if available, fall back to unencrypted (tls=preferred)
+//
+// Note: The go-sql-driver/mysql only supports tls=true, tls=false, tls=skip-verify,
+// or a custom TLS config name. The "preferred" option from MySQL client is not supported,
+// so we map it to "skip-verify" as the closest equivalent behavior.
 //
 // If the DSN already contains a tls= parameter, it is not modified.
 func ApplySSLToDSN(dsn, ssl string) string {
@@ -393,6 +397,7 @@ func ApplySSLToDSN(dsn, ssl string) string {
 	}
 
 	// Determine the tls parameter value
+	// Note: go-sql-driver/mysql only supports: true, false, skip-verify, or custom config name
 	var tlsValue string
 	switch ssl {
 	case "true", "1":
@@ -400,7 +405,9 @@ func ApplySSLToDSN(dsn, ssl string) string {
 	case "skip-verify":
 		tlsValue = "skip-verify"
 	case "preferred":
-		tlsValue = "preferred"
+		// "preferred" is not supported by go-sql-driver/mysql
+		// Map to "skip-verify" as the closest equivalent (TLS without cert verification)
+		tlsValue = "skip-verify"
 	default:
 		// Unknown value, treat as true for safety
 		tlsValue = "true"

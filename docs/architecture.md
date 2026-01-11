@@ -394,7 +394,7 @@ graph TB
     end
     
     subgraph "Connection Security"
-        TLS["TLS/SSL Options<br/>- true: verify certs<br/>- skip-verify: no verify<br/>- preferred: opportunistic"]
+        TLS["TLS/SSL Options<br/>- true: verify certs<br/>- skip-verify: no verify<br/>- preferred: maps to skip-verify"]
         DSNMask["DSN Masking<br/>- Passwords hidden in logs"]
     end
     
