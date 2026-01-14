@@ -1,0 +1,73 @@
+name: ❓ Question / Help
+description: Ask a question or get help with configuration
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Need help? We're here to assist! Please provide as much detail as possible.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: What would you like to know?
+      placeholder: Describe your question...
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What are you trying to accomplish? This helps us provide better answers.
+      placeholder: I'm trying to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What Have You Tried?
+      description: What have you already tried or researched?
+      placeholder: I've tried...
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Related Area
+      description: What area is your question about?
+      options:
+        - Installation / Setup
+        - Configuration
+        - Claude Desktop Integration
+        - Cursor Integration
+        - HTTP REST API
+        - MCP Tools
+        - Performance
+        - Security / SSL
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version (if applicable)
+      description: What version are you using?
+      placeholder: "v1.4.0"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: I have read the README and documentation
+          required: true
+        - label: I have searched existing issues for similar questions
+          required: true

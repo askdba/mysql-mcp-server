@@ -1,0 +1,15 @@
+# Issue template configuration
+# This prevents blank issues from being created
+
+blank_issues_enabled: false
+
+contact_links:
+  - name: 📖 Documentation
+    url: https://github.com/askdba/mysql-mcp-server#readme
+    about: Check the README for setup instructions and configuration options
+  - name: 💬 Discussions
+    url: https://github.com/askdba/mysql-mcp-server/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: 🔒 Security Issues
+    url: https://github.com/askdba/mysql-mcp-server/security/advisories/new
+    about: Report security vulnerabilities privately
