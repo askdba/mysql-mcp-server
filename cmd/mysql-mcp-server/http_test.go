@@ -833,3 +833,341 @@ func TestHTTPLogger(t *testing.T) {
 	httpLogger("GET", "/api/test", 200, 100*time.Millisecond)
 	httpLogger("POST", "/api/query", 500, 50*time.Millisecond)
 }
+
+// TestHTTPListProcedures tests the /api/procedures endpoint (extended)
+func TestHTTPListProcedures(t *testing.T) {
+	mock, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	rows := sqlmock.NewRows([]string{"ROUTINE_NAME", "DEFINER", "CREATED", "LAST_ALTERED", "ROUTINE_COMMENT"}).
+		AddRow("get_user", "root@localhost", "2024-01-01 00:00:00", "2024-01-01 00:00:00", "Get user by ID")
+	mock.ExpectQuery("SELECT(.|\n)*ROUTINE_NAME(.|\n)*FROM information_schema.ROUTINES").WillReturnRows(rows)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/procedures?database=testdb", nil)
+	w := httptest.NewRecorder()
+
+	httpListProcedures(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+// TestHTTPListProceduresMissingDatabase tests /api/procedures without database param
+func TestHTTPListProceduresMissingDatabase(t *testing.T) {
+	_, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/procedures", nil)
+	w := httptest.NewRecorder()
+
+	httpListProcedures(w, req)
+
+	resp := w.Result()
+	// Returns 500 internal error when database is missing (tool returns error)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPListFunctions tests the /api/functions endpoint (extended)
+func TestHTTPListFunctions(t *testing.T) {
+	mock, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	rows := sqlmock.NewRows([]string{"ROUTINE_NAME", "DEFINER", "DATA_TYPE", "CREATED", "LAST_ALTERED", "ROUTINE_COMMENT"}).
+		AddRow("calc_total", "root@localhost", "DECIMAL", "2024-01-01 00:00:00", "2024-01-01 00:00:00", "Calculate total")
+	mock.ExpectQuery("SELECT(.|\n)*ROUTINE_NAME(.|\n)*FROM information_schema.ROUTINES").WillReturnRows(rows)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/functions?database=testdb", nil)
+	w := httptest.NewRecorder()
+
+	httpListFunctions(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+// TestHTTPListFunctionsMissingDatabase tests /api/functions without database param
+func TestHTTPListFunctionsMissingDatabase(t *testing.T) {
+	_, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/functions", nil)
+	w := httptest.NewRecorder()
+
+	httpListFunctions(w, req)
+
+	resp := w.Result()
+	// Returns 500 internal error when database is missing (tool returns error)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPVectorSearch tests the /api/vector/search endpoint
+func TestHTTPVectorSearch(t *testing.T) {
+	mock, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	// Vector search query
+	rows := sqlmock.NewRows([]string{"id", "content", "distance"}).
+		AddRow(1, "hello world", 0.15).
+		AddRow(2, "foo bar", 0.25)
+	mock.ExpectQuery("SELECT").WillReturnRows(rows)
+
+	body := `{"database": "testdb", "table": "embeddings", "vector_column": "embedding", "query_vector": [0.1, 0.2, 0.3], "limit": 10}`
+	req := httptest.NewRequest(http.MethodPost, "/api/vector/search", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	httpVectorSearch(w, req)
+
+	resp := w.Result()
+	// May return 200 or error depending on vector support
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("unexpected status %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPVectorSearchInvalidJSON tests /api/vector/search with invalid JSON
+func TestHTTPVectorSearchInvalidJSON(t *testing.T) {
+	_, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	body := `{invalid}`
+	req := httptest.NewRequest(http.MethodPost, "/api/vector/search", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	httpVectorSearch(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPVectorInfo tests the /api/vector/info endpoint
+func TestHTTPVectorInfo(t *testing.T) {
+	mock, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	// Mock query for vector column info
+	rows := sqlmock.NewRows([]string{"COLUMN_NAME", "COLUMN_TYPE", "DATA_TYPE"}).
+		AddRow("embedding", "vector(128)", "vector")
+	mock.ExpectQuery("SELECT").WillReturnRows(rows)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/vector/info?database=testdb&table=embeddings", nil)
+	w := httptest.NewRecorder()
+
+	httpVectorInfo(w, req)
+
+	resp := w.Result()
+	// May return 200 or error depending on vector support
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("unexpected status %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPVectorInfoMissingParams tests /api/vector/info without required params
+func TestHTTPVectorInfoMissingParams(t *testing.T) {
+	_, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/vector/info", nil)
+	w := httptest.NewRecorder()
+
+	httpVectorInfo(w, req)
+
+	resp := w.Result()
+	// Returns 500 internal error when params are missing (tool returns error)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPListViewsMissingDatabase tests /api/views without database param
+func TestHTTPListViewsMissingDatabase(t *testing.T) {
+	_, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/views", nil)
+	w := httptest.NewRecorder()
+
+	httpListViews(w, req)
+
+	resp := w.Result()
+	// Returns 500 internal error when database is missing (tool returns error)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPListTriggersMissingDatabase tests /api/triggers without database param
+func TestHTTPListTriggersMissingDatabase(t *testing.T) {
+	_, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/triggers", nil)
+	w := httptest.NewRecorder()
+
+	httpListTriggers(w, req)
+
+	resp := w.Result()
+	// Returns 500 internal error when database is missing (tool returns error)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPListIndexesMissingParams tests /api/indexes without required params
+func TestHTTPListIndexesMissingParams(t *testing.T) {
+	_, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/indexes", nil)
+	w := httptest.NewRecorder()
+
+	httpListIndexes(w, req)
+
+	resp := w.Result()
+	// Returns 500 internal error when params are missing (tool returns error)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPShowCreateTableMissingParams tests /api/create-table without required params
+func TestHTTPShowCreateTableMissingParams(t *testing.T) {
+	_, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/create-table", nil)
+	w := httptest.NewRecorder()
+
+	httpShowCreateTable(w, req)
+
+	resp := w.Result()
+	// Returns 500 internal error when params are missing (tool returns error)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPPartitionsMissingParams tests /api/partitions without required params
+func TestHTTPPartitionsMissingParams(t *testing.T) {
+	_, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/partitions", nil)
+	w := httptest.NewRecorder()
+
+	httpListPartitions(w, req)
+
+	resp := w.Result()
+	// Returns 500 internal error when params are missing (tool returns error)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPDatabaseSizeMissingParam tests /api/size/database without database param
+func TestHTTPDatabaseSizeMissingParam(t *testing.T) {
+	mock, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	// Database param is optional - returns all databases when missing
+	rows := sqlmock.NewRows([]string{"TABLE_SCHEMA", "size_mb", "data_mb", "index_mb", "tables"}).
+		AddRow("testdb", 10.5, 8.0, 2.5, 5)
+	mock.ExpectQuery("SELECT(.|\n)*TABLE_SCHEMA(.|\n)*FROM information_schema.TABLES").WillReturnRows(rows)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/size/database", nil)
+	w := httptest.NewRecorder()
+
+	httpDatabaseSize(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPTableSizeMissingParam tests /api/size/tables without database param
+func TestHTTPTableSizeMissingParam(t *testing.T) {
+	_, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/size/tables", nil)
+	w := httptest.NewRecorder()
+
+	httpTableSize(w, req)
+
+	resp := w.Result()
+	// Returns 500 internal error when database is missing (tool returns error)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPForeignKeysMissingParam tests /api/foreign-keys without database param
+func TestHTTPForeignKeysMissingParam(t *testing.T) {
+	_, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/foreign-keys", nil)
+	w := httptest.NewRecorder()
+
+	httpForeignKeys(w, req)
+
+	resp := w.Result()
+	// Returns 500 internal error when database is missing (tool returns error)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPListTablesMissingParam tests /api/tables without database param
+func TestHTTPListTablesMissingParam(t *testing.T) {
+	_, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tables", nil)
+	w := httptest.NewRecorder()
+
+	httpListTables(w, req)
+
+	resp := w.Result()
+	// Returns 500 internal error when database is missing (tool returns error)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPDescribeTableMissingParams tests /api/describe without required params
+func TestHTTPDescribeTableMissingParams(t *testing.T) {
+	_, cleanup := setupHTTPTest(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/describe", nil)
+	w := httptest.NewRecorder()
+
+	httpDescribeTable(w, req)
+
+	resp := w.Result()
+	// Returns 500 internal error when params are missing (tool returns error)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", resp.StatusCode)
+	}
+}

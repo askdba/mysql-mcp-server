@@ -156,3 +156,294 @@ func TestRunQueryRespectsMaxRows(t *testing.T) {
 		t.Fatalf("unmet expectations: %v", err)
 	}
 }
+
+func TestClientClose(t *testing.T) {
+	client, mock := newTestClient(t)
+
+	mock.ExpectClose()
+
+	err := client.Close()
+	if err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestNewWithDBNilDB(t *testing.T) {
+	cfg := Config{
+		MaxRows:       5,
+		QueryTimeoutS: 5,
+	}
+
+	_, err := NewWithDB(nil, cfg)
+	if err == nil {
+		t.Fatal("expected error for nil db, got nil")
+	}
+	if err.Error() != "db is nil" {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestRunQueryEmptySQL(t *testing.T) {
+	client, _ := newTestClient(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := client.RunQuery(ctx, "", 10)
+	if err == nil {
+		t.Fatal("expected error for empty SQL, got nil")
+	}
+	if err.Error() != "sql is required" {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestListTablesEmptyDatabase(t *testing.T) {
+	client, _ := newTestClient(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := client.ListTables(ctx, "")
+	if err == nil {
+		t.Fatal("expected error for empty database, got nil")
+	}
+	if err.Error() != "database is required" {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestDescribeTableEmptyParams(t *testing.T) {
+	client, _ := newTestClient(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	// Test empty database
+	_, err := client.DescribeTable(ctx, "", "table")
+	if err == nil {
+		t.Fatal("expected error for empty database, got nil")
+	}
+
+	// Test empty table
+	_, err = client.DescribeTable(ctx, "db", "")
+	if err == nil {
+		t.Fatal("expected error for empty table, got nil")
+	}
+}
+
+func TestRunQueryMaxRowsDefault(t *testing.T) {
+	client, mock := newTestClient(t)
+
+	sqlText := "SELECT id FROM users"
+	rows := sqlmock.NewRows([]string{"id"}).
+		AddRow(1).
+		AddRow(2).
+		AddRow(3).
+		AddRow(4).
+		AddRow(5).
+		AddRow(6) // More than maxRows (5)
+
+	mock.ExpectQuery(sqlText).WillReturnRows(rows)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	// Pass 0 to use default maxRows
+	result, err := client.RunQuery(ctx, sqlText, 0)
+	if err != nil {
+		t.Fatalf("RunQuery returned error: %v", err)
+	}
+
+	// Should be limited to 5 (the configured maxRows)
+	if len(result) != 5 {
+		t.Fatalf("expected 5 rows (maxRows default), got %d", len(result))
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestRunQueryMaxRowsExceedsConfig(t *testing.T) {
+	client, mock := newTestClient(t)
+
+	sqlText := "SELECT id FROM users"
+	rows := sqlmock.NewRows([]string{"id"}).
+		AddRow(1).
+		AddRow(2).
+		AddRow(3).
+		AddRow(4).
+		AddRow(5).
+		AddRow(6)
+
+	mock.ExpectQuery(sqlText).WillReturnRows(rows)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	// Request more than maxRows (5) - should be capped
+	result, err := client.RunQuery(ctx, sqlText, 100)
+	if err != nil {
+		t.Fatalf("RunQuery returned error: %v", err)
+	}
+
+	// Should be limited to 5 (the configured maxRows)
+	if len(result) != 5 {
+		t.Fatalf("expected 5 rows (maxRows cap), got %d", len(result))
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestListDatabasesQueryError(t *testing.T) {
+	client, mock := newTestClient(t)
+
+	mock.ExpectQuery("SHOW DATABASES").WillReturnError(sqlmock.ErrCancelled)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := client.ListDatabases(ctx)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestListTablesQueryError(t *testing.T) {
+	client, mock := newTestClient(t)
+
+	mock.ExpectExec("USE `testdb`").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("SHOW TABLES").WillReturnError(sqlmock.ErrCancelled)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := client.ListTables(ctx, "testdb")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestListTablesUseError(t *testing.T) {
+	client, mock := newTestClient(t)
+
+	mock.ExpectExec("USE `testdb`").
+		WillReturnError(sqlmock.ErrCancelled)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := client.ListTables(ctx, "testdb")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestDescribeTableUseError(t *testing.T) {
+	client, mock := newTestClient(t)
+
+	mock.ExpectExec("USE `testdb`").
+		WillReturnError(sqlmock.ErrCancelled)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := client.DescribeTable(ctx, "testdb", "users")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestDescribeTableQueryError(t *testing.T) {
+	client, mock := newTestClient(t)
+
+	mock.ExpectExec("USE `testdb`").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("DESCRIBE `users`").WillReturnError(sqlmock.ErrCancelled)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := client.DescribeTable(ctx, "testdb", "users")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestRunQueryQueryError(t *testing.T) {
+	client, mock := newTestClient(t)
+
+	mock.ExpectQuery("SELECT id FROM users").WillReturnError(sqlmock.ErrCancelled)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := client.RunQuery(ctx, "SELECT id FROM users", 10)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestListTablesInvalidDatabaseName(t *testing.T) {
+	client, _ := newTestClient(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	// Invalid database name with backticks
+	_, err := client.ListTables(ctx, "test`db")
+	if err == nil {
+		t.Fatal("expected error for invalid database name, got nil")
+	}
+}
+
+func TestDescribeTableInvalidNames(t *testing.T) {
+	client, _ := newTestClient(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	// Invalid database name
+	_, err := client.DescribeTable(ctx, "test`db", "users")
+	if err == nil {
+		t.Fatal("expected error for invalid database name, got nil")
+	}
+
+	// Invalid table name
+	_, err = client.DescribeTable(ctx, "testdb", "use`rs")
+	if err == nil {
+		t.Fatal("expected error for invalid table name, got nil")
+	}
+}
