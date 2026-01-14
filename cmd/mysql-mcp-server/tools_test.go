@@ -376,6 +376,74 @@ func TestToolRunQueryWithMaxRows(t *testing.T) {
 	}
 }
 
+func TestToolRunQueryWithDatabase(t *testing.T) {
+	mock, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	// Expect USE statement followed by SELECT
+	mock.ExpectExec("USE `testdb`").WillReturnResult(sqlmock.NewResult(0, 0))
+	rows := sqlmock.NewRows([]string{"id", "name"}).
+		AddRow(1, "Alice")
+	mock.ExpectQuery("SELECT \\* FROM users").WillReturnRows(rows)
+
+	ctx := context.Background()
+	_, output, err := toolRunQuery(ctx, &mcp.CallToolRequest{}, RunQueryInput{
+		SQL:      "SELECT * FROM users",
+		Database: "testdb",
+	})
+
+	if err != nil {
+		t.Fatalf("toolRunQuery with database failed: %v", err)
+	}
+
+	if len(output.Rows) != 1 {
+		t.Errorf("expected 1 row, got %d", len(output.Rows))
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestToolRunQueryQueryError(t *testing.T) {
+	mock, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	mock.ExpectQuery("SELECT \\* FROM nonexistent").WillReturnError(sqlmock.ErrCancelled)
+
+	ctx := context.Background()
+	_, _, err := toolRunQuery(ctx, &mcp.CallToolRequest{}, RunQueryInput{
+		SQL: "SELECT * FROM nonexistent",
+	})
+
+	if err == nil {
+		t.Fatal("expected error for query failure")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestToolRunQueryInvalidDatabase(t *testing.T) {
+	mock, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	_, _, err := toolRunQuery(ctx, &mcp.CallToolRequest{}, RunQueryInput{
+		SQL:      "SELECT * FROM users",
+		Database: "test`db", // Invalid name with backtick
+	})
+
+	if err == nil {
+		t.Fatal("expected error for invalid database name")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
 func TestToolPingSuccess(t *testing.T) {
 	mock, cleanup := setupMockDB(t)
 	defer cleanup()
