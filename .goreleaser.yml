@@ -138,6 +138,7 @@ release:
     ```bash
     docker pull ghcr.io/askdba/mysql-mcp-server:{{ .Version }}
     ```
+    > Note: Docker tags do not include the leading "v" (use {{ .Version }}, not v{{ .Version }}).
     
     **Build from Source:**
     ```bash

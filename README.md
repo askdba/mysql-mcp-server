@@ -43,6 +43,9 @@ brew install askdba/tap/mysql-mcp-server
 docker pull ghcr.io/askdba/mysql-mcp-server:latest
 ```
 
+> Note: Docker image tags use the raw version number without a leading "v"
+> (e.g., `1.5.0`, not `v1.5.0`).
+
 ### Download Binary
 
 Download the latest release from [GitHub Releases](https://github.com/askdba/mysql-mcp-server/releases).
