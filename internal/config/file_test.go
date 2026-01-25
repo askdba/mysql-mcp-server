@@ -2,6 +2,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -86,6 +87,15 @@ http:
 	if cfg.Pool.MaxIdleConns != 10 {
 		t.Errorf("expected max_idle_conns 10, got %d", cfg.Pool.MaxIdleConns)
 	}
+	if cfg.Pool.ConnMaxLifetimeMinutes != 60 {
+		t.Errorf("expected conn_max_lifetime_minutes 60, got %d", cfg.Pool.ConnMaxLifetimeMinutes)
+	}
+	if cfg.Pool.ConnMaxIdleTimeMinutes != 15 {
+		t.Errorf("expected conn_max_idle_time_minutes 15, got %d", cfg.Pool.ConnMaxIdleTimeMinutes)
+	}
+	if cfg.Pool.PingTimeoutSeconds != 10 {
+		t.Errorf("expected ping_timeout_seconds 10, got %d", cfg.Pool.PingTimeoutSeconds)
+	}
 
 	// Verify features
 	if !cfg.Features.ExtendedTools {
@@ -123,7 +133,18 @@ http:
 		t.Error("expected rate_limit.enabled true")
 	}
 	if cfg.HTTP.RateLimit.RPS == nil || *cfg.HTTP.RateLimit.RPS != 50 {
-		t.Errorf("expected rate_limit.rps 50, got %v", cfg.HTTP.RateLimit.RPS)
+		val := "(nil)"
+		if cfg.HTTP.RateLimit.RPS != nil {
+			val = fmt.Sprintf("%f", *cfg.HTTP.RateLimit.RPS)
+		}
+		t.Errorf("expected rate_limit.rps 50, got %s", val)
+	}
+	if cfg.HTTP.RateLimit.Burst == nil || *cfg.HTTP.RateLimit.Burst != 100 {
+		val := "(nil)"
+		if cfg.HTTP.RateLimit.Burst != nil {
+			val = fmt.Sprintf("%d", *cfg.HTTP.RateLimit.Burst)
+		}
+		t.Errorf("expected rate_limit.burst 100, got %s", val)
 	}
 }
 

@@ -270,10 +270,10 @@ func (fc *FileConfig) ToConfig() *Config {
 		if fc.HTTP.RateLimit.Enabled != nil {
 			cfg.RateLimitEnabled = *fc.HTTP.RateLimit.Enabled
 		}
-		if fc.HTTP.RateLimit.RPS != nil && *fc.HTTP.RateLimit.RPS > 0 {
+		if fc.HTTP.RateLimit.RPS != nil {
 			cfg.RateLimitRPS = *fc.HTTP.RateLimit.RPS
 		}
-		if fc.HTTP.RateLimit.Burst != nil && *fc.HTTP.RateLimit.Burst > 0 {
+		if fc.HTTP.RateLimit.Burst != nil {
 			cfg.RateLimitBurst = *fc.HTTP.RateLimit.Burst
 		}
 	}
