@@ -120,7 +120,7 @@ http:
 		t.Error("expected rate_limit.enabled true")
 	}
 	if cfg.HTTP.RateLimit.RPS != 50 {
-		t.Errorf("expected rate_limit.rps 50, got %d", cfg.HTTP.RateLimit.RPS)
+		t.Errorf("expected rate_limit.rps 50, got %f", cfg.HTTP.RateLimit.RPS)
 	}
 }
 
@@ -344,7 +344,7 @@ func TestMinimalConfigDefaults(t *testing.T) {
 		t.Errorf("expected HTTPPort %d, got %d", DefaultHTTPPort, cfg.HTTPPort)
 	}
 	if cfg.RateLimitRPS != float64(DefaultRateLimitRPS) {
-		t.Errorf("expected RateLimitRPS %d, got %f", DefaultRateLimitRPS, cfg.RateLimitRPS)
+		t.Errorf("expected RateLimitRPS %f, got %f", float64(DefaultRateLimitRPS), cfg.RateLimitRPS)
 	}
 	if cfg.RateLimitBurst != DefaultRateLimitBurst {
 		t.Errorf("expected RateLimitBurst %d, got %d", DefaultRateLimitBurst, cfg.RateLimitBurst)

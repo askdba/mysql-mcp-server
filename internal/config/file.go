@@ -82,9 +82,9 @@ type FileHTTPConfig struct {
 
 // FileRateLimitConfig represents rate limiting settings in the config file.
 type FileRateLimitConfig struct {
-	Enabled bool `yaml:"enabled" json:"enabled"`
-	RPS     int  `yaml:"rps" json:"rps"`
-	Burst   int  `yaml:"burst" json:"burst"`
+	Enabled bool    `yaml:"enabled" json:"enabled"`
+	RPS     float64 `yaml:"rps" json:"rps"`
+	Burst   int     `yaml:"burst" json:"burst"`
 }
 
 // ConfigFilePath holds the path to the config file (set by command line flag).
@@ -265,12 +265,16 @@ func (fc *FileConfig) ToConfig() *Config {
 		cfg.HTTPRequestTimeout = secondsToDuration(fc.HTTP.RequestTimeoutSeconds)
 	}
 
-	cfg.RateLimitEnabled = fc.HTTP.RateLimit.Enabled
-	if fc.HTTP.RateLimit.RPS > 0 {
-		cfg.RateLimitRPS = float64(fc.HTTP.RateLimit.RPS)
-	}
-	if fc.HTTP.RateLimit.Burst > 0 {
-		cfg.RateLimitBurst = fc.HTTP.RateLimit.Burst
+	// Only apply rate limit settings from file if they are not zero values,
+	// allowing defaults to be preserved and overridden by env vars.
+	if fc.HTTP.RateLimit != (FileRateLimitConfig{}) {
+		cfg.RateLimitEnabled = fc.HTTP.RateLimit.Enabled
+		if fc.HTTP.RateLimit.RPS >= 0 { // Allow RPS >= 0
+			cfg.RateLimitRPS = fc.HTTP.RateLimit.RPS
+		}
+		if fc.HTTP.RateLimit.Burst >= 0 { // Allow Burst >= 0
+			cfg.RateLimitBurst = fc.HTTP.RateLimit.Burst
+		}
 	}
 
 	// Convert connections - sort keys for deterministic ordering
@@ -334,7 +338,7 @@ func PrintConfig(cfg *Config) string {
 			RequestTimeoutSeconds: int(cfg.HTTPRequestTimeout.Seconds()),
 			RateLimit: FileRateLimitConfig{
 				Enabled: cfg.RateLimitEnabled,
-				RPS:     int(cfg.RateLimitRPS),
+				RPS:     cfg.RateLimitRPS,
 				Burst:   cfg.RateLimitBurst,
 			},
 		},
