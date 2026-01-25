@@ -116,11 +116,14 @@ http:
 	if cfg.HTTP.Port != 8080 {
 		t.Errorf("expected http.port 8080, got %d", cfg.HTTP.Port)
 	}
-	if !cfg.HTTP.RateLimit.Enabled {
+	if cfg.HTTP.RateLimit == nil {
+		t.Fatal("expected rate_limit settings")
+	}
+	if cfg.HTTP.RateLimit.Enabled == nil || !*cfg.HTTP.RateLimit.Enabled {
 		t.Error("expected rate_limit.enabled true")
 	}
-	if cfg.HTTP.RateLimit.RPS != 50 {
-		t.Errorf("expected rate_limit.rps 50, got %f", cfg.HTTP.RateLimit.RPS)
+	if cfg.HTTP.RateLimit.RPS == nil || *cfg.HTTP.RateLimit.RPS != 50 {
+		t.Errorf("expected rate_limit.rps 50, got %v", cfg.HTTP.RateLimit.RPS)
 	}
 }
 
@@ -196,10 +199,10 @@ func TestFileConfigToConfig(t *testing.T) {
 			Enabled:               true,
 			Port:                  9000,
 			RequestTimeoutSeconds: 90,
-			RateLimit: FileRateLimitConfig{
-				Enabled: true,
-				RPS:     75,
-				Burst:   150,
+			RateLimit: &FileRateLimitConfig{
+				Enabled: func(b bool) *bool { return &b }(true),
+				RPS:     func(f float64) *float64 { return &f }(75),
+				Burst:   func(i int) *int { return &i }(150),
 			},
 		},
 	}
