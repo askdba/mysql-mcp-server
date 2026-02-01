@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on "Keep a Changelog" and this project follows
 Semantic Versioning.
 
+## [Unreleased]
+### Added
+- Native support for MariaDB 10.x and 11.x.
+- Automatic server type detection (`mysql` vs `mariadb`) in `server_info` tool.
+- MariaDB 11.4 integration test target in `Makefile` and `docker-compose.test.yml`.
+- Robust Unicode support for MariaDB initialization scripts.
+
 ## v1.5.0 - 2026-01-17
 
 ### Added

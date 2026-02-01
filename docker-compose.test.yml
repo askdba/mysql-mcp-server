@@ -32,15 +32,13 @@ services:
       - ./tests/sql/sakila-schema.sql:/docker-entrypoint-initdb.d/02-sakila-schema.sql:ro
       - ./tests/sql/sakila-data.sql:/docker-entrypoint-initdb.d/03-sakila-data.sql:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass"]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass" ]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
     command: >
-      --default-authentication-plugin=mysql_native_password
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
 
   # MySQL 8.4 - Innovation release
   mysql84:
@@ -59,14 +57,13 @@ services:
       - ./tests/sql/sakila-schema.sql:/docker-entrypoint-initdb.d/02-sakila-schema.sql:ro
       - ./tests/sql/sakila-data.sql:/docker-entrypoint-initdb.d/03-sakila-data.sql:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass"]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass" ]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
     command: >
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_unicode_ci
+      --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
 
   # MySQL 9.0 - Latest innovation release
   mysql90:
@@ -85,22 +82,44 @@ services:
       - ./tests/sql/sakila-schema.sql:/docker-entrypoint-initdb.d/02-sakila-schema.sql:ro
       - ./tests/sql/sakila-data.sql:/docker-entrypoint-initdb.d/03-sakila-data.sql:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass"]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass" ]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
     command: >
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_unicode_ci
+      --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  # MariaDB 11.4 - Latest stable
+  mariadb11:
+    image: mariadb:11.4
+    container_name: mysql-mcp-test-mariadb-11
+    environment:
+      MARIADB_ROOT_PASSWORD: testpass
+      MARIADB_DATABASE: testdb
+      MARIADB_USER: testuser
+      MARIADB_PASSWORD: testpass
+    ports:
+      - "3310:3306"
+    volumes:
+      - mariadb11_data:/var/lib/mysql
+      - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./tests/sql/sakila-schema.sql:/docker-entrypoint-initdb.d/02-sakila-schema.sql:ro
+      - ./tests/sql/sakila-data.sql:/docker-entrypoint-initdb.d/03-sakila-data.sql:ro
+    healthcheck:
+      test: [ "CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-ptestpass" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   mysql80_data:
   mysql84_data:
   mysql90_data:
+  mariadb11_data:
+
 
 networks:
   default:
     name: mysql-mcp-test-network
-
-

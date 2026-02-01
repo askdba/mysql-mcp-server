@@ -15,7 +15,8 @@ This project exposes safe MySQL introspection tools to Claude Desktop via MCP. C
 ## Features
 
 - Fully read-only (blocks all non-SELECT/SHOW/DESCRIBE/EXPLAIN)
-- **Multi-DSN Support**: Connect to multiple MySQL instances, switch via tool
+- **Multi-DSN Support**: Connect to multiple MySQL or MariaDB instances, switch via tool
+- **MariaDB Support**: Native compatibility with MariaDB 10.x and 11.x
 - **Vector Search** (MySQL 9.0+): Similarity search on vector columns
 - MCP tools:
   - list_databases, list_tables, describe_table
@@ -23,7 +24,7 @@ This project exposes safe MySQL introspection tools to Claude Desktop via MCP. C
   - ping, server_info
   - list_connections, use_connection (multi-DSN)
   - vector_search, vector_info (MySQL 9.0+)
-- Supports MySQL 8.0, 8.4, 9.0+
+- Supports MySQL 8.0, 8.4, 9.0+ and MariaDB 10.x, 11.x
 - Query timeouts, structured logging, audit logs
 - Single Go binary
 - Unit and integration tests (Testcontainers)
@@ -797,10 +798,16 @@ make test-integration-84
 make test-integration-90
 ```
 
-**Test against all MySQL versions:**
+**Test against all supported versions (MySQL & MariaDB):**
 
 ```bash
 make test-integration-all
+```
+
+**Test specifically against MariaDB 11.4:**
+
+```bash
+make test-integration-mariadb-11
 ```
 
 ### Sakila Database Tests

@@ -104,11 +104,21 @@ test-integration-90:
 		exit $$TEST_EXIT
 
 test-integration-all:
-	@echo "$(BLUE)🐋 Running integration tests against all MySQL versions...$(RESET)"
+	@echo "$(BLUE)🐋 Running integration tests against all MySQL and MariaDB versions...$(RESET)"
 	@$(MAKE) test-integration-80
 	@$(MAKE) test-integration-84
 	@$(MAKE) test-integration-90
+	@$(MAKE) test-integration-mariadb-11
 	@echo "$(GREEN)✔ All integration tests complete$(RESET)"
+
+test-integration-mariadb-11:
+	@echo "$(BLUE)🐋 Running integration tests against MariaDB 11.4...$(RESET)"
+	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 60 mariadb11
+	@MYSQL_TEST_DSN="root:testpass@tcp(localhost:3310)/testdb?parseTime=true&charset=utf8mb4" \
+		go test -tags=integration -v ./tests/integration/...; \
+		TEST_EXIT=$$?; \
+		docker compose -f docker-compose.test.yml stop mariadb11; \
+		exit $$TEST_EXIT
 
 # Sakila database integration tests
 test-sakila: test-mysql-up

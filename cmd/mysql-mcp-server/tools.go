@@ -375,6 +375,8 @@ func toolServerInfo(
 		return nil, ServerInfoOutput{}, fmt.Errorf("failed to get version: %w", err)
 	}
 
+	out.ServerEngine = string(getServerType())
+
 	// Get various server variables in one query
 	rows, err := getDB().QueryContext(ctx, `
 		SELECT VARIABLE_NAME, VARIABLE_VALUE 

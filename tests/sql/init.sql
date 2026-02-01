@@ -1,9 +1,8 @@
--- tests/sql/init.sql
--- Database initialization script for integration tests
--- This file is mounted into MySQL containers at startup
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
 
 -- Create test database (if not exists via env var)
-CREATE DATABASE IF NOT EXISTS testdb;
+CREATE DATABASE IF NOT EXISTS testdb CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE testdb;
 
 -- Users table

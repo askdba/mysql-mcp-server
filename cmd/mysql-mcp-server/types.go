@@ -68,6 +68,7 @@ type ServerInfoInput struct{}
 
 type ServerInfoOutput struct {
 	Version          string `json:"version" jsonschema:"MySQL server version"`
+	ServerEngine     string `json:"server_engine" jsonschema:"Server engine (mysql or mariadb)"`
 	VersionComment   string `json:"version_comment" jsonschema:"MySQL version comment (e.g., MySQL Community Server)"`
 	Uptime           int64  `json:"uptime_seconds" jsonschema:"server uptime in seconds"`
 	CurrentDatabase  string `json:"current_database" jsonschema:"currently selected database, if any"`
