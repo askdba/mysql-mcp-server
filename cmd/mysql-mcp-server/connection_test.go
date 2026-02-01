@@ -2,6 +2,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -292,4 +294,73 @@ func TestConnectionManagerConcurrency(t *testing.T) {
 	for i := 0; i < 11; i++ {
 		<-done
 	}
+}
+
+func TestDetectServerType(t *testing.T) {
+	cm := NewConnectionManager()
+
+	t.Run("MariaDB detection - combined query", func(t *testing.T) {
+		db, mock, _ := sqlmock.New()
+		defer db.Close()
+		mock.ExpectQuery("SELECT VERSION\\(\\), @@version_comment").
+			WillReturnRows(sqlmock.NewRows([]string{"VERSION()", "@@version_comment"}).
+				AddRow("11.4.2-MariaDB", "mariadb.org binary distribution"))
+
+		st := cm.detectServerType(context.Background(), db)
+		if st != ServerTypeMariaDB {
+			t.Errorf("expected ServerTypeMariaDB, got %s", st)
+		}
+	})
+
+	t.Run("MariaDB detection - fallback query", func(t *testing.T) {
+		db, mock, _ := sqlmock.New()
+		defer db.Close()
+		// First fails, second succeeds
+		mock.ExpectQuery("SELECT VERSION\\(\\), @@version_comment").WillReturnError(fmt.Errorf("error"))
+		mock.ExpectQuery("SELECT VERSION\\(\\)").
+			WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("10.11.2-MariaDB"))
+
+		st := cm.detectServerType(context.Background(), db)
+		if st != ServerTypeMariaDB {
+			t.Errorf("expected ServerTypeMariaDB, got %s", st)
+		}
+	})
+
+	t.Run("MySQL detection", func(t *testing.T) {
+		db, mock, _ := sqlmock.New()
+		defer db.Close()
+		mock.ExpectQuery("SELECT VERSION\\(\\), @@version_comment").
+			WillReturnRows(sqlmock.NewRows([]string{"VERSION()", "@@version_comment"}).
+				AddRow("8.0.36", "MySQL Community Server - GPL"))
+
+		st := cm.detectServerType(context.Background(), db)
+		if st != ServerTypeMySQL {
+			t.Errorf("expected ServerTypeMySQL, got %s", st)
+		}
+	})
+
+	t.Run("Unknown detection - both fail", func(t *testing.T) {
+		db, mock, _ := sqlmock.New()
+		defer db.Close()
+		mock.ExpectQuery("SELECT VERSION\\(\\), @@version_comment").WillReturnError(fmt.Errorf("error"))
+		mock.ExpectQuery("SELECT VERSION\\(\\)").WillReturnError(fmt.Errorf("error"))
+
+		st := cm.detectServerType(context.Background(), db)
+		if st != ServerTypeUnknown {
+			t.Errorf("expected ServerTypeUnknown, got %s", st)
+		}
+	})
+
+	t.Run("Unknown detection - empty response", func(t *testing.T) {
+		db, mock, _ := sqlmock.New()
+		defer db.Close()
+		mock.ExpectQuery("SELECT VERSION\\(\\), @@version_comment").
+			WillReturnRows(sqlmock.NewRows([]string{"VERSION()", "@@version_comment"}).
+				AddRow("", ""))
+
+		st := cm.detectServerType(context.Background(), db)
+		if st != ServerTypeUnknown {
+			t.Errorf("expected ServerTypeUnknown, got %s", st)
+		}
+	})
 }

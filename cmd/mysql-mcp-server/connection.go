@@ -93,8 +93,10 @@ func (cm *ConnectionManager) AddConnectionWithPoolConfig(connCfg config.Connecti
 	cm.connections[connCfg.Name] = conn
 	cm.configs[connCfg.Name] = connCfg
 
-	// Detect server type
-	cm.serverTypes[connCfg.Name] = cm.detectServerType(ctx, conn)
+	// Detect server type with a dedicated context to avoid sharing timeout with PingContext
+	ctxDetect, cancelDetect := context.WithTimeout(context.Background(), pingTimeout)
+	defer cancelDetect()
+	cm.serverTypes[connCfg.Name] = cm.detectServerType(ctxDetect, conn)
 
 	// Set as active if it's the first connection
 	if cm.activeConn == "" {
@@ -177,15 +179,23 @@ func (cm *ConnectionManager) GetServerType() ServerType {
 // detectServerType queries the server to determine if it's MySQL or MariaDB.
 func (cm *ConnectionManager) detectServerType(ctx context.Context, db *sql.DB) ServerType {
 	var version, versionComment string
-	// Try VERSION() first
+	// Try VERSION() and @@version_comment first
 	err := db.QueryRowContext(ctx, "SELECT VERSION(), @@version_comment").Scan(&version, &versionComment)
 	if err != nil {
-		// Fallback to just VERSION() if version_comment isn't available
-		_ = db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version)
+		// Fallback to just VERSION() if the combined query fails
+		err = db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version)
+		if err != nil {
+			return ServerTypeUnknown
+		}
 	}
 
-	version = strings.ToLower(version)
-	versionComment = strings.ToLower(versionComment)
+	version = strings.TrimSpace(strings.ToLower(version))
+	versionComment = strings.TrimSpace(strings.ToLower(versionComment))
+
+	// If we got nothing back, we can't reliably identify the server
+	if version == "" && versionComment == "" {
+		return ServerTypeUnknown
+	}
 
 	if strings.Contains(version, "mariadb") || strings.Contains(versionComment, "mariadb") {
 		return ServerTypeMariaDB
