@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
@@ -616,4 +617,72 @@ func TestToolUseConnectionNotFound(t *testing.T) {
 	}
 
 	_ = result.mock
+}
+func TestToolServerInfoFallback(t *testing.T) {
+	result := setupMockDBFull(t)
+	defer result.cleanup()
+
+	mock := result.mock
+	// Set server type to MariaDB for this test
+	connManager.serverTypes["mock"] = ServerTypeMariaDB
+
+	// 1. Mock VERSION() query
+	mock.ExpectQuery("SELECT VERSION\\(\\)").WillReturnRows(
+		sqlmock.NewRows([]string{"VERSION()"}).AddRow("11.4.2-MariaDB"),
+	)
+
+	// 2. Mock performance_schema.global_variables FAILURE
+	mock.ExpectQuery("SELECT VARIABLE_NAME, VARIABLE_VALUE FROM performance_schema.global_variables").
+		WillReturnError(fmt.Errorf("Table 'performance_schema.global_variables' doesn't exist"))
+
+	// 3. Mock SHOW VARIABLES FALLBACK
+	varRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
+		AddRow("version_comment", "mariadb.org binary distribution").
+		AddRow("character_set_server", "utf8mb4").
+		AddRow("collation_server", "utf8mb4_unicode_ci").
+		AddRow("max_connections", "151")
+	mock.ExpectQuery("SHOW VARIABLES WHERE Variable_name IN").WillReturnRows(varRows)
+
+	// 4. Mock performance_schema.global_status FAILURE
+	mock.ExpectQuery("SELECT VARIABLE_NAME, VARIABLE_VALUE FROM performance_schema.global_status").
+		WillReturnError(fmt.Errorf("Table 'performance_schema.global_status' doesn't exist"))
+
+	// 5. Mock SHOW GLOBAL STATUS FALLBACK
+	statusRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
+		AddRow("Uptime", "3600").
+		AddRow("Threads_connected", "5")
+	mock.ExpectQuery("SHOW GLOBAL STATUS WHERE Variable_name IN").WillReturnRows(statusRows)
+
+	// 6. Mock final info query
+	mock.ExpectQuery("SELECT CURRENT_USER\\(\\), IFNULL\\(DATABASE\\(\\), ''\\)").WillReturnRows(
+		sqlmock.NewRows([]string{"CURRENT_USER()", "DATABASE()"}).AddRow("root@localhost", "testdb"),
+	)
+
+	ctx := context.Background()
+	_, output, err := toolServerInfo(ctx, &mcp.CallToolRequest{}, ServerInfoInput{})
+
+	if err != nil {
+		t.Fatalf("toolServerInfo failed unexpectedly during fallback: %v", err)
+	}
+
+	// Verify the output got populated via fallbacks
+	if output.Version != "11.4.2-MariaDB" {
+		t.Errorf("expected version 11.4.2-MariaDB, got %s", output.Version)
+	}
+	if output.ServerEngine != "mariadb" {
+		t.Errorf("expected engine mariadb, got %s", output.ServerEngine)
+	}
+	if output.VersionComment != "mariadb.org binary distribution" {
+		t.Errorf("expected comment, got %s", output.VersionComment)
+	}
+	if output.Uptime != 3600 {
+		t.Errorf("expected uptime 3600, got %d", output.Uptime)
+	}
+	if output.ThreadsConnected != 5 {
+		t.Errorf("expected threads 5, got %d", output.ThreadsConnected)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
 }
