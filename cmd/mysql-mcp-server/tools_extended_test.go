@@ -788,27 +788,80 @@ func TestBuildVectorString(t *testing.T) {
 }
 
 func TestIsVectorSupported(t *testing.T) {
-	tests := []struct {
-		version  string
-		expected bool
-	}{
-		{"8.0.30", false},
-		{"8.4.0", false},
-		{"9.0.0", true},
-		{"9.0.1", true},
-		{"10.0.0", true},
-		{"invalid", false},
-		{"", false},
+	// Save and restore global state
+	oldConnManager := connManager
+	defer func() { connManager = oldConnManager }()
+
+	// Helper to set up a connection manager with a specific server type
+	setupServerType := func(serverType ServerType) {
+		cm := NewConnectionManager()
+		cm.serverTypes["test"] = serverType
+		cm.activeConn = "test"
+		connManager = cm
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.version, func(t *testing.T) {
-			result := isVectorSupported(tt.version)
-			if result != tt.expected {
-				t.Errorf("isVectorSupported(%s) = %v, expected %v", tt.version, result, tt.expected)
-			}
-		})
-	}
+	t.Run("MySQL server type", func(t *testing.T) {
+		setupServerType(ServerTypeMySQL)
+
+		tests := []struct {
+			version  string
+			expected bool
+		}{
+			{"8.0.30", false},
+			{"8.4.0", false},
+			{"9.0.0", true},
+			{"9.0.1", true},
+			{"10.0.0", true},
+			{"invalid", false},
+			{"", false},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.version, func(t *testing.T) {
+				result := isVectorSupported(tt.version)
+				if result != tt.expected {
+					t.Errorf("isVectorSupported(%s) = %v, expected %v", tt.version, result, tt.expected)
+				}
+			})
+		}
+	})
+
+	t.Run("MariaDB server type - always false", func(t *testing.T) {
+		setupServerType(ServerTypeMariaDB)
+
+		// Even with version >= 9, MariaDB should return false
+		versions := []string{"10.11.2", "11.4.2", "9.0.0", "8.0.30"}
+		for _, version := range versions {
+			t.Run(version, func(t *testing.T) {
+				if isVectorSupported(version) {
+					t.Errorf("isVectorSupported(%s) should be false for MariaDB", version)
+				}
+			})
+		}
+	})
+
+	t.Run("Unknown server type - always false", func(t *testing.T) {
+		setupServerType(ServerTypeUnknown)
+
+		// Even with version >= 9, Unknown should return false to be safe
+		versions := []string{"10.0.0", "11.0.0", "9.0.0", "8.0.30"}
+		for _, version := range versions {
+			t.Run(version, func(t *testing.T) {
+				if isVectorSupported(version) {
+					t.Errorf("isVectorSupported(%s) should be false for Unknown server type", version)
+				}
+			})
+		}
+	})
+
+	t.Run("nil connManager - returns false", func(t *testing.T) {
+		connManager = nil
+
+		// When connManager is nil, getServerType returns Unknown, so should be false
+		if isVectorSupported("9.0.0") {
+			t.Error("isVectorSupported should return false when connManager is nil")
+		}
+	})
 }
 
 // ===== toolVectorSearch Tests =====

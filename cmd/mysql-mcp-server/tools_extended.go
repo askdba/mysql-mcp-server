@@ -867,8 +867,11 @@ func buildVectorString(vec []float64) string {
 }
 
 // isVectorSupported checks if MySQL version supports VECTOR type (9.0+).
+// Returns false for MariaDB and unknown server types to avoid incorrectly
+// enabling MySQL-specific features.
 func isVectorSupported(version string) bool {
-	if getServerType() == ServerTypeMariaDB {
+	serverType := getServerType()
+	if serverType == ServerTypeMariaDB || serverType == ServerTypeUnknown {
 		return false
 	}
 	parts := strings.Split(version, ".")
