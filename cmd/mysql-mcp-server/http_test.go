@@ -197,7 +197,7 @@ func TestHTTPListTables(t *testing.T) {
 	rows := sqlmock.NewRows([]string{"TABLE_NAME", "ENGINE", "TABLE_ROWS", "TABLE_COMMENT"}).
 		AddRow("users", "InnoDB", 100, "").
 		AddRow("orders", "InnoDB", 200, "")
-	mock.ExpectQuery(`(?s)SELECT.*FROM information_schema\.TABLES.*WHERE TABLE_SCHEMA = \?.*ORDER BY TABLE_NAME.*`).
+	mock.ExpectQuery(`(?s)SELECT\s+TABLE_NAME\s*,\s*ENGINE\s*,\s*TABLE_ROWS\s*,\s*TABLE_COMMENT\s+FROM\s+information_schema\.TABLES\s+WHERE\s+TABLE_SCHEMA\s*=\s*\?\s+ORDER\s+BY\s+TABLE_NAME`).
 		WithArgs("testdb").
 		WillReturnRows(rows)
 
@@ -225,7 +225,7 @@ func TestHTTPDescribeTable(t *testing.T) {
 		AddRow("id", "int", "NO", "PRI", nil, "auto_increment", "", nil).
 		AddRow("name", "varchar(255)", "NO", "", nil, "", "", "utf8mb4_general_ci")
 
-	mock.ExpectQuery(`(?s)SELECT.*FROM information_schema\.COLUMNS.*WHERE TABLE_SCHEMA = \? AND TABLE_NAME = \?.*ORDER BY ORDINAL_POSITION`).
+	mock.ExpectQuery(`(?s)SELECT\s+COLUMN_NAME\s*,\s*COLUMN_TYPE\s*,\s*IS_NULLABLE\s*,\s*COLUMN_KEY\s*,\s*COLUMN_DEFAULT\s*,\s*EXTRA\s*,\s*COLUMN_COMMENT\s*,\s*COLLATION_NAME\s+FROM\s+information_schema\.COLUMNS\s+WHERE\s+TABLE_SCHEMA\s*=\s*\?\s+AND\s+TABLE_NAME\s*=\s*\?\s+ORDER\s+BY\s+ORDINAL_POSITION`).
 		WithArgs("testdb", "users").
 		WillReturnRows(rows)
 
@@ -255,7 +255,7 @@ func TestHTTPDescribeTableWithNullCollation(t *testing.T) {
 		AddRow("created_at", "timestamp", "YES", "", nil, "", "", nil).
 		AddRow("name", "varchar(255)", "NO", "", nil, "", "User name", "utf8mb4_general_ci")
 
-	mock.ExpectQuery(`(?s)SELECT.*FROM information_schema\.COLUMNS.*WHERE TABLE_SCHEMA = \? AND TABLE_NAME = \?.*ORDER BY ORDINAL_POSITION`).
+	mock.ExpectQuery(`(?s)SELECT\s+COLUMN_NAME\s*,\s*COLUMN_TYPE\s*,\s*IS_NULLABLE\s*,\s*COLUMN_KEY\s*,\s*COLUMN_DEFAULT\s*,\s*EXTRA\s*,\s*COLUMN_COMMENT\s*,\s*COLLATION_NAME\s+FROM\s+information_schema\.COLUMNS\s+WHERE\s+TABLE_SCHEMA\s*=\s*\?\s+AND\s+TABLE_NAME\s*=\s*\?\s+ORDER\s+BY\s+ORDINAL_POSITION`).
 		WithArgs("testdb", "users").
 		WillReturnRows(rows)
 
@@ -282,9 +282,7 @@ func TestHTTPRunQuerySuccess(t *testing.T) {
 	rows := sqlmock.NewRows([]string{"id", "name"}).
 		AddRow(1, "Alice").
 		AddRow(2, "Bob")
-	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT id, name FROM users").WillReturnRows(rows)
-	mock.ExpectCommit()
 
 	body := `{"sql": "SELECT id, name FROM users"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/query", bytes.NewBufferString(body))

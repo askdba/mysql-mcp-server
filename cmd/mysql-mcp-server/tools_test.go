@@ -108,7 +108,7 @@ func TestToolListTablesSuccess(t *testing.T) {
 		AddRow("orders", "InnoDB", 200, "Orders table").
 		AddRow("products", "MyISAM", 50, "Products table")
 
-	mock.ExpectQuery(`(?s)SELECT.*FROM information_schema\.TABLES.*WHERE TABLE_SCHEMA = \?.*ORDER BY TABLE_NAME.*`).
+	mock.ExpectQuery(`(?s)SELECT\s+TABLE_NAME\s*,\s*ENGINE\s*,\s*TABLE_ROWS\s*,\s*TABLE_COMMENT\s+FROM\s+information_schema\.TABLES\s+WHERE\s+TABLE_SCHEMA\s*=\s*\?\s+ORDER\s+BY\s+TABLE_NAME`).
 		WithArgs("testdb").
 		WillReturnRows(rows)
 
@@ -171,7 +171,7 @@ func TestToolDescribeTableSuccess(t *testing.T) {
 		AddRow("name", "varchar(255)", "YES", "UNI", nil, "", "User name", "utf8mb4_unicode_ci").
 		AddRow("email", "varchar(255)", "YES", "", nil, "", "", "utf8mb4_unicode_ci")
 
-	mock.ExpectQuery(`(?s)SELECT.*FROM information_schema\.COLUMNS.*WHERE TABLE_SCHEMA = \? AND TABLE_NAME = \?.*ORDER BY ORDINAL_POSITION`).
+	mock.ExpectQuery(`(?s)SELECT\s+COLUMN_NAME\s*,\s*COLUMN_TYPE\s*,\s*IS_NULLABLE\s*,\s*COLUMN_KEY\s*,\s*COLUMN_DEFAULT\s*,\s*EXTRA\s*,\s*COLUMN_COMMENT\s*,\s*COLLATION_NAME\s+FROM\s+information_schema\.COLUMNS\s+WHERE\s+TABLE_SCHEMA\s*=\s*\?\s+AND\s+TABLE_NAME\s*=\s*\?\s+ORDER\s+BY\s+ORDINAL_POSITION`).
 		WithArgs("testdb", "users").
 		WillReturnRows(rows)
 
@@ -215,7 +215,7 @@ func TestToolDescribeTableWithNullCollation(t *testing.T) {
 		AddRow("created_at", "timestamp", "YES", "", nil, "", "", nil).
 		AddRow("name", "varchar(255)", "NO", "", nil, "", "User name", "utf8mb4_unicode_ci")
 
-	mock.ExpectQuery(`(?s)SELECT.*FROM information_schema\.COLUMNS.*WHERE TABLE_SCHEMA = \? AND TABLE_NAME = \?.*ORDER BY ORDINAL_POSITION`).
+	mock.ExpectQuery(`(?s)SELECT\s+COLUMN_NAME\s*,\s*COLUMN_TYPE\s*,\s*IS_NULLABLE\s*,\s*COLUMN_KEY\s*,\s*COLUMN_DEFAULT\s*,\s*EXTRA\s*,\s*COLUMN_COMMENT\s*,\s*COLLATION_NAME\s+FROM\s+information_schema\.COLUMNS\s+WHERE\s+TABLE_SCHEMA\s*=\s*\?\s+AND\s+TABLE_NAME\s*=\s*\?\s+ORDER\s+BY\s+ORDINAL_POSITION`).
 		WithArgs("testdb", "users").
 		WillReturnRows(rows)
 
@@ -298,9 +298,7 @@ func TestToolRunQuerySelectSuccess(t *testing.T) {
 		AddRow(1, "Alice", "alice@example.com").
 		AddRow(2, "Bob", "bob@example.com")
 
-	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT \\* FROM users").WillReturnRows(rows)
-	mock.ExpectCommit()
 
 	ctx := context.Background()
 	_, output, err := toolRunQuery(ctx, &mcp.CallToolRequest{}, RunQueryInput{
@@ -379,9 +377,7 @@ func TestToolRunQueryWithMaxRows(t *testing.T) {
 		AddRow(4).
 		AddRow(5)
 
-	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT id FROM numbers").WillReturnRows(rows)
-	mock.ExpectCommit()
 
 	ctx := context.Background()
 	maxRows := 3
@@ -408,13 +404,11 @@ func TestToolRunQueryWithDatabase(t *testing.T) {
 	mock, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	// Expect Transaction with USE statement
+	// Expect USE statement followed by SELECT
 	rows := sqlmock.NewRows([]string{"id", "name"}).
 		AddRow(1, "Alice")
-	mock.ExpectBegin()
 	mock.ExpectExec("USE `testdb`").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery("SELECT \\* FROM users").WillReturnRows(rows)
-	mock.ExpectCommit()
 
 	ctx := context.Background()
 	_, output, err := toolRunQuery(ctx, &mcp.CallToolRequest{}, RunQueryInput{
@@ -439,9 +433,7 @@ func TestToolRunQueryQueryError(t *testing.T) {
 	mock, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT \\* FROM nonexistent").WillReturnError(sqlmock.ErrCancelled)
-	mock.ExpectRollback()
 
 	ctx := context.Background()
 	_, _, err := toolRunQuery(ctx, &mcp.CallToolRequest{}, RunQueryInput{
@@ -460,9 +452,6 @@ func TestToolRunQueryQueryError(t *testing.T) {
 func TestToolRunQueryInvalidDatabase(t *testing.T) {
 	mock, cleanup := setupMockDB(t)
 	defer cleanup()
-
-	mock.ExpectBegin()
-	mock.ExpectRollback()
 
 	ctx := context.Background()
 	_, _, err := toolRunQuery(ctx, &mcp.CallToolRequest{}, RunQueryInput{
