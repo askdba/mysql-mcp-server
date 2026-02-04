@@ -282,7 +282,9 @@ func TestHTTPRunQuerySuccess(t *testing.T) {
 	rows := sqlmock.NewRows([]string{"id", "name"}).
 		AddRow(1, "Alice").
 		AddRow(2, "Bob")
+	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT id, name FROM users").WillReturnRows(rows)
+	mock.ExpectCommit()
 
 	body := `{"sql": "SELECT id, name FROM users"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/query", bytes.NewBufferString(body))

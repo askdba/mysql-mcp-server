@@ -83,7 +83,7 @@ func toolListTables(
 		var tableRows sql.NullInt64
 
 		if err := rows.Scan(&name, &engine, &tableRows, &comment); err != nil {
-			continue
+			return nil, ListTablesOutput{}, fmt.Errorf("scan failed: %w", err)
 		}
 
 		info := TableInfo{
@@ -206,9 +206,25 @@ func toolRunQuery(
 		limit = *input.MaxRows
 	}
 
-	// Use getDB() directly
-	// NOTE: RunQuery manual implementation here since mysqlClient is gone
-	rows, err := getDB().QueryContext(ctx, sqlText)
+	// Use a transaction to ensure database selection persists for the query if needed
+	tx, err := getDB().BeginTx(ctx, nil)
+	if err != nil {
+		return nil, QueryResult{}, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	// We rollback by default; if we commit successfully at the end, this does nothing.
+	defer tx.Rollback()
+
+	if input.Database != "" {
+		quotedDB, err := util.QuoteIdent(input.Database)
+		if err != nil {
+			return nil, QueryResult{}, fmt.Errorf("invalid database name: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, "USE "+quotedDB); err != nil {
+			return nil, QueryResult{}, fmt.Errorf("failed to select database '%s': %w", input.Database, err)
+		}
+	}
+
+	rows, err := tx.QueryContext(ctx, sqlText)
 	if err != nil {
 		timer.LogError(err, sqlText, tokens, nil)
 		if auditLogger != nil {
@@ -269,6 +285,11 @@ func toolRunQuery(
 
 	// Calculate efficiency metrics
 	eff := CalculateEfficiency(inputTokens, outputTokens, len(out.Rows))
+
+	// Commit if everything succeeded (important for INSERT/UPDATE/etc.)
+	if err := tx.Commit(); err != nil {
+		return nil, QueryResult{}, fmt.Errorf("failed to commit transaction: %w", err)
+	}
 
 	// Log success
 	timer.LogSuccess(len(out.Rows), sqlText, tokens, eff)
