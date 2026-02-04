@@ -212,7 +212,7 @@ func toolRunQuery(
 		return nil, QueryResult{}, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	// We rollback by default; if we commit successfully at the end, this does nothing.
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if input.Database != "" {
 		quotedDB, err := util.QuoteIdent(input.Database)
@@ -276,6 +276,10 @@ func toolRunQuery(
 		}
 		out.Rows = append(out.Rows, rowValues)
 		count++
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, QueryResult{}, fmt.Errorf("row iteration failed: %w", err)
 	}
 
 	// Token estimation for output (optional)

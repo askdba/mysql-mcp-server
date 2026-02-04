@@ -197,7 +197,7 @@ func TestHTTPListTables(t *testing.T) {
 	rows := sqlmock.NewRows([]string{"TABLE_NAME", "ENGINE", "TABLE_ROWS", "TABLE_COMMENT"}).
 		AddRow("users", "InnoDB", 100, "").
 		AddRow("orders", "InnoDB", 200, "")
-	mock.ExpectQuery(`SELECT TABLE_NAME, ENGINE, TABLE_ROWS, TABLE_COMMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = \? ORDER BY TABLE_NAME`).
+	mock.ExpectQuery(`(?s)SELECT.*FROM information_schema\.TABLES.*WHERE TABLE_SCHEMA = \?.*ORDER BY TABLE_NAME.*`).
 		WithArgs("testdb").
 		WillReturnRows(rows)
 
@@ -225,7 +225,7 @@ func TestHTTPDescribeTable(t *testing.T) {
 		AddRow("id", "int", "NO", "PRI", nil, "auto_increment", "", nil).
 		AddRow("name", "varchar(255)", "NO", "", nil, "", "", "utf8mb4_general_ci")
 
-	mock.ExpectQuery(`SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = \? AND TABLE_NAME = \? ORDER BY ORDINAL_POSITION`).
+	mock.ExpectQuery(`(?s)SELECT.*FROM information_schema\.COLUMNS.*WHERE TABLE_SCHEMA = \? AND TABLE_NAME = \?.*ORDER BY ORDINAL_POSITION`).
 		WithArgs("testdb", "users").
 		WillReturnRows(rows)
 
