@@ -159,11 +159,11 @@ func TestHTTPListDatabases(t *testing.T) {
 	mock, cleanup := setupHTTPTest(t)
 	defer cleanup()
 
-	rows := sqlmock.NewRows([]string{"Database"}).
+	rows := sqlmock.NewRows([]string{"SCHEMA_NAME"}).
 		AddRow("information_schema").
 		AddRow("mysql").
 		AddRow("testdb")
-	mock.ExpectQuery("SHOW DATABASES").WillReturnRows(rows)
+	mock.ExpectQuery("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA ORDER BY SCHEMA_NAME").WillReturnRows(rows)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/databases", nil)
 	w := httptest.NewRecorder()
@@ -194,10 +194,12 @@ func TestHTTPListTables(t *testing.T) {
 	mock, cleanup := setupHTTPTest(t)
 	defer cleanup()
 
-	rows := sqlmock.NewRows([]string{"Tables_in_testdb"}).
-		AddRow("users").
-		AddRow("orders")
-	mock.ExpectQuery("SHOW TABLES FROM `testdb`").WillReturnRows(rows)
+	rows := sqlmock.NewRows([]string{"TABLE_NAME", "ENGINE", "TABLE_ROWS", "TABLE_COMMENT"}).
+		AddRow("users", "InnoDB", 100, "").
+		AddRow("orders", "InnoDB", 200, "")
+	mock.ExpectQuery(`SELECT TABLE_NAME, ENGINE, TABLE_ROWS, TABLE_COMMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = \? ORDER BY TABLE_NAME`).
+		WithArgs("testdb").
+		WillReturnRows(rows)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tables?database=testdb", nil)
 	w := httptest.NewRecorder()
@@ -219,10 +221,13 @@ func TestHTTPDescribeTable(t *testing.T) {
 	mock, cleanup := setupHTTPTest(t)
 	defer cleanup()
 
-	rows := sqlmock.NewRows([]string{"Field", "Type", "Collation", "Null", "Key", "Default", "Extra", "Privileges", "Comment"}).
-		AddRow("id", "int", "", "NO", "PRI", "", "auto_increment", "select,insert", "").
-		AddRow("name", "varchar(255)", "utf8mb4_general_ci", "NO", "", "", "", "select,insert", "")
-	mock.ExpectQuery("SHOW FULL COLUMNS FROM `testdb`.`users`").WillReturnRows(rows)
+	rows := sqlmock.NewRows([]string{"COLUMN_NAME", "COLUMN_TYPE", "IS_NULLABLE", "COLUMN_KEY", "COLUMN_DEFAULT", "EXTRA", "COLUMN_COMMENT", "COLLATION_NAME"}).
+		AddRow("id", "int", "NO", "PRI", nil, "auto_increment", "", nil).
+		AddRow("name", "varchar(255)", "NO", "", nil, "", "", "utf8mb4_general_ci")
+
+	mock.ExpectQuery(`SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = \? AND TABLE_NAME = \? ORDER BY ORDINAL_POSITION`).
+		WithArgs("testdb", "users").
+		WillReturnRows(rows)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/describe?database=testdb&table=users", nil)
 	w := httptest.NewRecorder()
@@ -245,11 +250,14 @@ func TestHTTPDescribeTableWithNullCollation(t *testing.T) {
 	defer cleanup()
 
 	// MySQL 8.4+ returns NULL for Collation on non-string columns (int, timestamp, etc.)
-	rows := sqlmock.NewRows([]string{"Field", "Type", "Collation", "Null", "Key", "Default", "Extra", "Privileges", "Comment"}).
-		AddRow("id", "int", nil, "NO", "PRI", nil, "auto_increment", "select,insert", nil).
-		AddRow("created_at", "timestamp", nil, "YES", "", nil, "", "select,insert", nil).
-		AddRow("name", "varchar(255)", "utf8mb4_general_ci", "NO", "", nil, "", "select,insert", "User name")
-	mock.ExpectQuery("SHOW FULL COLUMNS FROM `testdb`.`users`").WillReturnRows(rows)
+	rows := sqlmock.NewRows([]string{"COLUMN_NAME", "COLUMN_TYPE", "IS_NULLABLE", "COLUMN_KEY", "COLUMN_DEFAULT", "EXTRA", "COLUMN_COMMENT", "COLLATION_NAME"}).
+		AddRow("id", "int", "NO", "PRI", nil, "auto_increment", "", nil).
+		AddRow("created_at", "timestamp", "YES", "", nil, "", "", nil).
+		AddRow("name", "varchar(255)", "NO", "", nil, "", "User name", "utf8mb4_general_ci")
+
+	mock.ExpectQuery(`SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = \? AND TABLE_NAME = \? ORDER BY ORDINAL_POSITION`).
+		WithArgs("testdb", "users").
+		WillReturnRows(rows)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/describe?database=testdb&table=users", nil)
 	w := httptest.NewRecorder()

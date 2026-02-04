@@ -12,6 +12,11 @@ Semantic Versioning.
 - MariaDB 11.4 integration test target in `Makefile` and `docker-compose.test.yml`.
 - Robust Unicode support for MariaDB initialization scripts.
 
+### Changed
+- Refactored schema discovery tools (`list_databases`, `list_tables`, `describe_table`) to use `information_schema` for better compatibility and performance.
+- Upgraded `list_tables` to include engine type, estimated row count, and comments.
+- Upgraded `describe_table` to return comprehensive column details including collation and comments.
+
 ## v1.5.0 - 2026-01-17
 
 ### Added

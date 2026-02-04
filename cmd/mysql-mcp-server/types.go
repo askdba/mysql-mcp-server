@@ -18,7 +18,10 @@ type ListTablesInput struct {
 }
 
 type TableInfo struct {
-	Name string `json:"name" jsonschema:"table name"`
+	Name    string `json:"name" jsonschema:"table name"`
+	Engine  string `json:"engine,omitempty" jsonschema:"storage engine (e.g. InnoDB, MyISAM)"`
+	Rows    *int64 `json:"rows,omitempty" jsonschema:"estimated number of rows"`
+	Comment string `json:"comment,omitempty" jsonschema:"table comment"`
 }
 
 type ListTablesOutput struct {

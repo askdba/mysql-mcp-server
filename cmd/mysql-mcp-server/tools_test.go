@@ -68,11 +68,11 @@ func TestToolListDatabases(t *testing.T) {
 	defer cleanup()
 
 	// Set up expected query
-	rows := sqlmock.NewRows([]string{"Database"}).
+	rows := sqlmock.NewRows([]string{"schema_name"}).
 		AddRow("information_schema").
 		AddRow("mysql").
 		AddRow("testdb")
-	mock.ExpectQuery("SHOW DATABASES").WillReturnRows(rows)
+	mock.ExpectQuery("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA ORDER BY SCHEMA_NAME").WillReturnRows(rows)
 
 	// Call the tool
 	ctx := context.Background()
@@ -102,11 +102,15 @@ func TestToolListTablesSuccess(t *testing.T) {
 	mock, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	rows := sqlmock.NewRows([]string{"Tables_in_testdb"}).
-		AddRow("users").
-		AddRow("orders").
-		AddRow("products")
-	mock.ExpectQuery("SHOW TABLES FROM `testdb`").WillReturnRows(rows)
+	// New query fetches TABLE_NAME, ENGINE, TABLE_ROWS, TABLE_COMMENT
+	rows := sqlmock.NewRows([]string{"TABLE_NAME", "ENGINE", "TABLE_ROWS", "TABLE_COMMENT"}).
+		AddRow("users", "InnoDB", 100, "Users table").
+		AddRow("orders", "InnoDB", 200, "Orders table").
+		AddRow("products", "MyISAM", 50, "Products table")
+
+	mock.ExpectQuery(`SELECT TABLE_NAME, ENGINE, TABLE_ROWS, TABLE_COMMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = \? ORDER BY TABLE_NAME`).
+		WithArgs("testdb").
+		WillReturnRows(rows)
 
 	ctx := context.Background()
 	_, output, err := toolListTables(ctx, &mcp.CallToolRequest{}, ListTablesInput{Database: "testdb"})
@@ -117,6 +121,20 @@ func TestToolListTablesSuccess(t *testing.T) {
 
 	if len(output.Tables) != 3 {
 		t.Errorf("expected 3 tables, got %d", len(output.Tables))
+	}
+
+	// Verify new fields
+	if output.Tables[0].Name != "users" {
+		t.Errorf("expected table 'users', got '%s'", output.Tables[0].Name)
+	}
+	if output.Tables[0].Engine != "InnoDB" {
+		t.Errorf("expected engine 'InnoDB', got '%s'", output.Tables[0].Engine)
+	}
+	if output.Tables[0].Rows == nil || *output.Tables[0].Rows != 100 {
+		t.Errorf("expected rows 100, got %v", output.Tables[0].Rows)
+	}
+	if output.Tables[0].Comment != "Users table" {
+		t.Errorf("expected comment 'Users table', got '%s'", output.Tables[0].Comment)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -147,12 +165,15 @@ func TestToolDescribeTableSuccess(t *testing.T) {
 	mock, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	rows := sqlmock.NewRows([]string{"Field", "Type", "Collation", "Null", "Key", "Default", "Extra", "Privileges", "Comment"}).
-		AddRow("id", "int", "", "NO", "PRI", "", "auto_increment", "select,insert,update,references", "").
-		AddRow("name", "varchar(255)", "utf8mb4_general_ci", "NO", "", "", "", "select,insert,update,references", "User name").
-		AddRow("email", "varchar(255)", "utf8mb4_general_ci", "YES", "UNI", "", "", "select,insert,update,references", "")
+	// New query fetches 8 columns: COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT, COLLATION_NAME
+	rows := sqlmock.NewRows([]string{"COLUMN_NAME", "COLUMN_TYPE", "IS_NULLABLE", "COLUMN_KEY", "COLUMN_DEFAULT", "EXTRA", "COLUMN_COMMENT", "COLLATION_NAME"}).
+		AddRow("id", "int", "NO", "PRI", nil, "auto_increment", "", nil).
+		AddRow("name", "varchar(255)", "YES", "UNI", nil, "", "User name", "utf8mb4_unicode_ci").
+		AddRow("email", "varchar(255)", "YES", "", nil, "", "", "utf8mb4_unicode_ci")
 
-	mock.ExpectQuery("SHOW FULL COLUMNS FROM `testdb`.`users`").WillReturnRows(rows)
+	mock.ExpectQuery(`SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = \? AND TABLE_NAME = \? ORDER BY ORDINAL_POSITION`).
+		WithArgs("testdb", "users").
+		WillReturnRows(rows)
 
 	ctx := context.Background()
 	_, output, err := toolDescribeTable(ctx, &mcp.CallToolRequest{}, DescribeTableInput{
@@ -189,12 +210,14 @@ func TestToolDescribeTableWithNullCollation(t *testing.T) {
 	defer cleanup()
 
 	// MySQL 8.4+ returns NULL for Collation on non-string columns
-	rows := sqlmock.NewRows([]string{"Field", "Type", "Collation", "Null", "Key", "Default", "Extra", "Privileges", "Comment"}).
-		AddRow("id", "int", nil, "NO", "PRI", nil, "auto_increment", "select,insert,update,references", nil).
-		AddRow("created_at", "timestamp", nil, "YES", "", nil, "", "select,insert,update,references", nil).
-		AddRow("name", "varchar(255)", "utf8mb4_general_ci", "NO", "", nil, "", "select,insert,update,references", "User name")
+	rows := sqlmock.NewRows([]string{"COLUMN_NAME", "COLUMN_TYPE", "IS_NULLABLE", "COLUMN_KEY", "COLUMN_DEFAULT", "EXTRA", "COLUMN_COMMENT", "COLLATION_NAME"}).
+		AddRow("id", "int", "NO", "PRI", nil, "auto_increment", "", nil).
+		AddRow("created_at", "timestamp", "YES", "", nil, "", "", nil).
+		AddRow("name", "varchar(255)", "NO", "", nil, "", "User name", "utf8mb4_unicode_ci")
 
-	mock.ExpectQuery("SHOW FULL COLUMNS FROM `testdb`.`users`").WillReturnRows(rows)
+	mock.ExpectQuery(`SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = \? AND TABLE_NAME = \? ORDER BY ORDINAL_POSITION`).
+		WithArgs("testdb", "users").
+		WillReturnRows(rows)
 
 	ctx := context.Background()
 	_, output, err := toolDescribeTable(ctx, &mcp.CallToolRequest{}, DescribeTableInput{
@@ -214,8 +237,8 @@ func TestToolDescribeTableWithNullCollation(t *testing.T) {
 	if output.Columns[0].Collation != "" {
 		t.Errorf("expected empty collation for int column, got '%s'", output.Columns[0].Collation)
 	}
-	if output.Columns[2].Collation != "utf8mb4_general_ci" {
-		t.Errorf("expected 'utf8mb4_general_ci' collation, got '%s'", output.Columns[2].Collation)
+	if output.Columns[2].Collation != "utf8mb4_unicode_ci" {
+		t.Errorf("expected 'utf8mb4_unicode_ci' collation, got '%s'", output.Columns[2].Collation)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -381,8 +404,7 @@ func TestToolRunQueryWithDatabase(t *testing.T) {
 	mock, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	// Expect USE statement followed by SELECT
-	mock.ExpectExec("USE `testdb`").WillReturnResult(sqlmock.NewResult(0, 0))
+	// Expect SELECT query
 	rows := sqlmock.NewRows([]string{"id", "name"}).
 		AddRow(1, "Alice")
 	mock.ExpectQuery("SELECT \\* FROM users").WillReturnRows(rows)
