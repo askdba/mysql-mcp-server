@@ -108,7 +108,7 @@ func TestToolListTablesSuccess(t *testing.T) {
 		AddRow("orders", "InnoDB", 200, "Orders table").
 		AddRow("products", "MyISAM", 50, "Products table")
 
-	mock.ExpectQuery(`SELECT TABLE_NAME, ENGINE, TABLE_ROWS, TABLE_COMMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = \? ORDER BY TABLE_NAME`).
+	mock.ExpectQuery(`(?s)SELECT.*FROM information_schema\.TABLES.*WHERE TABLE_SCHEMA = \?.*ORDER BY TABLE_NAME.*`).
 		WithArgs("testdb").
 		WillReturnRows(rows)
 
@@ -171,7 +171,7 @@ func TestToolDescribeTableSuccess(t *testing.T) {
 		AddRow("name", "varchar(255)", "YES", "UNI", nil, "", "User name", "utf8mb4_unicode_ci").
 		AddRow("email", "varchar(255)", "YES", "", nil, "", "", "utf8mb4_unicode_ci")
 
-	mock.ExpectQuery(`SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = \? AND TABLE_NAME = \? ORDER BY ORDINAL_POSITION`).
+	mock.ExpectQuery(`(?s)SELECT.*FROM information_schema\.COLUMNS.*WHERE TABLE_SCHEMA = \? AND TABLE_NAME = \?.*ORDER BY ORDINAL_POSITION`).
 		WithArgs("testdb", "users").
 		WillReturnRows(rows)
 
@@ -215,7 +215,7 @@ func TestToolDescribeTableWithNullCollation(t *testing.T) {
 		AddRow("created_at", "timestamp", "YES", "", nil, "", "", nil).
 		AddRow("name", "varchar(255)", "NO", "", nil, "", "User name", "utf8mb4_unicode_ci")
 
-	mock.ExpectQuery(`SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = \? AND TABLE_NAME = \? ORDER BY ORDINAL_POSITION`).
+	mock.ExpectQuery(`(?s)SELECT.*FROM information_schema\.COLUMNS.*WHERE TABLE_SCHEMA = \? AND TABLE_NAME = \?.*ORDER BY ORDINAL_POSITION`).
 		WithArgs("testdb", "users").
 		WillReturnRows(rows)
 

@@ -424,6 +424,10 @@ func toolServerInfo(
 		}
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, ServerInfoOutput{}, fmt.Errorf("server variables iteration failed: %w", err)
+	}
+
 	// Get uptime and threads connected from status
 	statusRows, err := getDB().QueryContext(ctx, `
 		SELECT VARIABLE_NAME, VARIABLE_VALUE
@@ -452,6 +456,10 @@ func toolServerInfo(
 		case "threads_connected":
 			out.ThreadsConnected, _ = strconv.Atoi(value)
 		}
+	}
+
+	if err := statusRows.Err(); err != nil {
+		return nil, ServerInfoOutput{}, fmt.Errorf("server status iteration failed: %w", err)
 	}
 
 	// Get current user and database
