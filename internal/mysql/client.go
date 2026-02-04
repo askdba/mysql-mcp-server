@@ -8,8 +8,6 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
-
-	"github.com/askdba/mysql-mcp-server/internal/util"
 )
 
 type Client struct {
@@ -102,7 +100,7 @@ func (c *Client) ListDatabases(ctx context.Context) ([]string, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
 
-	rows, err := c.db.QueryContext(ctx, "SHOW DATABASES")
+	rows, err := c.db.QueryContext(ctx, "SELECT schema_name FROM information_schema.schemata")
 	if err != nil {
 		return nil, err
 	}
@@ -124,19 +122,10 @@ func (c *Client) ListTables(ctx context.Context, database string) ([]string, err
 		return nil, fmt.Errorf("database is required")
 	}
 
-	dbName, err := util.QuoteIdent(database)
-	if err != nil {
-		return nil, fmt.Errorf("invalid database name: %w", err)
-	}
-
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
 
-	if _, err := c.db.ExecContext(ctx, "USE "+dbName); err != nil {
-		return nil, err
-	}
-
-	rows, err := c.db.QueryContext(ctx, "SHOW TABLES")
+	rows, err := c.db.QueryContext(ctx, "SELECT table_name FROM information_schema.tables WHERE table_schema = ?", database)
 	if err != nil {
 		return nil, err
 	}
@@ -158,23 +147,23 @@ func (c *Client) DescribeTable(ctx context.Context, database, table string) ([]m
 		return nil, fmt.Errorf("database and table are required")
 	}
 
-	dbName, err := util.QuoteIdent(database)
-	if err != nil {
-		return nil, fmt.Errorf("invalid database name: %w", err)
-	}
-	tableName, err := util.QuoteIdent(table)
-	if err != nil {
-		return nil, fmt.Errorf("invalid table name: %w", err)
-	}
-
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
 
-	if _, err := c.db.ExecContext(ctx, "USE "+dbName); err != nil {
-		return nil, err
-	}
-
-	rows, err := c.db.QueryContext(ctx, "DESCRIBE "+tableName)
+	const query = `
+		SELECT
+			column_name,
+			column_type,
+			is_nullable,
+			column_key,
+			column_default,
+			extra,
+			column_comment
+		FROM information_schema.columns
+		WHERE table_schema = ? AND table_name = ?
+		ORDER BY ordinal_position
+	`
+	rows, err := c.db.QueryContext(ctx, query, database, table)
 	if err != nil {
 		return nil, err
 	}

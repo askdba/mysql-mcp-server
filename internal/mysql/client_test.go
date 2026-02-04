@@ -32,11 +32,11 @@ func newTestClient(t *testing.T) (*Client, sqlmock.Sqlmock) {
 func TestListDatabases(t *testing.T) {
 	client, mock := newTestClient(t)
 
-	rows := sqlmock.NewRows([]string{"Database"}).
+	rows := sqlmock.NewRows([]string{"schema_name"}).
 		AddRow("mysql").
 		AddRow("testdb")
 
-	mock.ExpectQuery("SHOW DATABASES").WillReturnRows(rows)
+	mock.ExpectQuery("SELECT schema_name FROM information_schema.schemata").WillReturnRows(rows)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -60,14 +60,13 @@ func TestListTables(t *testing.T) {
 
 	dbName := "testdb"
 
-	mock.ExpectExec("USE `testdb`").
-		WillReturnResult(sqlmock.NewResult(0, 0))
-
-	rows := sqlmock.NewRows([]string{"Tables_in_testdb"}).
+	rows := sqlmock.NewRows([]string{"table_name"}).
 		AddRow("users").
 		AddRow("orders")
 
-	mock.ExpectQuery("SHOW TABLES").WillReturnRows(rows)
+	mock.ExpectQuery("SELECT table_name FROM information_schema.tables WHERE table_schema = ?").
+		WithArgs(dbName).
+		WillReturnRows(rows)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -92,14 +91,13 @@ func TestDescribeTable(t *testing.T) {
 	dbName := "testdb"
 	tableName := "users"
 
-	mock.ExpectExec("USE `testdb`").
-		WillReturnResult(sqlmock.NewResult(0, 0))
+	rows := sqlmock.NewRows([]string{"column_name", "column_type", "is_nullable", "column_key", "column_default", "extra", "column_comment"}).
+		AddRow("id", "int", "NO", "PRI", nil, "auto_increment", "").
+		AddRow("name", "varchar(255)", "YES", "", nil, "", "")
 
-	rows := sqlmock.NewRows([]string{"Field", "Type", "Null", "Key", "Default", "Extra"}).
-		AddRow("id", "int", "NO", "PRI", nil, "auto_increment").
-		AddRow("name", "varchar(255)", "YES", "", nil, "")
-
-	mock.ExpectQuery("DESCRIBE `users`").WillReturnRows(rows)
+	mock.ExpectQuery(`SELECT column_name, column_type, is_nullable, column_key, column_default, extra, column_comment FROM information_schema.columns WHERE table_schema = \? AND table_name = \? ORDER BY ordinal_position`).
+		WithArgs(dbName, tableName).
+		WillReturnRows(rows)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -113,7 +111,7 @@ func TestDescribeTable(t *testing.T) {
 		t.Fatalf("expected 2 columns, got %d", len(cols))
 	}
 
-	if cols[0]["Field"] != "id" || cols[1]["Field"] != "name" {
+	if cols[0]["column_name"] != "id" || cols[1]["column_name"] != "name" {
 		t.Fatalf("unexpected column metadata: %+v", cols)
 	}
 
@@ -305,7 +303,7 @@ func TestRunQueryMaxRowsExceedsConfig(t *testing.T) {
 func TestListDatabasesQueryError(t *testing.T) {
 	client, mock := newTestClient(t)
 
-	mock.ExpectQuery("SHOW DATABASES").WillReturnError(sqlmock.ErrCancelled)
+	mock.ExpectQuery("SELECT schema_name FROM information_schema.schemata").WillReturnError(sqlmock.ErrCancelled)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -323,52 +321,14 @@ func TestListDatabasesQueryError(t *testing.T) {
 func TestListTablesQueryError(t *testing.T) {
 	client, mock := newTestClient(t)
 
-	mock.ExpectExec("USE `testdb`").
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectQuery("SHOW TABLES").WillReturnError(sqlmock.ErrCancelled)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	_, err := client.ListTables(ctx, "testdb")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatalf("unmet expectations: %v", err)
-	}
-}
-
-func TestListTablesUseError(t *testing.T) {
-	client, mock := newTestClient(t)
-
-	mock.ExpectExec("USE `testdb`").
+	mock.ExpectQuery("SELECT table_name FROM information_schema.tables WHERE table_schema = ?").
+		WithArgs("testdb").
 		WillReturnError(sqlmock.ErrCancelled)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	_, err := client.ListTables(ctx, "testdb")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatalf("unmet expectations: %v", err)
-	}
-}
-
-func TestDescribeTableUseError(t *testing.T) {
-	client, mock := newTestClient(t)
-
-	mock.ExpectExec("USE `testdb`").
-		WillReturnError(sqlmock.ErrCancelled)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	_, err := client.DescribeTable(ctx, "testdb", "users")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -381,9 +341,9 @@ func TestDescribeTableUseError(t *testing.T) {
 func TestDescribeTableQueryError(t *testing.T) {
 	client, mock := newTestClient(t)
 
-	mock.ExpectExec("USE `testdb`").
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectQuery("DESCRIBE `users`").WillReturnError(sqlmock.ErrCancelled)
+	mock.ExpectQuery(`SELECT column_name, column_type, is_nullable, column_key, column_default, extra, column_comment FROM information_schema.columns WHERE table_schema = \? AND table_name = \? ORDER BY ordinal_position`).
+		WithArgs("testdb", "users").
+		WillReturnError(sqlmock.ErrCancelled)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

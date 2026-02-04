@@ -107,7 +107,7 @@ func toolListTables(
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, ListTablesOutput{}, fmt.Errorf("row iteration failed: %w", err)
+		return nil, ListTablesOutput{}, fmt.Errorf("ListTables rows iteration: %w", err)
 	}
 
 	return nil, out, nil
@@ -186,6 +186,7 @@ func toolRunQuery(
 	if sqlText == "" {
 		return nil, QueryResult{}, fmt.Errorf("sql is required")
 	}
+	database := strings.TrimSpace(input.Database)
 
 	// Token estimation (optional)
 	inputTokens, _ := estimateTokensForValue(input)
@@ -204,6 +205,7 @@ func toolRunQuery(
 		if auditLogger != nil {
 			auditLogger.Log(&AuditEntry{
 				Tool:        "run_query",
+				Database:    database,
 				Query:       util.TruncateQuery(sqlText, 500),
 				InputTokens: inputTokens,
 				Success:     false,
@@ -218,30 +220,33 @@ func toolRunQuery(
 		limit = *input.MaxRows
 	}
 
-	// Use a transaction to ensure database selection persists for the query if needed
-	tx, err := getDB().BeginTx(ctx, nil)
-	if err != nil {
-		return nil, QueryResult{}, fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	// We rollback by default; if we commit successfully at the end, this does nothing.
-	defer func() { _ = tx.Rollback() }()
+	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
+	defer cancel()
 
-	if input.Database != "" {
-		quotedDB, err := util.QuoteIdent(input.Database)
+	// Use a dedicated connection so USE applies to the query.
+	conn, err := getDB().Conn(ctx)
+	if err != nil {
+		return nil, QueryResult{}, fmt.Errorf("failed to get connection: %w", err)
+	}
+	defer conn.Close()
+
+	if database != "" {
+		quotedDB, err := util.QuoteIdent(database)
 		if err != nil {
 			return nil, QueryResult{}, fmt.Errorf("invalid database name: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx, "USE "+quotedDB); err != nil {
-			return nil, QueryResult{}, fmt.Errorf("failed to select database '%s': %w", input.Database, err)
+		if _, err := conn.ExecContext(ctx, "USE "+quotedDB); err != nil {
+			return nil, QueryResult{}, fmt.Errorf("failed to select database '%s': %w", database, err)
 		}
 	}
 
-	rows, err := tx.QueryContext(ctx, sqlText)
+	rows, err := conn.QueryContext(ctx, sqlText)
 	if err != nil {
 		timer.LogError(err, sqlText, tokens, nil)
 		if auditLogger != nil {
 			auditLogger.Log(&AuditEntry{
 				Tool:        "run_query",
+				Database:    database,
 				Query:       util.TruncateQuery(sqlText, 500),
 				DurationMs:  timer.ElapsedMs(),
 				InputTokens: inputTokens,
@@ -251,7 +256,7 @@ func toolRunQuery(
 		}
 		return nil, QueryResult{}, fmt.Errorf("query failed: %w", err)
 	}
-	defer rows.Close()
+	rowsClosed := false
 
 	out := QueryResult{
 		Columns: make([]string, 0),
@@ -266,10 +271,6 @@ func toolRunQuery(
 
 	count := 0
 	for rows.Next() {
-		if count >= limit {
-			break
-		}
-
 		// Create a slice of interface{} to hold the values
 		values := make([]interface{}, len(columns))
 		valuePtrs := make([]interface{}, len(columns))
@@ -288,14 +289,26 @@ func toolRunQuery(
 		}
 		out.Rows = append(out.Rows, rowValues)
 		count++
+
+		if count >= limit {
+			// Close early to avoid leaving unread results on the connection.
+			if err := rows.Close(); err != nil {
+				return nil, QueryResult{}, fmt.Errorf("failed to close rows: %w", err)
+			}
+			rowsClosed = true
+			break
+		}
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, QueryResult{}, fmt.Errorf("row iteration failed: %w", err)
+	if !rowsClosed {
+		if err := rows.Err(); err != nil {
+			return nil, QueryResult{}, fmt.Errorf("row iteration failed: %w", err)
+		}
+		if err := rows.Close(); err != nil {
+			return nil, QueryResult{}, fmt.Errorf("failed to close rows: %w", err)
+		}
+		rowsClosed = true
 	}
-
-	// Explicitly close rows before committing transaction to avoid "Commands out of sync"
-	rows.Close()
 
 	// Token estimation for output (optional)
 	outputTokens, _ := estimateTokensForValue(out)
@@ -305,16 +318,12 @@ func toolRunQuery(
 	// Calculate efficiency metrics
 	eff := CalculateEfficiency(inputTokens, outputTokens, len(out.Rows))
 
-	// Commit if everything succeeded (important for INSERT/UPDATE/etc.)
-	if err := tx.Commit(); err != nil {
-		return nil, QueryResult{}, fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
 	// Log success
 	timer.LogSuccess(len(out.Rows), sqlText, tokens, eff)
 	if auditLogger != nil {
 		entry := &AuditEntry{
 			Tool:         "run_query",
+			Database:     database,
 			Query:        util.TruncateQuery(sqlText, 500),
 			DurationMs:   timer.ElapsedMs(),
 			RowCount:     len(out.Rows),
