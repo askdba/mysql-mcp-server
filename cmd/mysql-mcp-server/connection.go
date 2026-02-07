@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-sql-driver/mysql"
 	"github.com/askdba/mysql-mcp-server/internal/config"
 	"github.com/askdba/mysql-mcp-server/internal/sshtunnel"
 	"github.com/askdba/mysql-mcp-server/internal/util"
@@ -176,6 +175,21 @@ func (cm *ConnectionManager) addConnectionWithPoolConfig(ctx context.Context, co
 			}
 			cm.mu.Unlock()
 		}()
+	}
+
+	// If replacing an existing connection, close it and its tunnel first to avoid leaks
+	if existing, ok := cm.connections[connCfg.Name]; ok {
+		existing.Close()
+		delete(cm.connections, connCfg.Name)
+		delete(cm.configs, connCfg.Name)
+		delete(cm.serverTypes, connCfg.Name)
+		if closeTunnel := cm.tunnelClosers[connCfg.Name]; closeTunnel != nil {
+			closeTunnel()
+			delete(cm.tunnelClosers, connCfg.Name)
+		}
+		if cm.activeConn == connCfg.Name {
+			cm.activeConn = ""
+		}
 	}
 
 	dsn := config.ApplySSLToDSN(connCfg.DSN, connCfg.SSL)

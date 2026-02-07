@@ -160,6 +160,21 @@ func subtleConstantTimeBytes(x, y []byte) bool {
 	return v == 0
 }
 
+// expandTilde returns path with a leading "~" or "~/" expanded to the user's home directory.
+func expandTilde(path string) (string, error) {
+	if path == "" || (path != "~" && !strings.HasPrefix(path, "~/")) {
+		return path, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("expand ~ in key path: %w", err)
+	}
+	if path == "~" {
+		return home, nil
+	}
+	return filepath.Join(home, path[2:]), nil
+}
+
 // Tunnel starts a local listener that forwards connections to remoteAddr via SSH.
 // Returns the local address (e.g. "127.0.0.1:12345") and a close function.
 // remoteAddr should be the MySQL server address (e.g. "db.example.com:3306").
