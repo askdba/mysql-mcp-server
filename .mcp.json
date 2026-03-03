@@ -3,7 +3,7 @@
     "mysql": {
       "command": "mysql-mcp-server",
       "env": {
-        "MYSQL_DSN": "${MYSQL_DSN}",
+        "MYSQL_DSN": "user:password@tcp(127.0.0.1:3306)/mydb?parseTime=true",
         "MYSQL_MCP_EXTENDED": "1"
       }
     }

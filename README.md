@@ -438,14 +438,11 @@ claude mcp add --transport stdio \
 
 ### Option 2: Project `.mcp.json`
 
-This repo includes a `.mcp.json` that Claude Code auto-discovers when you open the project. Set your DSN in the shell before starting Claude Code:
+This repo includes a `.mcp.json` that Claude Code auto-discovers when you open the project. Edit `.mcp.json` and replace the placeholder DSN with your real connection string.
 
-```bash
-export MYSQL_DSN="user:password@tcp(127.0.0.1:3306)/mydb?parseTime=true"
-claude  # start Claude Code — MySQL tools will be available automatically
-```
+**VS Code users:** The Claude Code extension in VS Code does not expand `${MYSQL_DSN}` in `.mcp.json` (it works in Cursor only). Use the placeholder DSN in the file and replace it with your real DSN, or use Option 1 (CLI). Alternatively, open VS Code from a shell after `export MYSQL_DSN="..."` so the process inherits the variable.
 
-To use the same config in your own project, copy `.mcp.json` to your project root and set `MYSQL_DSN` in your shell.
+To use the same config in your own project, copy `.mcp.json` to your project root and set the `MYSQL_DSN` value to your connection string.
 
 **Verify the integration** by asking Claude Code: *"List all databases on this MySQL server."*
 
