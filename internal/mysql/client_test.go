@@ -98,6 +98,7 @@ func TestRunQueryWithRetry(t *testing.T) {
 	// First call fails with a transient network-style error (covers net.Error path).
 	mock.ExpectQuery(sqlText).WillReturnError(testNetTempErr{})
 
+
 	// Second call succeeds
 	rows := sqlmock.NewRows([]string{"id"}).AddRow(1)
 	mock.ExpectQuery(sqlText).WillReturnRows(rows)

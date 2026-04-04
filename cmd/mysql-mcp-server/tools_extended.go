@@ -859,8 +859,8 @@ func toolSearchSchema(
 	out := SearchSchemaOutput{Matches: []SchemaMatch{}}
 
 	// 1. Search for matching tables
-	tableQuery := `SELECT TABLE_SCHEMA, TABLE_NAME 
-		FROM information_schema.TABLES 
+	tableQuery := `SELECT TABLE_SCHEMA, TABLE_NAME
+		FROM information_schema.TABLES
 		WHERE TABLE_NAME LIKE ?`
 	var tableArgs []interface{}
 	tableArgs = append(tableArgs, input.Pattern)
@@ -894,7 +894,7 @@ func toolSearchSchema(
 	for rows.Next() {
 		var m SchemaMatch
 		if err := rows.Scan(&m.Database, &m.Table); err != nil {
-			continue
+			return nil, SearchSchemaOutput{}, fmt.Errorf("scan table row: %w", err)
 		}
 		m.Type = "TABLE"
 		out.Matches = append(out.Matches, m)
@@ -904,8 +904,8 @@ func toolSearchSchema(
 	}
 
 	// 2. Search for matching columns
-	colQuery := `SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME 
-		FROM information_schema.COLUMNS 
+	colQuery := `SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME
+		FROM information_schema.COLUMNS
 		WHERE COLUMN_NAME LIKE ?`
 	var colArgs []interface{}
 	colArgs = append(colArgs, input.Pattern)
@@ -940,7 +940,7 @@ func toolSearchSchema(
 		for crows.Next() {
 			var m SchemaMatch
 			if err := crows.Scan(&m.Database, &m.Table, &m.Column); err != nil {
-				continue
+				return nil, SearchSchemaOutput{}, fmt.Errorf("scan column row: %w", err)
 			}
 			m.Type = "COLUMN"
 			out.Matches = append(out.Matches, m)
@@ -986,9 +986,11 @@ func toolSchemaDiff(
 	defer sourceRows.Close()
 	for sourceRows.Next() {
 		var name string
-		if err := sourceRows.Scan(&name); err == nil {
-			sourceTables[name] = true
+		if err := sourceRows.Scan(&name); err != nil {
+			sourceRows.Close()
+			return nil, SchemaDiffOutput{}, fmt.Errorf("scan source table name: %w", err)
 		}
+		sourceTables[name] = true
 	}
 	if err := sourceRows.Err(); err != nil {
 		return nil, SchemaDiffOutput{}, fmt.Errorf("source tables iteration failed: %w", err)
@@ -1003,9 +1005,11 @@ func toolSchemaDiff(
 	defer targetRows.Close()
 	for targetRows.Next() {
 		var name string
-		if err := targetRows.Scan(&name); err == nil {
-			targetTables[name] = true
+		if err := targetRows.Scan(&name); err != nil {
+			targetRows.Close()
+			return nil, SchemaDiffOutput{}, fmt.Errorf("scan target table name: %w", err)
 		}
+		targetTables[name] = true
 	}
 	if err := targetRows.Err(); err != nil {
 		return nil, SchemaDiffOutput{}, fmt.Errorf("target tables iteration failed: %w", err)
@@ -1030,7 +1034,6 @@ func toolSchemaDiff(
 				Details: fmt.Sprintf("Table exists in %s but missing in %s", input.TargetDatabase, input.SourceDatabase),
 			})
 		} else {
-			// Table exists in both, compare columns
 			diff, err := compareTableSchema(ctx, input.SourceDatabase, input.TargetDatabase, name)
 			if err != nil {
 				return nil, SchemaDiffOutput{}, err

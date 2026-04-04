@@ -272,6 +272,12 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("MYSQL_MCP_SLOW_QUERY_TOOL"); v != "" {
 		cfg.SlowQueryTool = getEnvBool("MYSQL_MCP_SLOW_QUERY_TOOL")
 	}
+	if v := os.Getenv("MYSQL_MCP_MASK_COLUMNS"); v != "" {
+		cfg.MaskColumns = strings.Split(v, ",")
+		for i := range cfg.MaskColumns {
+			cfg.MaskColumns[i] = strings.TrimSpace(cfg.MaskColumns[i])
+		}
+	}
 }
 
 // parseCSVList splits comma-separated values, trims space, drops empties.

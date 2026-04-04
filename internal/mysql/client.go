@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/askdba/mysql-mcp-server/internal/dbretry"
@@ -42,7 +43,6 @@ func New(cfg Config) (*Client, error) {
 		return nil, err
 	}
 
-	// Apply pool settings with sensible defaults
 	maxOpen := cfg.MaxOpenConns
 	if maxOpen <= 0 {
 		maxOpen = 10
@@ -76,21 +76,10 @@ func New(cfg Config) (*Client, error) {
 		return nil, err
 	}
 
-	if cfg.Retry.MaxRetries <= 0 {
-		cfg.Retry.MaxRetries = 3
-	}
-	if cfg.Retry.MaxInterval <= 0 {
-		cfg.Retry.MaxInterval = 10 * time.Second
-	}
-
-	mr := cfg.MaxRows
-	if mr < 0 {
-		mr = 0
-	}
-
+	applyConfigDefaults(&cfg)
 	return &Client{
 		db:           db,
-		maxRows:      mr,
+		maxRows:      cfg.MaxRows,
 		queryTimeout: time.Duration(cfg.QueryTimeoutS) * time.Second,
 		pingTimeout:  pingTimeout,
 		retryCfg:     cfg.Retry,
@@ -103,31 +92,43 @@ func NewWithDB(db *sql.DB, cfg Config) (*Client, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is nil")
 	}
+	pingTimeout := cfg.PingTimeout
+	if pingTimeout <= 0 {
+		pingTimeout = 5 * time.Second
+	}
+	applyConfigDefaults(&cfg)
+	return &Client{
+		db:           db,
+		maxRows:      cfg.MaxRows,
+		queryTimeout: time.Duration(cfg.QueryTimeoutS) * time.Second,
+		pingTimeout:  pingTimeout,
+		retryCfg:     cfg.Retry,
+	}, nil
+}
 
+const (
+	defaultMaxRows      = 200
+	defaultQueryTimeout = 30 * time.Second
+)
+
+// applyConfigDefaults fills in zero-value Config fields with sensible defaults.
+// Negative MaxRows is clamped to 0 (caller explicitly wants no rows).
+// Zero MaxRows is treated as unset and replaced with the server default.
+func applyConfigDefaults(cfg *Config) {
+	if cfg.MaxRows < 0 {
+		cfg.MaxRows = 0
+	} else if cfg.MaxRows == 0 {
+		cfg.MaxRows = defaultMaxRows
+	}
+	if cfg.QueryTimeoutS <= 0 {
+		cfg.QueryTimeoutS = int(defaultQueryTimeout.Seconds())
+	}
 	if cfg.Retry.MaxRetries <= 0 {
 		cfg.Retry.MaxRetries = 3
 	}
 	if cfg.Retry.MaxInterval <= 0 {
 		cfg.Retry.MaxInterval = 10 * time.Second
 	}
-
-	pingTimeout := cfg.PingTimeout
-	if pingTimeout <= 0 {
-		pingTimeout = 5 * time.Second
-	}
-
-	mr := cfg.MaxRows
-	if mr < 0 {
-		mr = 0
-	}
-
-	return &Client{
-		db:           db,
-		maxRows:      mr,
-		queryTimeout: time.Duration(cfg.QueryTimeoutS) * time.Second,
-		pingTimeout:  pingTimeout,
-		retryCfg:     cfg.Retry,
-	}, nil
 }
 
 func (c *Client) Close() error {
@@ -138,7 +139,10 @@ func (c *Client) withTimeout(ctx context.Context) (context.Context, context.Canc
 	return context.WithTimeout(ctx, c.queryTimeout)
 }
 
-func (c *Client) execWithRetry(ctx context.Context, op func(context.Context) error) error {
+// ExecWithRetry runs op, retrying on transient MySQL/network errors up to
+// RetryConfig.MaxRetries times with exponential backoff. The retry loop is
+// bound to ctx: cancellation or deadline immediately stops retries.
+func (c *Client) ExecWithRetry(ctx context.Context, op func(context.Context) error) error {
 	dc := dbretry.Config{
 		MaxRetries:  c.retryCfg.MaxRetries,
 		MaxInterval: c.retryCfg.MaxInterval,
@@ -150,7 +154,7 @@ func (c *Client) execWithRetry(ctx context.Context, op func(context.Context) err
 
 func (c *Client) ListDatabases(ctx context.Context) ([]string, error) {
 	var dbs []string
-	err := c.execWithRetry(ctx, func(ctx context.Context) error {
+	err := c.ExecWithRetry(ctx, func(ctx context.Context) error {
 		ctx, cancel := c.withTimeout(ctx)
 		defer cancel()
 
@@ -184,7 +188,7 @@ func (c *Client) ListTables(ctx context.Context, database string) ([]string, err
 	}
 
 	var tables []string
-	err = c.execWithRetry(ctx, func(ctx context.Context) error {
+	err = c.ExecWithRetry(ctx, func(ctx context.Context) error {
 		ctx, cancel := c.withTimeout(ctx)
 		defer cancel()
 
@@ -222,7 +226,7 @@ func (c *Client) DescribeTable(ctx context.Context, database, table string) ([]m
 	}
 
 	var out []map[string]any
-	err = c.execWithRetry(ctx, func(ctx context.Context) error {
+	err = c.ExecWithRetry(ctx, func(ctx context.Context) error {
 		ctx, cancel := c.withTimeout(ctx)
 		defer cancel()
 
@@ -259,10 +263,28 @@ func (c *Client) DescribeTable(ctx context.Context, database, table string) ([]m
 	return out, err
 }
 
-// RunQuery is intentionally “read oriented” – callers should enforce SELECT only.
+// rejectDML returns an error if sqlText is not a read-only statement.
+func rejectDML(sqlText string) error {
+	upper := strings.ToUpper(strings.TrimSpace(sqlText))
+	if strings.HasPrefix(upper, "SELECT") ||
+		strings.HasPrefix(upper, "SHOW") ||
+		strings.HasPrefix(upper, "DESCRIBE") ||
+		strings.HasPrefix(upper, "DESC") ||
+		strings.HasPrefix(upper, "EXPLAIN") ||
+		strings.HasPrefix(upper, "WITH") {
+		return nil
+	}
+	return fmt.Errorf("only read-only statements (SELECT/SHOW/DESCRIBE/EXPLAIN/WITH) are permitted")
+}
+
+// RunQuery executes a read-only SQL statement. Only SELECT, SHOW, DESCRIBE,
+// EXPLAIN, and WITH (CTE) statements are permitted.
 func (c *Client) RunQuery(ctx context.Context, sqlText string, maxRows int) ([]map[string]any, error) {
 	if sqlText == "" {
 		return nil, fmt.Errorf("sql is required")
+	}
+	if err := rejectDML(sqlText); err != nil {
+		return nil, err
 	}
 	if maxRows <= 0 || maxRows > c.maxRows {
 		maxRows = c.maxRows
@@ -272,7 +294,7 @@ func (c *Client) RunQuery(ctx context.Context, sqlText string, maxRows int) ([]m
 	}
 
 	var result []map[string]any
-	err := c.execWithRetry(ctx, func(ctx context.Context) error {
+	err := c.ExecWithRetry(ctx, func(ctx context.Context) error {
 		ctx, cancel := c.withTimeout(ctx)
 		defer cancel()
 
