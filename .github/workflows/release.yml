@@ -10,8 +10,68 @@ permissions:
   packages: write
 
 jobs:
+  pre-release-check:
+    name: Pre-release QA Gate
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: testpass
+          MYSQL_DATABASE: testdb
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -u root -ptestpass"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Build
+        run: go build ./...
+
+      - name: Unit tests
+        run: go test -race -covermode=atomic ./...
+
+      - name: Wait for MySQL
+        run: |
+          for i in $(seq 1 30); do
+            if mysqladmin ping -h 127.0.0.1 -u root -ptestpass --silent 2>/dev/null; then
+              echo "MySQL ready"
+              break
+            fi
+            echo "Waiting for MySQL... (${i}/30)"
+            sleep 2
+          done
+
+      - name: Initialize test database
+        run: |
+          mysql -h 127.0.0.1 -u root -ptestpass < tests/sql/init.sql
+          mysql -h 127.0.0.1 -u root -ptestpass < tests/sql/mcp_test_user.sql
+
+      - name: Integration tests
+        env:
+          MYSQL_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/testdb?parseTime=true"
+          MYSQL_TEST_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/testdb?parseTime=true"
+        run: go test -v -tags=integration ./...
+
   goreleaser:
     runs-on: ubuntu-latest
+    needs: pre-release-check
     steps:
       - name: Checkout
         uses: actions/checkout@v4

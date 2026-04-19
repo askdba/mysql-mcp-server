@@ -48,9 +48,10 @@ Optional locally: `golangci-lint run --timeout=5m` if you have it installed (sam
 ## Pull requests, CI, and bot review
 
 1. Push a branch and open a **Pull Request** against `main` so **Go CI** and **QA Pipeline** run on GitHub Actions.
-2. Treat **required** outcomes as: successful **unit tests** and **build** jobs (the QA summary job fails the workflow if those fail; lint and some security steps are configured as non-blocking—see `qa.yml`).
-3. Read and act on **automated review** feedback (for example GitHub **Copilot** review, **Cursor Bugbot**, or similar): fix correctness, security, and clear regressions; use judgment on pure style suggestions.
-4. Re-push until checks you care about are green, then proceed with human review per team practice.
+2. In the PR description, link work to GitHub issues using a **closing keyword** so the issue auto-closes when the PR merges: **`Closes #123`**, **`Fixes #123`**, or **`Resolves #123`** (one issue per line or comma-separated is fine). Plain **`Refs #123`** does **not** close the issue. See [Linking a pull request to an issue](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue).
+3. Treat **required** outcomes as: successful **unit tests** and **build** jobs (the QA summary job fails the workflow if those fail; lint and some security steps are configured as non-blocking—see `qa.yml`).
+4. Read and act on **automated review** feedback (for example GitHub **Copilot** review, **Cursor Bugbot**, or similar): fix correctness, security, and clear regressions; use judgment on pure style suggestions.
+5. Re-push until checks you care about are green, then proceed with human review per team practice.
 
 ## Open backlog snapshot
 
@@ -58,14 +59,12 @@ Optional locally: `golangci-lint run --timeout=5m` if you have it installed (sam
 
 | # | Title |
 |---|--------|
-| 106 | Feature: add_connection — register a new named DSN at runtime (no restart) |
-| 104 | Enhancement: richer EXPLAIN as structured output (document existing explain_query) |
 | 103 | Feature: write_query tool with explicit confirmation for INSERT/UPDATE/DELETE |
 | 80 | [Feature]: Natural Language to SQL tool (ask_nl_sql) |
 | 64 | Add support for local LLMs (Ollama, LM Studio, llama.cpp) |
 | 24 | Add TiDB compatibility support |
 
-**Recently delivered (closed):** #102 (metrics HTTP sidecar), #117 (column masking), #119 (`schema_diff`), #120 (`search_schema`), #110 / #111 / #121 (retries, pagination, pool ping)—all on `main` as of PRs **#122**–**#124**.
+**Recently delivered (closed):** #106 (`add_connection`, merged PR **#127**); #104 (richer EXPLAIN, merged PR **#126**); earlier: #102 (metrics HTTP sidecar), #117 (column masking), #119 (`schema_diff`), #120 (`search_schema`), #110 / #111 / #121 (retries, pagination, pool ping)—on `main` via PRs **#122**–**#124** and subsequent merges.
 
 ## AI-specific notes
 

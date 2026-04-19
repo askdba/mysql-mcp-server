@@ -33,16 +33,20 @@ jobs:
 
       - name: Check formatting
         run: |
-          echo "Skipping format check - code is verified formatted locally"
-          go fmt ./... || true
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
 
       - name: Run go vet
         run: go vet ./...
 
       - name: Install golangci-lint
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v1.64.8
           args: --timeout=5m
         continue-on-error: true  # Don't block pipeline on lint issues
 
@@ -292,7 +296,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: false
@@ -364,7 +368,15 @@ jobs:
           MYSQL_MCP_EXTENDED: "1"
         run: |
           ./mysql-mcp-server &
-          sleep 3
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:9306/health > /dev/null 2>&1; then
+              echo "Server ready after ${i}s"
+              break
+            fi
+            echo "Waiting for server... (${i}/20)"
+            sleep 1
+          done
+          curl -sf http://localhost:9306/health > /dev/null || { echo "Server did not start"; exit 1; }
 
       - name: Test API endpoints
         run: |
@@ -406,9 +418,11 @@ jobs:
           echo "Docker: ${{ needs.docker.result }}"
           echo "API Tests: ${{ needs.api-tests.result }}"
           
-          # Only fail on unit tests and build - lint/security are informational
+          # Fail on unit tests, build, and integration tests; lint/security are informational
           if [ "${{ needs.unit-tests.result }}" != "success" ] || \
-             [ "${{ needs.build.result }}" != "success" ]; then
+             [ "${{ needs.build.result }}" != "success" ] || \
+             [ "${{ needs.integration-tests.result }}" != "success" ] || \
+             [ "${{ needs.integration-tests-mariadb.result }}" != "success" ]; then
             echo "❌ Critical jobs failed"
             exit 1
           fi
