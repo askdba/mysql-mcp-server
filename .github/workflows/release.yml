@@ -57,6 +57,10 @@ jobs:
             echo "Waiting for MySQL... (${i}/30)"
             sleep 2
           done
+          if ! mysqladmin ping -h 127.0.0.1 -u root -ptestpass --silent 2>/dev/null; then
+            echo "MySQL did not become ready after 30 attempts"
+            exit 1
+          fi
 
       - name: Initialize test database
         run: |

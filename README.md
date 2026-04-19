@@ -356,8 +356,8 @@ mysql-mcp-server --version
 Output:
 ```
 mysql-mcp-server v1.7.0-rc.4
-  Build time: 2025-12-21T11:43:11Z
-  Git commit: a1b2c3d
+  Build time: <build time>
+  Git commit: <git sha>
 ```
 
 ## Claude Desktop Integration
