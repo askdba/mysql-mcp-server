@@ -40,6 +40,12 @@ type SSHConfig struct {
 	HostKeyFingerprint string `json:"ssh_host_key_fingerprint,omitempty"`
 }
 
+// IAMConfig holds AWS IAM authentication settings for RDS/Aurora.
+type IAMConfig struct {
+	Enabled bool   `json:"iam_enabled,omitempty"`
+	Region  string `json:"iam_region,omitempty"`
+}
+
 // ConnectionConfig represents a single MySQL connection configuration.
 type ConnectionConfig struct {
 	Name        string     `json:"name"`
@@ -48,6 +54,7 @@ type ConnectionConfig struct {
 	ReadOnly    bool       `json:"read_only,omitempty"`
 	SSL         string     `json:"ssl,omitempty"` // "true", "false", "skip-verify", or empty (use DSN as-is)
 	SSH         *SSHConfig `json:"ssh,omitempty"` // optional SSH tunnel (bastion)
+	IAM         *IAMConfig `json:"iam,omitempty"` // optional AWS IAM auth (RDS/Aurora)
 }
 
 // Config holds all configuration for the MySQL MCP server.
@@ -321,18 +328,24 @@ func loadConnections() ([]ConnectionConfig, error) {
 	// Global SSH (applies to env-based connections when set)
 	globalSSH := loadGlobalSSHFromEnv()
 
+	// Global IAM (applies to env-based connections when set)
+	globalIAM := loadGlobalIAMFromEnv()
+
 	// Check for JSON-based configuration first
 	if jsonConfig := os.Getenv("MYSQL_CONNECTIONS"); jsonConfig != "" {
 		if err := json.Unmarshal([]byte(jsonConfig), &configs); err != nil {
 			return nil, fmt.Errorf("failed to parse MYSQL_CONNECTIONS: %w", err)
 		}
-		// Apply global SSL and SSH to connections that don't have their own
+		// Apply global SSL, SSH, and IAM to connections that don't have their own
 		for i := range configs {
 			if configs[i].SSL == "" && globalSSL != "" {
 				configs[i].SSL = globalSSL
 			}
 			if configs[i].SSH == nil && globalSSH != nil {
 				configs[i].SSH = globalSSH
+			}
+			if configs[i].IAM == nil && globalIAM != nil {
+				configs[i].IAM = globalIAM
 			}
 		}
 		return configs, nil
@@ -351,6 +364,9 @@ func loadConnections() ([]ConnectionConfig, error) {
 		if globalSSH != nil {
 			c.SSH = globalSSH
 		}
+		if globalIAM != nil {
+			c.IAM = globalIAM
+		}
 		configs = append(configs, c)
 	}
 
@@ -359,6 +375,8 @@ func loadConnections() ([]ConnectionConfig, error) {
 		nameKey := fmt.Sprintf("MYSQL_DSN_%d_NAME", i)
 		descKey := fmt.Sprintf("MYSQL_DSN_%d_DESC", i)
 		sslKey := fmt.Sprintf("MYSQL_DSN_%d_SSL", i)
+		iamEnabledKey := fmt.Sprintf("MYSQL_DSN_%d_IAM_ENABLED", i)
+		iamRegionKey := fmt.Sprintf("MYSQL_DSN_%d_IAM_REGION", i)
 
 		dsn := os.Getenv(dsnKey)
 		if dsn == "" {
@@ -376,6 +394,17 @@ func loadConnections() ([]ConnectionConfig, error) {
 			ssl = globalSSL
 		}
 
+		// Per-connection IAM overrides global
+		var iam *IAMConfig
+		if getEnvBool(iamEnabledKey) {
+			iam = &IAMConfig{
+				Enabled: true,
+				Region:  strings.TrimSpace(os.Getenv(iamRegionKey)),
+			}
+		} else if globalIAM != nil {
+			iam = globalIAM
+		}
+
 		c := ConnectionConfig{
 			Name:        name,
 			DSN:         dsn,
@@ -384,6 +413,9 @@ func loadConnections() ([]ConnectionConfig, error) {
 		}
 		if globalSSH != nil {
 			c.SSH = globalSSH
+		}
+		if iam != nil {
+			c.IAM = iam
 		}
 		configs = append(configs, c)
 	}
@@ -420,6 +452,18 @@ func loadGlobalSSHFromEnv() *SSHConfig {
 	}
 	out.StrictHostKeyChecking = parseEnvStrictSSHHostKeyChecking()
 	return out
+}
+
+// loadGlobalIAMFromEnv loads AWS IAM auth settings from MYSQL_IAM_* env vars.
+// Returns nil if IAM auth is not enabled.
+func loadGlobalIAMFromEnv() *IAMConfig {
+	if !getEnvBool("MYSQL_IAM_ENABLED") {
+		return nil
+	}
+	return &IAMConfig{
+		Enabled: true,
+		Region:  strings.TrimSpace(os.Getenv("MYSQL_IAM_REGION")),
+	}
 }
 
 // parseEnvStrictSSHHostKeyChecking returns nil if MYSQL_SSH_STRICT_HOST_KEY_CHECKING is unset (default strict).

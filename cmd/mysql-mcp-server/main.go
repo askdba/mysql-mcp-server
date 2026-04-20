@@ -543,6 +543,8 @@ CONFIGURATION:
         MYSQL_MCP_PROCESS_ADMIN      Set 1 for process_list / kill_query tools (extended)
         MYSQL_MCP_READ_AUDIT_TOOL    Set 1 for read_audit_log when audit path set
         MYSQL_MCP_SLOW_QUERY_TOOL    Set 1 for slow_query_log tool (extended)
+        MYSQL_IAM_ENABLED                Enable AWS IAM auth for RDS/Aurora (set to 1 or true)
+        MYSQL_IAM_REGION                 AWS region for IAM token generation (e.g., us-east-1)
         MYSQL_MCP_ENABLE_ADD_CONNECTION  Set 1 to register add_connection (runtime DSN registration; extended tools only)
         MYSQL_MCP_VECTOR             Enable vector tools for MySQL 9.0+ (set to 1)
         MYSQL_MCP_HTTP               Enable REST API mode (set to 1)

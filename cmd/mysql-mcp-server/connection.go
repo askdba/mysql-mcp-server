@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/askdba/mysql-mcp-server/internal/config"
+	"github.com/askdba/mysql-mcp-server/internal/iamauth"
 	"github.com/askdba/mysql-mcp-server/internal/sshtunnel"
 	"github.com/askdba/mysql-mcp-server/internal/util"
 	"github.com/go-sql-driver/mysql"
@@ -98,6 +99,21 @@ func applyStrictReadOnlyDSN(dsn string, strict bool) (string, error) {
 	}
 	// Always force ON so a DSN cannot override strict mode with OFF (or other values).
 	mysqlCfg.Params["transaction_read_only"] = "ON"
+	return mysqlCfg.FormatDSN(), nil
+}
+
+// applyIAMTLSRequirement sets tls=true and AllowCleartextPasswords on the DSN.
+// IAM tokens are sent as the password over a TLS channel; both are required by RDS.
+// Preserves any existing TLS profile (e.g. "skip-verify") set by the user.
+func applyIAMTLSRequirement(dsn string) (string, error) {
+	mysqlCfg, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		return "", err
+	}
+	if mysqlCfg.TLSConfig == "" {
+		mysqlCfg.TLSConfig = "true"
+	}
+	mysqlCfg.AllowCleartextPasswords = true
 	return mysqlCfg.FormatDSN(), nil
 }
 
@@ -227,10 +243,32 @@ func (cm *ConnectionManager) addConnectionWithPoolConfig(ctx context.Context, co
 		dsn = mysqlCfg.FormatDSN()
 	}
 
-	conn, err := sql.Open("mysql", dsn)
-	if err != nil {
-		cleanupLocal(nil)
-		return fmt.Errorf("failed to open connection %s: %w", connCfg.Name, err)
+	var conn *sql.DB
+	if connCfg.IAM != nil && connCfg.IAM.Enabled {
+		iamDSN, iamErr := applyIAMTLSRequirement(dsn)
+		if iamErr != nil {
+			cleanupLocal(nil)
+			return fmt.Errorf("failed to apply IAM TLS for %s: %w", connCfg.Name, iamErr)
+		}
+		mysqlCfg, iamErr := mysql.ParseDSN(iamDSN)
+		if iamErr != nil {
+			cleanupLocal(nil)
+			return fmt.Errorf("failed to parse DSN for IAM connector %s: %w", connCfg.Name, iamErr)
+		}
+		mysqlCfg.Passwd = "" // token injected via BeforeConnect on every new connection
+		connector, iamErr := iamauth.NewConnector(ctx, mysqlCfg, iamauth.Config{Region: connCfg.IAM.Region})
+		if iamErr != nil {
+			cleanupLocal(nil)
+			return fmt.Errorf("failed to create IAM connector for %s: %w", connCfg.Name, iamErr)
+		}
+		conn = sql.OpenDB(connector)
+	} else {
+		var openErr error
+		conn, openErr = sql.Open("mysql", dsn)
+		if openErr != nil {
+			cleanupLocal(nil)
+			return fmt.Errorf("failed to open connection %s: %w", connCfg.Name, openErr)
+		}
 	}
 
 	// Apply pool settings with sensible defaults (defensive against zero values)

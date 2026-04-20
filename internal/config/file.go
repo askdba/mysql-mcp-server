@@ -45,6 +45,7 @@ type FileConnectionConfig struct {
 	ReadOnly    bool           `yaml:"read_only" json:"read_only"`
 	SSL         string         `yaml:"ssl" json:"ssl"` // "true", "false", "skip-verify", or empty
 	SSH         *FileSSHConfig `yaml:"ssh" json:"ssh"` // optional SSH tunnel (bastion)
+	IAM         *FileIAMConfig `yaml:"iam" json:"iam"` // optional AWS IAM auth (RDS/Aurora)
 }
 
 // FileSSHConfig represents SSH tunnel settings in the config file.
@@ -56,6 +57,12 @@ type FileSSHConfig struct {
 	StrictHostKeyChecking *bool  `yaml:"strict_host_key_checking,omitempty" json:"strict_host_key_checking,omitempty"`
 	KnownHostsPath        string `yaml:"known_hosts,omitempty" json:"known_hosts,omitempty"`
 	HostKeyFingerprint    string `yaml:"host_key_fingerprint,omitempty" json:"host_key_fingerprint,omitempty"`
+}
+
+// FileIAMConfig represents AWS IAM authentication settings in the config file.
+type FileIAMConfig struct {
+	Enabled bool   `yaml:"enabled" json:"enabled"`
+	Region  string `yaml:"region"  json:"region"`
 }
 
 // FileQueryConfig represents query settings in the config file.
@@ -370,6 +377,9 @@ func (fc *FileConfig) ToConfig() *Config {
 				HostKeyFingerprint:    conn.SSH.HostKeyFingerprint,
 			}
 		}
+		if conn.IAM != nil && conn.IAM.Enabled {
+			cc.IAM = &IAMConfig{Enabled: true, Region: conn.IAM.Region}
+		}
 		cfg.Connections = append(cfg.Connections, cc)
 	}
 
@@ -439,6 +449,9 @@ func PrintConfig(cfg *Config) string {
 				KnownHostsPath:        conn.SSH.KnownHostsPath,
 				HostKeyFingerprint:    conn.SSH.HostKeyFingerprint,
 			}
+		}
+		if conn.IAM != nil {
+			fcc.IAM = &FileIAMConfig{Enabled: conn.IAM.Enabled, Region: conn.IAM.Region}
 		}
 		fc.Connections[conn.Name] = fcc
 	}
