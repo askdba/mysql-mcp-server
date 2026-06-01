@@ -273,13 +273,7 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.SlowQueryTool = getEnvBool("MYSQL_MCP_SLOW_QUERY_TOOL")
 	}
 	if v := os.Getenv("MYSQL_MCP_MASK_COLUMNS"); v != "" {
-		parts := strings.Split(v, ",")
-		for _, p := range parts {
-			trimmed := strings.TrimSpace(p)
-			if trimmed != "" {
-				cfg.MaskColumns = append(cfg.MaskColumns, trimmed)
-			}
-		}
+		cfg.MaskColumns = parseCSVList(v)
 	}
 }
 

@@ -242,31 +242,6 @@ func (cm *ConnectionManager) addConnectionWithPoolConfig(ctx context.Context, co
 		dsn = mysqlCfg.FormatDSN()
 	}
 
-	// If SSH tunnel is configured, start tunnel and rewrite DSN to use local listener
-	if connCfg.SSH != nil && connCfg.SSH.Host != "" && connCfg.SSH.User != "" && connCfg.SSH.KeyPath != "" {
-		mysqlCfg, err := mysql.ParseDSN(dsn)
-		if err != nil {
-			return fmt.Errorf("failed to parse DSN for SSH tunnel %s: %w", connCfg.Name, err)
-		}
-		remoteAddr := mysqlCfg.Addr
-		if remoteAddr == "" {
-			remoteAddr = "127.0.0.1:3306"
-		}
-		tunnelCfg := sshtunnel.Config{
-			Host:    connCfg.SSH.Host,
-			User:    connCfg.SSH.User,
-			KeyPath: connCfg.SSH.KeyPath,
-			Port:    connCfg.SSH.Port,
-		}
-		localAddr, closeTunnel, err := sshtunnel.Tunnel(tunnelCfg, remoteAddr)
-		if err != nil {
-			return fmt.Errorf("failed to start SSH tunnel for %s: %w", connCfg.Name, err)
-		}
-		cm.tunnelClosers[connCfg.Name] = closeTunnel
-		mysqlCfg.Addr = localAddr
-		dsn = mysqlCfg.FormatDSN()
-	}
-
 	conn, err := sql.Open("mysql", dsn)
 	if err != nil {
 		cleanupLocal(nil)

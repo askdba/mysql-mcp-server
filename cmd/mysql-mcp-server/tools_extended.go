@@ -1066,9 +1066,14 @@ func compareTableSchema(ctx context.Context, sourceDB, targetDB, table string) (
 		cols := make(map[string]string)
 		for rows.Next() {
 			var name, ctype, nullable, def sql.NullString
-			if err := rows.Scan(&name, &ctype, &nullable, &def); err == nil {
-				cols[name.String] = fmt.Sprintf("%s, Null:%s, Def:%s", ctype.String, nullable.String, def.String)
+			if err := rows.Scan(&name, &ctype, &nullable, &def); err != nil {
+				return nil, fmt.Errorf("scan column metadata: %w", err)
 			}
+			defVal := "<NULL>"
+			if def.Valid {
+				defVal = def.String
+			}
+			cols[name.String] = fmt.Sprintf("%s, Null:%s, Def:%s", ctype.String, nullable.String, defVal)
 		}
 		return cols, rows.Err()
 	}
