@@ -66,4 +66,104 @@ Third release candidate: metrics HTTP sidecar for stdio MCP (Claude Desktop) and
 ---
 
 ## [1.7.0-rc.2] - 2026-03-30
-... rest of the file ...
+
+Second release candidate: integration-test identity, HTTP token UX, and compose port safety.
+
+### Added
+
+- **`mcpuser` / `mcppass00`** for integration tests and docs: `tests/sql/mcp_test_user.sql`, `mcp_test_user_sakila.sql`, mounted in `docker-compose.test.yml`; CI applies `mcp_test_user.sql` after `init.sql`; Makefile / QA / README / Sakila step docs use this DSN instead of `root` + `testpass`.
+- **`make test-sakila-local`**: run Sakila tests against a local MySQL when `MYSQL_TEST_DSN` or `MYSQL_SAKILA_DSN` is set (no Docker).
+
+### Changed
+
+- **HTTP REST**: when **`MYSQL_MCP_HTTP`** is set, **`GET /status`** (token dashboard) is **on by default**; set **`MYSQL_MCP_TOKEN_CARD=0`** to disable. Homebrew / GoReleaser caveats updated.
+- **Docker Compose (MySQL 8.0)**: host port **13306** → container **3306** so host **3306** can stay free for a local MySQL; Makefile and README DSN examples updated.
+
+### Fixed
+
+- Sakila integration test: clearer timeout / ping error hint (ports, Error 1045).
+
+---
+
+## [1.7.0-rc.1] - 2026-03-29
+
+Release candidate: performance, observability, metadata discovery, and HTTP token dashboard. See [docs/releasing.md](docs/releasing.md) for tagging; GA will be **v1.7.0** after validation.
+
+### Added
+
+- **Live token monitoring (HTTP mode)** ([#96](https://github.com/askdba/mysql-mcp-server/pull/96), closes [#83](https://github.com/askdba/mysql-mcp-server/issues/83)): in-process `TokenMetrics`, **`GET /api/metrics/tokens`**, optional **`GET /status`** dashboard (auto-refresh). Enable with **`MYSQL_MCP_TOKEN_CARD=1`**, **`--token-card`**, or **`features.token_card: true`** in config.
+- **Query performance & payload controls** ([#101](https://github.com/askdba/mysql-mcp-server/pull/101), [#100](https://github.com/askdba/mysql-mcp-server/issues/100)): env aliases **`MYSQL_POOL_SIZE`** (→ max open conns) and **`MYSQL_QUERY_TIMEOUT`** (milliseconds; `MYSQL_QUERY_TIMEOUT_SECONDS` wins when set); server-side **`LIMIT`** injection for `SELECT`/`UNION`; **`truncated`** and **`warning`** on `run_query` results (`SELECT *` hint); improved `run_query` tool description.
+- **EXPLAIN guidance** ([#98](https://github.com/askdba/mysql-mcp-server/pull/98), [#82](https://github.com/askdba/mysql-mcp-server/issues/82)): `explain_query` returns **`warnings`** from plan analysis; pre-allocated result slices; clamp negative **`maxRows`** before allocation (Codex review).
+- **Status & variables** ([#97](https://github.com/askdba/mysql-mcp-server/issues/97)): **`list_status`** / **`list_variables`** use **`performance_schema.global_status`** / **`global_variables`** when possible, with **`SHOW GLOBAL STATUS` / `SHOW GLOBAL VARIABLES`** fallback.
+- **`test-steps.md`**: Sakila multi-version matrix with **`wait_docker_healthy`** / **`wait_mysqladmin_ping`** helpers and `<repo-root>` placeholder.
+
+### Changed
+
+- **`explain_query`**: safer “unused index” warning when access `type` is unknown (avoids false positives on `<NIL>`).
+- **`.gitignore`**: root-only **`/mysql-mcp-server`** and **`/.worktrees/`** so **`cmd/mysql-mcp-server`** is not ignored.
+
+### Fixed
+
+- **`truncated`**: set only when a row exists beyond the row cap (not when the result size exactly equals the limit).
+
+### Documentation
+
+- README: env vars, REST endpoints, performance tuning, Sakila test references aligned with this RC.
+- Comprehensive MySQL Query Optimization Guide: [`docs/mysql_query_optimization_comprehensive.md`](docs/mysql_query_optimization_comprehensive.md) ([#92](https://github.com/askdba/mysql-mcp-server/pull/92)).
+
+### CI
+
+- MariaDB job result included in QA pipeline summary output ([#92](https://github.com/askdba/mysql-mcp-server/pull/92)).
+
+---
+
+## v1.6.0 - 2026-02-10
+### Added
+- `--silent` / `-s`: suppress INFO and WARN logs (ERROR still printed to stderr). Useful for production or when running under a process manager.
+- `--daemon` / `-d`: run in background (fork and detach; intended for HTTP mode on Unix). On Windows, use a service manager instead.
+- Example systemd unit in `contrib/systemd/mysql-mcp-server.service` and launchd plist in `contrib/launchd/com.askdba.mysql-mcp-server.plist`.
+- Documentation: [docs/silent-and-daemon.md](docs/silent-and-daemon.md). Examples: [examples/config.yaml](examples/config.yaml) comments and [examples/production-usage.md](examples/production-usage.md).
+- SSH tunneling (bastion host) support: connect to MySQL via `ssh_host`, `ssh_user`, `ssh_key_path`, and optional `ssh_port` (config file or `MYSQL_SSH_*` env vars). `key_path` supports `~` and `~/path` (expanded to user home). Bastion host key verification is not performed.
+- Native support for MariaDB 10.x and 11.x.
+- Automatic server type detection (`mysql` vs `mariadb`) in `server_info` tool.
+- MariaDB 11.4 integration test target in `Makefile` and `docker-compose.test.yml`.
+- Robust Unicode support for MariaDB initialization scripts.
+
+### Changed
+- Refactored schema discovery tools (`list_databases`, `list_tables`, `describe_table`) to use `information_schema` for better compatibility and performance.
+- Upgraded `list_tables` to include engine type, estimated row count, and comments.
+- Upgraded `describe_table` to return comprehensive column details including collation and comments.
+
+### Fixed
+- Daemon mode now requires HTTP mode: `--daemon` without HTTP enabled exits with a clear error instead of forking an idle stdio process.
+
+## v1.5.0 - 2026-01-17
+
+### Added
+- Architecture documentation with diagrams to explain system flows.
+- GitHub issue and PR templates to standardize contributions.
+- SSL/TLS configuration examples in config templates.
+
+### Changed
+- Global SSL settings now apply to JSON connection definitions.
+- SSL "preferred" maps to "skip-verify" for Go MySQL driver compatibility.
+- Updated dependencies, including the MCP SDK.
+
+### Fixed
+- Linter warnings in tests (errorlint, staticcheck).
+- Error comparisons in tests now use errors.Is for wrapped errors.
+- SQL validator empty branch removed.
+
+### Tests
+- Improved unit test coverage for internal MySQL client.
+- Improved HTTP handler coverage for cmd/mysql-mcp-server.
+
+### Documentation
+- Updated README for SSL/TLS behavior and configuration.
+- Corrected config file search paths in architecture docs.
+
+### Dependencies
+- github.com/modelcontextprotocol/go-sdk v1.1.0 -> v1.2.0
+- github.com/dlclark/regexp2 v1.10.0 -> v1.11.5
+- github.com/google/jsonschema-go v0.3.0 -> v0.4.2
+- golang.org/x/oauth2 v0.30.0 -> v0.34.0

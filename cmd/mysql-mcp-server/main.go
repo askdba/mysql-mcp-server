@@ -278,6 +278,9 @@ func main() {
 	// Register multi-DSN tools
 	registerConnectionTools(server)
 
+	// Register prompts (multi-step workflows that gather live data for Claude)
+	registerPrompts(server)
+
 	// Register vector tools (MYSQL_MCP_VECTOR=1)
 	if cfg.VectorMode {
 		registerVectorTools(server)
