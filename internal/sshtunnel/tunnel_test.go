@@ -69,7 +69,6 @@ func TestBuildHostKeyCallback_StrictMissingKnownHosts(t *testing.T) {
 	}
 }
 
-
 func TestTunnel_ExpandTildeKeyPath(t *testing.T) {
 	// KeyPath "~/nonexistent_key" is expanded to $HOME/nonexistent_key, then ReadFile fails
 	_, _, err := Tunnel(Config{

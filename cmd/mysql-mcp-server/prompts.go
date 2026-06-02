@@ -386,18 +386,18 @@ func promptConnectionDebug(ctx context.Context, req *mcp.GetPromptRequest) (*mcp
 
 	// Targeted system variables: connection limits, timeouts, SSL, packet size
 	wantVars := map[string]bool{
-		"max_connections":        true,
-		"wait_timeout":           true,
-		"interactive_timeout":    true,
-		"connect_timeout":        true,
-		"net_read_timeout":       true,
-		"net_write_timeout":      true,
-		"max_allowed_packet":     true,
-		"have_ssl":               true,
-		"ssl_cipher":             true,
+		"max_connections":          true,
+		"wait_timeout":             true,
+		"interactive_timeout":      true,
+		"connect_timeout":          true,
+		"net_read_timeout":         true,
+		"net_write_timeout":        true,
+		"max_allowed_packet":       true,
+		"have_ssl":                 true,
+		"ssl_cipher":               true,
 		"require_secure_transport": true,
-		"thread_stack":           true,
-		"back_log":               true,
+		"thread_stack":             true,
+		"back_log":                 true,
 	}
 	_, varsOut, varsErr := toolListVariables(ctx, nil, ListVariablesInput{})
 	if varsErr == nil {
