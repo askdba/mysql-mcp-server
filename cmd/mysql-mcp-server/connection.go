@@ -180,20 +180,12 @@ func (cm *ConnectionManager) addConnectionWithPoolConfig(ctx context.Context, co
 		}()
 	}
 
-	// If replacing an existing connection, close it and its tunnel first to avoid leaks
-	if existing, ok := cm.connections[connCfg.Name]; ok {
-		existing.Close()
-		delete(cm.connections, connCfg.Name)
-		delete(cm.clients, connCfg.Name)
-		delete(cm.configs, connCfg.Name)
-		delete(cm.serverTypes, connCfg.Name)
-		if closeTunnel := cm.tunnelClosers[connCfg.Name]; closeTunnel != nil {
-			closeTunnel()
-			delete(cm.tunnelClosers, connCfg.Name)
-		}
-		if cm.activeConn == connCfg.Name {
-			cm.activeConn = ""
-		}
+	// For replace path: tear down the existing entry under the lock so concurrent
+	// readers (getDB, List, SetActive) don't observe a half-removed state.
+	if replace {
+		cm.mu.Lock()
+		cm.tearDownNamedConnection(connCfg.Name)
+		cm.mu.Unlock()
 	}
 
 	dsn := config.ApplySSLToDSN(connCfg.DSN, connCfg.SSL)

@@ -263,18 +263,20 @@ func (c *Client) DescribeTable(ctx context.Context, database, table string) ([]m
 	return out, err
 }
 
-// rejectDML returns an error if sqlText is not a read-only statement.
+// rejectDML returns an error if sqlText does not start with a read-only keyword.
+// WITH is intentionally excluded: WITH ... UPDATE/INSERT/DELETE is valid MySQL
+// and cannot be safely classified by prefix alone. Callers that need CTE support
+// should use util.ValidateSQLCombined (the parser-based gate in the tool layer).
 func rejectDML(sqlText string) error {
 	upper := strings.ToUpper(strings.TrimSpace(sqlText))
 	if strings.HasPrefix(upper, "SELECT") ||
 		strings.HasPrefix(upper, "SHOW") ||
 		strings.HasPrefix(upper, "DESCRIBE") ||
 		strings.HasPrefix(upper, "DESC") ||
-		strings.HasPrefix(upper, "EXPLAIN") ||
-		strings.HasPrefix(upper, "WITH") {
+		strings.HasPrefix(upper, "EXPLAIN") {
 		return nil
 	}
-	return fmt.Errorf("only read-only statements (SELECT/SHOW/DESCRIBE/EXPLAIN/WITH) are permitted")
+	return fmt.Errorf("only read-only statements (SELECT/SHOW/DESCRIBE/EXPLAIN) are permitted")
 }
 
 // RunQuery executes a read-only SQL statement. Only SELECT, SHOW, DESCRIBE,
@@ -288,9 +290,6 @@ func (c *Client) RunQuery(ctx context.Context, sqlText string, maxRows int) ([]m
 	}
 	if maxRows <= 0 || maxRows > c.maxRows {
 		maxRows = c.maxRows
-	}
-	if maxRows < 0 {
-		maxRows = 0
 	}
 
 	var result []map[string]any

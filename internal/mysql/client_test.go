@@ -237,7 +237,7 @@ func TestRunQueryAllowsReadStatements(t *testing.T) {
 	client, mock := newTestClient(t)
 	ctx := context.Background()
 
-	for _, stmt := range []string{"SELECT 1", "SHOW TABLES", "DESCRIBE t", "DESC t", "EXPLAIN SELECT 1", "WITH cte AS (SELECT 1) SELECT * FROM cte"} {
+	for _, stmt := range []string{"SELECT 1", "SHOW TABLES", "DESCRIBE t", "DESC t", "EXPLAIN SELECT 1"} {
 		mock.ExpectQuery(regexp.QuoteMeta(stmt)).
 			WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 		_, err := client.RunQuery(ctx, stmt, 10)
