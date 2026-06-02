@@ -400,9 +400,13 @@ func (cm *ConnectionManager) GetActiveClient() *mysqlclient.Client {
 	if c, ok := cm.clients[cm.activeConn]; ok {
 		return c
 	}
-	// Lazy creation: wrap the existing DB so toolRunQuery always has a client.
+	// Lazy creation for callers that bypass AddConnectionWithPoolConfig (e.g. tests).
+	// Use global server values so row caps and timeouts match normal operation.
 	if db := cm.connections[cm.activeConn]; db != nil {
-		c, err := mysqlclient.NewWithDB(db, mysqlclient.Config{})
+		c, err := mysqlclient.NewWithDB(db, mysqlclient.Config{
+			MaxRows:       maxRows,
+			QueryTimeoutS: int(queryTimeout.Seconds()),
+		})
 		if err != nil {
 			panic("GetActiveClient: lazy client creation failed: " + err.Error())
 		}
