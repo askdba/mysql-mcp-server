@@ -246,6 +246,10 @@ func TestRunQueryAllowsReadStatements(t *testing.T) {
 			t.Errorf("expected %q to be allowed, got: %v", stmt, err)
 		}
 	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
 }
 
 func TestRunQueryMaxRowsDefault(t *testing.T) {

@@ -312,7 +312,12 @@ func (cm *ConnectionManager) addConnectionWithPoolConfig(ctx context.Context, co
 		MaxRows:       cfg.MaxRows,
 		QueryTimeoutS: int(cfg.QueryTimeout.Seconds()),
 	})
-	if err == nil {
+	if err != nil {
+		logWarn("failed to create retry-capable client for connection", map[string]interface{}{
+			"connection": connCfg.Name,
+			"error":      err.Error(),
+		})
+	} else {
 		cm.clients[connCfg.Name] = client
 	}
 
@@ -388,6 +393,7 @@ func (cm *ConnectionManager) GetActiveDB() *sql.DB {
 // GetActiveClient returns the retry-capable client for the active connection.
 // If no pre-built client exists (e.g. in tests that bypass AddConnectionWithPoolConfig),
 // one is created lazily wrapping the active *sql.DB with default retry settings.
+// Panics if no active connection is available, consistent with getDB().
 func (cm *ConnectionManager) GetActiveClient() *mysqlclient.Client {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -397,12 +403,13 @@ func (cm *ConnectionManager) GetActiveClient() *mysqlclient.Client {
 	// Lazy creation: wrap the existing DB so toolRunQuery always has a client.
 	if db := cm.connections[cm.activeConn]; db != nil {
 		c, err := mysqlclient.NewWithDB(db, mysqlclient.Config{})
-		if err == nil {
-			cm.clients[cm.activeConn] = c
-			return c
+		if err != nil {
+			panic("GetActiveClient: lazy client creation failed: " + err.Error())
 		}
+		cm.clients[cm.activeConn] = c
+		return c
 	}
-	return nil
+	panic("GetActiveClient: no active connection")
 }
 
 // Close closes all connections and SSH tunnels managed by the manager.
