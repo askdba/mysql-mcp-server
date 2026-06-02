@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/askdba/mysql-mcp-server/internal/config"
+	mysqlclient "github.com/askdba/mysql-mcp-server/internal/mysql"
 	"github.com/askdba/mysql-mcp-server/internal/sshtunnel"
 	"github.com/askdba/mysql-mcp-server/internal/util"
 	"github.com/go-sql-driver/mysql"
@@ -39,6 +40,7 @@ const (
 // deadlock (those methods take their own locks).
 type ConnectionManager struct {
 	connections   map[string]*sql.DB
+	clients       map[string]*mysqlclient.Client // retry-capable clients wrapping each DB
 	configs       map[string]config.ConnectionConfig
 	serverTypes   map[string]ServerType
 	activeConn    string
@@ -53,6 +55,7 @@ type ConnectionManager struct {
 func NewConnectionManager() *ConnectionManager {
 	return &ConnectionManager{
 		connections:   make(map[string]*sql.DB),
+		clients:       make(map[string]*mysqlclient.Client),
 		configs:       make(map[string]config.ConnectionConfig),
 		serverTypes:   make(map[string]ServerType),
 		tunnelClosers: make(map[string]func()),
@@ -181,6 +184,7 @@ func (cm *ConnectionManager) addConnectionWithPoolConfig(ctx context.Context, co
 	if existing, ok := cm.connections[connCfg.Name]; ok {
 		existing.Close()
 		delete(cm.connections, connCfg.Name)
+		delete(cm.clients, connCfg.Name)
 		delete(cm.configs, connCfg.Name)
 		delete(cm.serverTypes, connCfg.Name)
 		if closeTunnel := cm.tunnelClosers[connCfg.Name]; closeTunnel != nil {
@@ -302,6 +306,16 @@ func (cm *ConnectionManager) addConnectionWithPoolConfig(ctx context.Context, co
 	}
 
 	cm.connections[connCfg.Name] = conn
+
+	// Wrap the DB in a retry-capable client for tools that need transient-error retry.
+	client, err := mysqlclient.NewWithDB(conn, mysqlclient.Config{
+		MaxRows:       cfg.MaxRows,
+		QueryTimeoutS: int(cfg.QueryTimeout.Seconds()),
+	})
+	if err == nil {
+		cm.clients[connCfg.Name] = client
+	}
+
 	cm.configs[connCfg.Name] = connCfg
 	cm.serverTypes[connCfg.Name] = serverType
 	if tunnelCloser != nil {
@@ -371,6 +385,26 @@ func (cm *ConnectionManager) GetActiveDB() *sql.DB {
 	return cm.connections[cm.activeConn]
 }
 
+// GetActiveClient returns the retry-capable client for the active connection.
+// If no pre-built client exists (e.g. in tests that bypass AddConnectionWithPoolConfig),
+// one is created lazily wrapping the active *sql.DB with default retry settings.
+func (cm *ConnectionManager) GetActiveClient() *mysqlclient.Client {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	if c, ok := cm.clients[cm.activeConn]; ok {
+		return c
+	}
+	// Lazy creation: wrap the existing DB so toolRunQuery always has a client.
+	if db := cm.connections[cm.activeConn]; db != nil {
+		c, err := mysqlclient.NewWithDB(db, mysqlclient.Config{})
+		if err == nil {
+			cm.clients[cm.activeConn] = c
+			return c
+		}
+	}
+	return nil
+}
+
 // Close closes all connections and SSH tunnels managed by the manager.
 func (cm *ConnectionManager) Close() {
 	cm.mu.Lock()
@@ -393,6 +427,15 @@ func getDB() *sql.DB {
 		panic("getDB called before connManager initialized")
 	}
 	return connManager.GetActiveDB()
+}
+
+// getClient returns the retry-capable mysql.Client for the active connection.
+// Use this for query execution paths that benefit from transient-error retry.
+func getClient() *mysqlclient.Client {
+	if connManager == nil {
+		panic("getClient called before connManager initialized")
+	}
+	return connManager.GetActiveClient()
 }
 
 // GetServerType returns the server type of the active connection.

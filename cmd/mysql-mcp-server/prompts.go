@@ -252,6 +252,7 @@ func promptQueryAdvisor(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.Ge
 	_, explainOut, explainErr := toolExplainQuery(ctx, nil, ExplainQueryInput{
 		SQL:      sqlText,
 		Database: database,
+		Format:   "traditional", // row-based output for table rendering
 	})
 	if explainErr != nil {
 		fmt.Fprintf(&sb, "**EXPLAIN Error**: %v\n\n", explainErr)
@@ -264,7 +265,8 @@ func promptQueryAdvisor(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.Ge
 		sb.WriteString("|" + strings.Repeat(" --- |", len(planCols)) + "\n")
 
 		tableNames := make([]string, 0)
-		for _, row := range explainOut.Plan {
+		planRows, _ := explainOut.Plan.([]map[string]interface{})
+		for _, row := range planRows {
 			sb.WriteString("|")
 			for _, k := range planCols {
 				v := fmt.Sprintf("%v", row[k])

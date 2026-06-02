@@ -38,6 +38,9 @@ func setupPromptMockDB(t *testing.T) (sqlmock.Sqlmock, func()) {
 	cfg = &config.Config{}
 
 	return mock, func() {
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled sqlmock expectations: %v", err)
+		}
 		connManager = oldConnManager
 		maxRows = oldMaxRows
 		queryTimeout = oldQueryTimeout
@@ -62,27 +65,34 @@ func TestPromptHealthCheck_Success(t *testing.T) {
 	mock, cleanup := setupPromptMockDB(t)
 	defer cleanup()
 
-	// ping
-	mock.ExpectPing()
-
-	// server_info (detailed=true): VERSION, STATUS, global_status (several queries)
+	// toolServerInfo queries (Detailed: true). performance_schema queries are tried
+	// first and fail (no expectation set), causing the code to fall back to SHOW queries.
+	// Expectations must be in the same order the fallback queries execute.
 	mock.ExpectQuery(`SELECT VERSION\(\)`).
-		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.35"))
-	mock.ExpectQuery(`SHOW GLOBAL STATUS`).
-		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
-			AddRow("Uptime", "86400").
-			AddRow("Threads_connected", "3").
-			AddRow("Max_used_connections", "10").
-			AddRow("Slow_queries", "5").
-			AddRow("Questions", "1000"))
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow("8.0.35"))
+	// variables fallback (performance_schema.global_variables fails → SHOW VARIABLES)
 	mock.ExpectQuery(`SHOW VARIABLES`).
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
 			AddRow("version_comment", "MySQL Community Server").
 			AddRow("max_connections", "151").
 			AddRow("character_set_server", "utf8mb4").
 			AddRow("collation_server", "utf8mb4_unicode_ci"))
-	// ping for latency measurement
-	mock.ExpectPing()
+	// status fallback (performance_schema.global_status fails → SHOW GLOBAL STATUS)
+	mock.ExpectQuery(`SHOW GLOBAL STATUS`).
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
+			AddRow("Uptime", "86400").
+			AddRow("Threads_connected", "3"))
+	// current user / database
+	mock.ExpectQuery(`SELECT CURRENT_USER`).
+		WillReturnRows(sqlmock.NewRows([]string{"u", "d"}).AddRow("root@localhost", ""))
+	// detailed health: performance_schema fallback → SHOW GLOBAL STATUS
+	mock.ExpectQuery(`SHOW GLOBAL STATUS`).
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
+			AddRow("Threads_running", "1").
+			AddRow("Slow_queries", "5").
+			AddRow("Questions", "1000").
+			AddRow("Innodb_buffer_pool_read_requests", "10000").
+			AddRow("Innodb_buffer_pool_reads", "100"))
 
 	result, err := promptHealthCheck(context.Background(), makeGetPromptReq(nil))
 	if err != nil {
@@ -279,29 +289,31 @@ func TestPromptConnectionDebug_Success(t *testing.T) {
 	mock, cleanup := setupPromptMockDB(t)
 	defer cleanup()
 
-	// ping
-	mock.ExpectPing()
-
-	// server_info queries
+	// toolServerInfo (Detailed: true) — same fallback sequence as health_check
 	mock.ExpectQuery(`SELECT VERSION\(\)`).
-		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.35"))
-	mock.ExpectQuery(`SHOW GLOBAL STATUS`).
-		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
-			AddRow("Uptime", "3600").
-			AddRow("Threads_connected", "1").
-			AddRow("Max_used_connections", "5").
-			AddRow("Slow_queries", "0").
-			AddRow("Questions", "100"))
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow("8.0.35"))
 	mock.ExpectQuery(`SHOW VARIABLES`).
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
 			AddRow("version_comment", "MySQL Community Server").
 			AddRow("max_connections", "151").
 			AddRow("character_set_server", "utf8mb4").
 			AddRow("collation_server", "utf8mb4_unicode_ci"))
-	mock.ExpectPing()
+	mock.ExpectQuery(`SHOW GLOBAL STATUS`).
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
+			AddRow("Uptime", "3600").
+			AddRow("Threads_connected", "1"))
+	mock.ExpectQuery(`SELECT CURRENT_USER`).
+		WillReturnRows(sqlmock.NewRows([]string{"u", "d"}).AddRow("root@localhost", ""))
+	mock.ExpectQuery(`SHOW GLOBAL STATUS`).
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
+			AddRow("Threads_running", "1").
+			AddRow("Slow_queries", "0").
+			AddRow("Questions", "100").
+			AddRow("Innodb_buffer_pool_read_requests", "5000").
+			AddRow("Innodb_buffer_pool_reads", "50"))
 
-	// list_variables
-	mock.ExpectQuery(`SELECT .* FROM performance_schema.global_variables|SHOW GLOBAL VARIABLES`).
+	// toolListVariables — performance_schema.global_variables fails → SHOW GLOBAL VARIABLES
+	mock.ExpectQuery(`SHOW GLOBAL VARIABLES`).
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
 			AddRow("max_connections", "151").
 			AddRow("wait_timeout", "28800").

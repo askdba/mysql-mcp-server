@@ -3,6 +3,8 @@ package mysql
 import (
 	"context"
 	"errors"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -207,6 +209,42 @@ func TestRunQueryEmptySQL(t *testing.T) {
 	}
 	if err.Error() != "sql is required" {
 		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestRunQueryRejectsDML(t *testing.T) {
+	client, _ := newTestClient(t)
+	ctx := context.Background()
+
+	for _, stmt := range []string{
+		"INSERT INTO t VALUES (1)",
+		"UPDATE t SET x=1",
+		"DELETE FROM t",
+		"DROP TABLE t",
+		"CREATE TABLE t (id INT)",
+	} {
+		_, err := client.RunQuery(ctx, stmt, 10)
+		if err == nil {
+			t.Errorf("expected rejection for %q, got nil", stmt)
+			continue
+		}
+		if !strings.Contains(err.Error(), "read-only") {
+			t.Errorf("expected read-only error for %q, got: %v", stmt, err)
+		}
+	}
+}
+
+func TestRunQueryAllowsReadStatements(t *testing.T) {
+	client, mock := newTestClient(t)
+	ctx := context.Background()
+
+	for _, stmt := range []string{"SELECT 1", "SHOW TABLES", "DESCRIBE t", "DESC t", "EXPLAIN SELECT 1", "WITH cte AS (SELECT 1) SELECT * FROM cte"} {
+		mock.ExpectQuery(regexp.QuoteMeta(stmt)).
+			WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+		_, err := client.RunQuery(ctx, stmt, 10)
+		if err != nil {
+			t.Errorf("expected %q to be allowed, got: %v", stmt, err)
+		}
 	}
 }
 
