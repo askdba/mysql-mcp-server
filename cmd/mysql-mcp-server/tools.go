@@ -384,6 +384,9 @@ func toolRunQuery(
 			return nil, QueryResult{}, err
 		}
 	}
+	if err := requireSafeDatabase(database); err != nil {
+		return nil, QueryResult{}, err
+	}
 
 	// Token estimation (optional)
 	inputTokens, _ := estimateTokensForValue(input)

@@ -158,6 +158,9 @@ func toolExplainQuery(
 			return nil, ExplainQueryOutput{}, err
 		}
 	}
+	if err := requireSafeDatabase(database); err != nil {
+		return nil, ExplainQueryOutput{}, err
+	}
 	// Enhanced SQL validation using parser + regex defense-in-depth, matching
 	// run_query. Without this, EXPLAIN bypasses the system-schema guard (and the
 	// MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS opt-in): the allowlist check below is a no-op

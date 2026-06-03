@@ -88,6 +88,11 @@ func SetAllowSystemSchemas(v bool) {
 	allowSystemSchemas = v
 }
 
+// GetAllowSystemSchemas returns whether read access to system schemas is enabled.
+func GetAllowSystemSchemas() bool {
+	return allowSystemSchemas
+}
+
 // ValidateSQLWithParser performs SQL validation using a proper SQL parser.
 // This is more robust than regex-based validation as it understands SQL syntax.
 func ValidateSQLWithParser(sqlText string) error {

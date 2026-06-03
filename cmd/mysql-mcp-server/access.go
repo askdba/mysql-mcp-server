@@ -58,6 +58,30 @@ func requireAllowedDatabase(db string) error {
 	return nil
 }
 
+// requireSafeDatabase rejects blocked schemas passed as the session database.
+// Without this check a caller can bypass SQL-level schema guards by setting
+// database: "mysql" and using unqualified table names, because the tool issues
+// USE <db> before executing the query.
+//
+// mysql is always blocked. information_schema, performance_schema, and sys are
+// blocked unless MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS is on.
+func requireSafeDatabase(db string) error {
+	lower := strings.ToLower(strings.TrimSpace(db))
+	if lower == "" {
+		return nil
+	}
+	if lower == "mysql" {
+		return fmt.Errorf("database %q is not accessible via this interface", db)
+	}
+	if !util.GetAllowSystemSchemas() {
+		switch lower {
+		case "information_schema", "performance_schema", "sys":
+			return fmt.Errorf("database %q requires MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS to be enabled", db)
+		}
+	}
+	return nil
+}
+
 // requireReferencedSchemasInQuery ensures every explicitly schema-qualified
 // reference in sqlText (and USE / SHOW / EXPLAIN targets) is allowed when an
 // allowlist is configured.
