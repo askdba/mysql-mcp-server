@@ -171,8 +171,17 @@ var blockedPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`--`),
 	regexp.MustCompile(`/\*`),
 
-	// System schema access (information disclosure)
+	// System schema access (information disclosure). `mysql` is always blocked;
+	// the read-only diagnostic schemas are gated separately via
+	// systemReadSchemaPatterns so they can be unlocked with MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS.
 	regexp.MustCompile(`(?i)\bMYSQL\s*\.\b`),
+}
+
+// systemReadSchemaPatterns match the read-only diagnostic schemas that are
+// blocked by default but may be unlocked via MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS
+// (SetAllowSystemSchemas). `mysql` is intentionally NOT here — it stays in
+// blockedPatterns and is always rejected.
+var systemReadSchemaPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\bINFORMATION_SCHEMA\s*\.\b`),
 	regexp.MustCompile(`(?i)\bPERFORMANCE_SCHEMA\s*\.\b`),
 	regexp.MustCompile(`(?i)\bSYS\s*\.\b`),
@@ -218,6 +227,20 @@ func ValidateSQL(sqlText string) error {
 			return &SQLValidationError{
 				Reason:  "query contains blocked pattern",
 				Pattern: pattern.String(),
+			}
+		}
+	}
+
+	// Read-only diagnostic system schemas are blocked unless explicitly unlocked
+	// via MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS (SetAllowSystemSchemas). `mysql` is never
+	// unlocked here — it remains in blockedPatterns above.
+	if !allowSystemSchemas {
+		for _, pattern := range systemReadSchemaPatterns {
+			if pattern.MatchString(scan) {
+				return &SQLValidationError{
+					Reason:  "query contains blocked pattern",
+					Pattern: pattern.String(),
+				}
 			}
 		}
 	}

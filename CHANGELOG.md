@@ -7,6 +7,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **`MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS`** (opt-in, default off): lifts the default block on the read-only diagnostic schemas `information_schema`, `performance_schema`, and `sys`, so `run_query` / `explain_query` can reference them for index diagnostics (cardinality via `information_schema.STATISTICS`, index usage via `performance_schema.table_io_waits_summary_by_index_usage`, redundant/unused indexes via `sys.*`). The `mysql` schema remains blocked unconditionally, and access is still subject to the connection's MySQL grants. Orthogonal to `MYSQL_MCP_ALLOWED_DATABASES`: both are enforced, so when an allowlist is set the relevant system schemas must also be added to it. As part of this, `explain_query` now runs the same `ValidateSQLCombined` checks as `run_query` (it previously did not, so EXPLAIN could reach system schemas regardless of any guard). Configurable via env var or the `security.allow_system_schemas` config-file key.
+
 ## [1.7.0] - 2026-04-19
 
 General availability release. Promotes rc.4 to GA plus CI/release pipeline hardening.

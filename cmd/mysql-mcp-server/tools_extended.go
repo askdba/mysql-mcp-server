@@ -158,6 +158,19 @@ func toolExplainQuery(
 			return nil, ExplainQueryOutput{}, err
 		}
 	}
+	// Enhanced SQL validation using parser + regex defense-in-depth, matching
+	// run_query. Without this, EXPLAIN bypasses the system-schema guard (and the
+	// MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS opt-in): the allowlist check below is a no-op
+	// when no allowlist is configured, so EXPLAIN could otherwise reach mysql.* /
+	// information_schema.* etc. regardless of the flag.
+	if err := util.ValidateSQLCombined(sqlText); err != nil {
+		logWarn("query rejected by validator", map[string]interface{}{
+			"tool":  "explain_query",
+			"error": err.Error(),
+			"query": util.TruncateQuery(sqlText, 200),
+		})
+		return nil, ExplainQueryOutput{}, fmt.Errorf("query validation failed: %w", err)
+	}
 	if err := requireReferencedSchemasInQuery(sqlText); err != nil {
 		return nil, ExplainQueryOutput{}, err
 	}

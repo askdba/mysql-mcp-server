@@ -67,6 +67,27 @@ var DangerousSchemas = map[string]bool{
 	"sys":                true,
 }
 
+// systemReadSchemas are the read-only diagnostic schemas that may be unlocked
+// via MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS (e.g. index cardinality, index usage,
+// redundant-index detection). `mysql` is deliberately excluded — it holds
+// credentials and grants and stays blocked regardless of the flag.
+var systemReadSchemas = map[string]bool{
+	"information_schema": true,
+	"performance_schema": true,
+	"sys":                true,
+}
+
+// allowSystemSchemas, when true, permits read access to systemReadSchemas.
+// Off by default; set once at startup via SetAllowSystemSchemas.
+var allowSystemSchemas bool
+
+// SetAllowSystemSchemas toggles read access to the read-only system schemas
+// (information_schema, performance_schema, sys). The `mysql` schema remains
+// blocked regardless. Intended to be called once during startup from config.
+func SetAllowSystemSchemas(v bool) {
+	allowSystemSchemas = v
+}
+
 // ValidateSQLWithParser performs SQL validation using a proper SQL parser.
 // This is more robust than regex-based validation as it understands SQL syntax.
 func ValidateSQLWithParser(sqlText string) error {
@@ -285,7 +306,8 @@ func checkTableExpr(tableExpr sqlparser.TableExpr) error {
 		if tableName, ok := t.Expr.(sqlparser.TableName); ok {
 			// Check if accessing a dangerous schema
 			qualifier := strings.ToLower(tableName.Qualifier.String())
-			if qualifier != "" && DangerousSchemas[qualifier] {
+			if qualifier != "" && DangerousSchemas[qualifier] &&
+				!(allowSystemSchemas && systemReadSchemas[qualifier]) {
 				return &ParserValidationError{
 					Reason:    "access to system schema is not allowed",
 					Statement: qualifier,
