@@ -326,7 +326,11 @@ func promptQueryAdvisor(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.Ge
 	sb.WriteString("Please analyze this query's execution plan. Identify: " +
 		"full-table scans (type=ALL), missing indexes, suboptimal join types, " +
 		"high row estimates vs filtered rows, and any Extra warnings (Using filesort, Using temporary). " +
-		"Provide specific CREATE INDEX statements and query rewrite suggestions where applicable.")
+		"Provide specific CREATE INDEX statements and query rewrite suggestions where applicable. " +
+		"Two optimization reference guides are available as MCP resources " +
+		"(docs://mysql-mcp-server/query-optimization-guide and " +
+		"docs://mysql-mcp-server/query-optimization-comprehensive) " +
+		"if you need detailed patterns or index strategies.")
 
 	return &mcp.GetPromptResult{
 		Description: "Query execution plan with optimization advice",
