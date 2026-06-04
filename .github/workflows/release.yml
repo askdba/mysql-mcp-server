@@ -28,12 +28,12 @@ jobs:
           --health-retries=5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.24'
           cache: true
@@ -78,14 +78,14 @@ jobs:
     needs: pre-release-check
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           # Note: Don't specify ref - let it checkout the tagged commit that triggered this workflow
           # GoReleaser requires HEAD to be the tagged commit for proper version extraction
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.24'
           cache: true
@@ -105,7 +105,7 @@ jobs:
     needs: goreleaser
     steps:
       - name: Checkout tagged commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.ref }}
           # Explicitly checkout the tag that triggered this workflow
@@ -164,7 +164,7 @@ jobs:
     needs: goreleaser
     steps:
       - name: Checkout main branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
