@@ -7,6 +7,17 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [1.7.1-rc.4] - 2026-06-05
+
+### Fixed
+
+- **Lint**: Removed unused `getClient` function from `connection.go`; changed `%v` to `%w` in `tools_extended.go` to preserve error wrapping; rewrote two `if-else` chains to `switch` statements in `search_schema` query builder.
+- **CI**: Added MySQL 9.7 to the integration test matrix.
+
+### Tests
+
+- **`TestQueryAdvisorResourceURIs`**: New unit test asserting the `query_advisor` prompt's closing instruction contains both MCP resource URIs (`docs://mysql-mcp-server/query-optimization-guide` and `docs://mysql-mcp-server/query-optimization-comprehensive`).
+
 ## [1.7.1-rc.3] - 2026-06-04
 
 ### Fixed
