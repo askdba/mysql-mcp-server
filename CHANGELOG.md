@@ -7,6 +7,14 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [1.7.1-rc.2] - 2026-06-04
+
+### Added
+
+- **MCP Resources**: Two query optimization guides are now available as MCP resources (`docs://mysql-mcp-server/query-optimization-guide`, `docs://mysql-mcp-server/query-optimization-comprehensive`), surfacing SQL optimization patterns and advanced indexing strategies to Claude on demand. Content is embedded in the binary at build time.
+- **`run_query` tool description**: Updated to direct users toward the `query_advisor` prompt for complex query optimization workflows.
+- **`query_advisor` prompt**: Now references the two MCP resource URIs in its closing instruction for detailed index strategies and optimization patterns.
+
 ## [1.7.1-rc.1] - 2026-06-04
 
 ### Added
