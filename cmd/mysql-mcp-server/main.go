@@ -282,6 +282,9 @@ func main() {
 	// Register prompts (multi-step workflows that gather live data for Claude)
 	registerPrompts(server)
 
+	// Register static documentation as MCP resources
+	registerResources(server)
+
 	// Register vector tools (MYSQL_MCP_VECTOR=1)
 	if cfg.VectorMode {
 		registerVectorTools(server)
