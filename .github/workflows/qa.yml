@@ -118,7 +118,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mysql-version: ['8.0', '8.4', '9.0']
+        mysql-version: ['8.0', '8.4', '9.0', '9.7']
     
     services:
       mysql:
