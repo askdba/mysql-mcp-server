@@ -7,6 +7,12 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [1.7.1-rc.3] - 2026-06-04
+
+### Fixed
+
+- **Docker image build**: Added `.dockerignore` exceptions for `docs/embed.go`, `docs/query_optimization_guide.md`, and `docs/mysql_query_optimization_comprehensive.md` so the Go embed directives can locate the optimization guide files inside the Docker build context.
+
 ## [1.7.1-rc.2] - 2026-06-04
 
 ### Added
