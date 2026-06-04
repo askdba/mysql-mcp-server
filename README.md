@@ -3,7 +3,7 @@
 <div align="center">
   <img src="./MysqlMCPServerBanner.png" alt="MySQL MCP Server Banner" width="800"/>
   
-  [![Version](https://img.shields.io/badge/version-1.7.1-rc.1-blue.svg)](https://github.com/askdba/mysql-mcp-server/releases)
+  [![Version](https://img.shields.io/badge/version-1.7.1-rc.2-blue.svg)](https://github.com/askdba/mysql-mcp-server/releases)
   [![Go](https://img.shields.io/badge/go-1.24+-00ADD8.svg)](https://golang.org/)
   [![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
 </div>
@@ -356,7 +356,7 @@ mysql-mcp-server --version
 
 Output:
 ```
-mysql-mcp-server v1.7.1-rc.1
+mysql-mcp-server v1.7.1-rc.2
   Build time: <build time>
   Git commit: <git sha>
 ```
