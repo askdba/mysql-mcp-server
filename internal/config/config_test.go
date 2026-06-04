@@ -529,6 +529,7 @@ func TestSecurityEnvOverrides(t *testing.T) {
 	_ = os.Setenv("MYSQL_DSN", "user:pass@tcp(localhost:3306)/db")
 	_ = os.Setenv("MYSQL_MCP_ALLOWED_DATABASES", " a , b, c ")
 	_ = os.Setenv("MYSQL_MCP_STRICT_READ_ONLY", "1")
+	_ = os.Setenv("MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS", "1")
 	_ = os.Setenv("MYSQL_MCP_PROCESS_ADMIN", "1")
 	_ = os.Setenv("MYSQL_MCP_READ_AUDIT_TOOL", "true")
 	_ = os.Setenv("MYSQL_MCP_SLOW_QUERY_TOOL", "y")
@@ -541,6 +542,9 @@ func TestSecurityEnvOverrides(t *testing.T) {
 	}
 	if !cfg.StrictReadOnly || !cfg.ProcessAdmin || !cfg.ReadAuditTool || !cfg.SlowQueryTool {
 		t.Fatalf("flags: strict=%v admin=%v audit=%v slow=%v", cfg.StrictReadOnly, cfg.ProcessAdmin, cfg.ReadAuditTool, cfg.SlowQueryTool)
+	}
+	if !cfg.AllowSystemSchemas {
+		t.Fatalf("expected AllowSystemSchemas=true from MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS=1")
 	}
 	set := AllowedDatabaseSet(cfg.AllowedDatabases)
 	if len(set) != 3 {

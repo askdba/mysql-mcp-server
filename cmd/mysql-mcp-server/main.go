@@ -158,6 +158,7 @@ func main() {
 		log.Fatalf("config error: %v", err)
 	}
 	initAccessControl(cfg.AllowedDatabases)
+	util.SetAllowSystemSchemas(cfg.AllowSystemSchemas)
 
 	// Daemon mode requires HTTP mode; defer until after config load so we can check.
 	if parsed.daemon {

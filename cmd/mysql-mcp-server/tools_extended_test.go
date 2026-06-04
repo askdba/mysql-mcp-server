@@ -10,6 +10,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/askdba/mysql-mcp-server/internal/config"
+	"github.com/askdba/mysql-mcp-server/internal/util"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -375,6 +376,97 @@ func TestToolExplainQueryNonSelect(t *testing.T) {
 	}
 	if err.Error() != "only SELECT statements can be explained" {
 		t.Errorf("unexpected error: %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+// TestToolExplainQuerySystemSchemaDefaultDeny verifies EXPLAIN blocks system
+// schemas by default (no allowlist, flag off) and never reaches the DB.
+func TestToolExplainQuerySystemSchemaDefaultDeny(t *testing.T) {
+	mock, cleanup := setupExtendedMockDB(t)
+	defer cleanup()
+
+	for _, q := range []string{
+		"SELECT * FROM information_schema.tables",
+		"SELECT * FROM performance_schema.events_statements_summary_by_digest",
+		"SELECT * FROM sys.session",
+		"SELECT * FROM mysql.user",
+	} {
+		_, _, err := toolExplainQuery(context.Background(), &mcp.CallToolRequest{}, ExplainQueryInput{SQL: q})
+		// Assert the rejection comes from the validator (before any DB access),
+		// not from an incidental "unexpected DB call" sqlmock error — otherwise
+		// the test would pass even if EXPLAIN reached the DB.
+		if err == nil {
+			t.Errorf("expected EXPLAIN of %q to be blocked by default", q)
+		} else if !strings.Contains(err.Error(), "query validation failed") {
+			t.Errorf("expected validation rejection for %q (proving no DB call), got: %v", q, err)
+		}
+	}
+	// Belt-and-suspenders: no mock.ExpectQuery was registered, so any DB call
+	// would also surface here.
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+// TestToolExplainQuerySystemSchemaOptInUnlocks verifies that with
+// MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS on, EXPLAIN of a read-only system schema passes
+// validation and reaches the DB, while mysql stays blocked.
+func TestToolExplainQuerySystemSchemaOptInUnlocks(t *testing.T) {
+	mock, cleanup := setupExtendedMockDB(t)
+	defer cleanup()
+
+	util.SetAllowSystemSchemas(true)
+	defer util.SetAllowSystemSchemas(false)
+
+	// information_schema now reaches the DB (validation passes).
+	mock.ExpectQuery(`EXPLAIN FORMAT=JSON SELECT \* FROM information_schema.STATISTICS`).
+		WillReturnRows(sqlmock.NewRows([]string{"EXPLAIN"}).AddRow(
+			`{"query_block":{"cost_info":{"query_cost":"1.0"},"table":{"table_name":"STATISTICS","access_type":"ALL","rows":1,"filtered":100}}}`,
+		))
+	if _, _, err := toolExplainQuery(context.Background(), &mcp.CallToolRequest{},
+		ExplainQueryInput{SQL: "SELECT * FROM information_schema.STATISTICS"}); err != nil {
+		t.Fatalf("expected EXPLAIN of information_schema to pass with flag on, got: %v", err)
+	}
+
+	// mysql must remain blocked even with the flag on — and the rejection must
+	// come from the validator (no DB call), not an unexpected-query sqlmock error.
+	if _, _, err := toolExplainQuery(context.Background(), &mcp.CallToolRequest{},
+		ExplainQueryInput{SQL: "SELECT * FROM mysql.user"}); err == nil {
+		t.Error("expected EXPLAIN of mysql.user to remain blocked even with flag on")
+	} else if !strings.Contains(err.Error(), "query validation failed") {
+		t.Errorf("expected validation rejection for mysql.user (proving no DB call), got: %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+// TestToolExplainQuerySystemSchemaAllowlistStillApplies codifies the documented
+// policy: MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS and MYSQL_MCP_ALLOWED_DATABASES are
+// orthogonal and both enforced. With an allowlist set that does NOT include
+// information_schema, the flag does not exempt it — the allowlist independently
+// rejects the reference.
+func TestToolExplainQuerySystemSchemaAllowlistStillApplies(t *testing.T) {
+	mock, cleanup := setupExtendedMockDB(t)
+	defer cleanup()
+
+	initAccessControl([]string{"appdb"}) // allowlist excludes information_schema
+	defer initAccessControl(nil)
+	util.SetAllowSystemSchemas(true)
+	defer util.SetAllowSystemSchemas(false)
+
+	_, _, err := toolExplainQuery(context.Background(), &mcp.CallToolRequest{},
+		ExplainQueryInput{SQL: "SELECT * FROM information_schema.STATISTICS", Database: "appdb"})
+	if err == nil {
+		t.Fatal("expected information_schema to be rejected by the allowlist even with the flag on")
+	}
+	if !strings.Contains(err.Error(), "MYSQL_MCP_ALLOWED_DATABASES") {
+		t.Errorf("expected an allowlist rejection (not a validator/DB error), got: %v", err)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {

@@ -131,6 +131,7 @@ Environment variables:
 | MYSQL_MCP_AUDIT_LOG | No | – | Path to audit log file |
 | MYSQL_MCP_ALLOWED_DATABASES | No | – | Comma-separated schema allowlist (empty = all allowed). With an allowlist, **`run_query`** rejects **`SHOW DATABASES`** / **`SHOW DATABASES LIKE`**—use **`list_databases`**. |
 | MYSQL_MCP_STRICT_READ_ONLY | No | 0 | Set `1` to enable `transaction_read_only=ON` on new connections |
+| MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS | No | 0 | Set `1` to allow **read-only** access to `information_schema`, `performance_schema`, and `sys` (for diagnostics: index cardinality, index usage, redundant/unused indexes). `mysql` stays blocked regardless. |
 | MYSQL_MCP_PROCESS_ADMIN | No | 0 | Set `1` to enable **`process_list`** / **`kill_query`** (extended); **`kill_query`** issues **`KILL QUERY`** (cancels the running statement only, not the connection) |
 | MYSQL_MCP_READ_AUDIT_TOOL | No | 0 | Set `1` to enable `read_audit_log` when audit path is set |
 | MYSQL_MCP_SLOW_QUERY_TOOL | No | 0 | Set `1` to enable `slow_query_log` tool (extended) |
@@ -985,13 +986,14 @@ export MYSQL_QUERY_TIMEOUT=30000    # Optional: timeout in ms (30 s) if you do n
 |----------|---------|
 | `MYSQL_MCP_ALLOWED_DATABASES` | Comma-separated schema allowlist. When set, tools that take a `database` argument must use an allowed name; `list_databases` / `database_size` only expose allowed schemas; `run_query` requires `database` and cannot be used to hop schemas via omission. **`run_query`** rejects **`SHOW DATABASES`** and **`SHOW DATABASES LIKE`** (use **`list_databases`**). Qualified names in SQL, **`EXPLAIN`** (including **`FORMAT=`** / **`EXTENDED`**), and inner DML in **`EXPLAIN`** are checked against the allowlist. **`slow_query_log`** (table mode) only returns `mysql.slow_log` rows whose **`db`** column matches an allowed schema (case-insensitive); rows with null/empty `db` are omitted. |
 | `MYSQL_MCP_STRICT_READ_ONLY` | When `1`, new driver connections run with `transaction_read_only=ON` (harder to accidentally issue writes if grants allow them). |
+| `MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS` | When `1`, lifts the default block on the read-only diagnostic schemas `information_schema`, `performance_schema`, and `sys` so `run_query` / `explain_query` may reference them (e.g. `information_schema.STATISTICS` for index cardinality, `sys.schema_redundant_indexes` / `sys.schema_unused_indexes`, `performance_schema.table_io_waits_summary_by_index_usage`). The `mysql` schema remains blocked unconditionally. Off by default; reads still require the connection's MySQL grants. This flag and `MYSQL_MCP_ALLOWED_DATABASES` are **orthogonal and both enforced**: the flag lifts the hardcoded system-schema guard, while the allowlist (when set) independently rejects any schema not on it. So if you run with an allowlist, you must **also add `information_schema` / `performance_schema` / `sys` to `MYSQL_MCP_ALLOWED_DATABASES`** for these queries to pass; with no allowlist (the default), the flag alone is sufficient. The flag never unlocks `mysql`. |
 | `MYSQL_MCP_PROCESS_ADMIN` | Enables **`process_list`** and **`kill_query`** (issues **`KILL QUERY`**, not connection kill; plus HTTP `/api/processlist`, `/api/kill`). Requires appropriate MySQL privileges (`CONNECTION_ADMIN` / `PROCESS`, etc.). |
 | `MYSQL_MCP_READ_AUDIT_TOOL` | Enables **`read_audit_log`** when **`MYSQL_MCP_AUDIT_LOG`** is set (tail of the audit JSON file). |
 | `MYSQL_MCP_SLOW_QUERY_TOOL` | Enables **`slow_query_log`** (reads `mysql.slow_log` when `log_output` includes `TABLE`, otherwise returns file settings). |
 
 **`server_info`:** Pass **`detailed: true`** (MCP) or **`?detailed=1`** (HTTP) for ping latency, **`Threads_running`**, **`Slow_queries`**, **`Questions`**, and InnoDB buffer pool hit rate when stats are available. If **`MYSQL_MCP_TOKEN_TRACKING=1`**, **`token_metrics`** is always included (cumulative since process start).
 
-YAML file equivalents live under **`security:`** in the config file (`allowed_databases`, `strict_read_only`, `process_admin`, `read_audit_tool`, `slow_query_tool`).
+YAML file equivalents live under **`security:`** in the config file (`allowed_databases`, `strict_read_only`, `allow_system_schemas`, `process_admin`, `read_audit_tool`, `slow_query_tool`).
 
 ## Testing
 

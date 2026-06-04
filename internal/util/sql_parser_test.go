@@ -200,6 +200,39 @@ func TestValidateSQLWithParser_SystemSchemas(t *testing.T) {
 	}
 }
 
+func TestValidateSQLWithParser_AllowSystemSchemas(t *testing.T) {
+	// Opt-in (MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS) unlocks the read-only diagnostic
+	// schemas but must NOT unlock `mysql`.
+	defer SetAllowSystemSchemas(false) // restore default for other tests
+	SetAllowSystemSchemas(true)
+
+	allowed := []struct {
+		query  string
+		schema string
+	}{
+		{"SELECT TABLE_NAME, CARDINALITY FROM information_schema.STATISTICS", "information_schema"},
+		{"SELECT * FROM performance_schema.table_io_waits_summary_by_index_usage", "performance_schema"},
+		{"SELECT * FROM sys.schema_redundant_indexes", "sys"},
+		{"SELECT * FROM Information_Schema.STATISTICS", "information_schema (case)"},
+	}
+	for _, tc := range allowed {
+		t.Run("allowed/"+tc.schema, func(t *testing.T) {
+			if err := ValidateSQLCombined(tc.query); err != nil {
+				t.Errorf("expected %s to be allowed when flag is on, got: %v\nQuery: %s", tc.schema, err, tc.query)
+			}
+		})
+	}
+
+	// `mysql` stays blocked even with the flag on.
+	for _, q := range []string{"SELECT * FROM mysql.user", "SELECT * FROM MYSQL.user"} {
+		t.Run("still-blocked/mysql", func(t *testing.T) {
+			if err := ValidateSQLCombined(q); err == nil {
+				t.Errorf("expected mysql schema to remain blocked even with flag on\nQuery: %s", q)
+			}
+		})
+	}
+}
+
 func TestValidateSQLWithParser_SQLInjectionAttempts(t *testing.T) {
 	// Test injection attempts that should be caught by the parser
 	parserCaught := []struct {

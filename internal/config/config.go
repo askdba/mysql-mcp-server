@@ -98,11 +98,12 @@ type Config struct {
 	MaskColumns []string
 
 	// Security / access (optional)
-	AllowedDatabases []string // Empty = all databases allowed (subject to MySQL grants)
-	StrictReadOnly   bool     // SET transaction_read_only=ON on each driver connection (DSN param)
-	ProcessAdmin     bool     // Enable process_list and kill_query (extended tools)
-	ReadAuditTool    bool     // Enable read_audit_log when AuditLogPath is set (extended)
-	SlowQueryTool    bool     // Enable slow_query_log tool (extended)
+	AllowedDatabases   []string // Empty = all databases allowed (subject to MySQL grants)
+	StrictReadOnly     bool     // SET transaction_read_only=ON on each driver connection (DSN param)
+	AllowSystemSchemas bool     // Permit read-only access to information_schema/performance_schema/sys (mysql stays blocked)
+	ProcessAdmin       bool     // Enable process_list and kill_query (extended tools)
+	ReadAuditTool      bool     // Enable read_audit_log when AuditLogPath is set (extended)
+	SlowQueryTool      bool     // Enable slow_query_log tool (extended)
 }
 
 // Load reads configuration from config file (if present) and environment variables.
@@ -262,6 +263,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("MYSQL_MCP_STRICT_READ_ONLY"); v != "" {
 		cfg.StrictReadOnly = getEnvBool("MYSQL_MCP_STRICT_READ_ONLY")
+	}
+	if v := os.Getenv("MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS"); v != "" {
+		cfg.AllowSystemSchemas = getEnvBool("MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS")
 	}
 	if v := os.Getenv("MYSQL_MCP_PROCESS_ADMIN"); v != "" {
 		cfg.ProcessAdmin = getEnvBool("MYSQL_MCP_PROCESS_ADMIN")
