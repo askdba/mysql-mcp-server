@@ -21,6 +21,9 @@ coverage.html
 *.md
 !README.md
 docs/
+!docs/embed.go
+!docs/query_optimization_guide.md
+!docs/mysql_query_optimization_comprehensive.md
 MysqlMCPServerBanner.png
 
 # IDE and editor files
