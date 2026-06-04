@@ -93,6 +93,36 @@ func GetAllowSystemSchemas() bool {
 	return allowSystemSchemas
 }
 
+// ValidateDatabaseAccess checks whether using the given database name as the
+// session-default schema (i.e. the tool's database parameter, which triggers
+// USE <db> before the query runs) is permitted. This catches the bypass where a
+// caller passes database: "mysql" with unqualified table names — the SQL
+// validator only sees schema-qualified references, so it cannot block that path.
+//
+// Rules:
+//   - empty string: always allowed (no USE is issued)
+//   - "mysql": always blocked regardless of flags (holds credentials/grants)
+//   - information_schema / performance_schema / sys: blocked unless allowSystemSchemas
+func ValidateDatabaseAccess(db string) error {
+	db = strings.ToLower(strings.TrimSpace(db))
+	if db == "" {
+		return nil
+	}
+	if db == "mysql" {
+		return &ParserValidationError{
+			Reason:    "access to system schema is not allowed",
+			Statement: db,
+		}
+	}
+	if systemReadSchemas[db] && !allowSystemSchemas {
+		return &ParserValidationError{
+			Reason:    "access to system schema is not allowed (set MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS=1 to enable diagnostic schema access)",
+			Statement: db,
+		}
+	}
+	return nil
+}
+
 // ValidateSQLWithParser performs SQL validation using a proper SQL parser.
 // This is more robust than regex-based validation as it understands SQL syntax.
 func ValidateSQLWithParser(sqlText string) error {
@@ -309,13 +339,16 @@ func checkTableExpr(tableExpr sqlparser.TableExpr) error {
 	switch t := tableExpr.(type) {
 	case *sqlparser.AliasedTableExpr:
 		if tableName, ok := t.Expr.(sqlparser.TableName); ok {
-			// Check if accessing a dangerous schema
+			// Check if accessing a dangerous schema. Diagnostic schemas
+			// (information_schema, performance_schema, sys) may be unlocked
+			// via SetAllowSystemSchemas; mysql is always blocked.
 			qualifier := strings.ToLower(tableName.Qualifier.String())
-			if qualifier != "" && DangerousSchemas[qualifier] &&
-				!(allowSystemSchemas && systemReadSchemas[qualifier]) {
-				return &ParserValidationError{
-					Reason:    "access to system schema is not allowed",
-					Statement: qualifier,
+			if qualifier != "" && DangerousSchemas[qualifier] {
+				if !allowSystemSchemas || !systemReadSchemas[qualifier] {
+					return &ParserValidationError{
+						Reason:    "access to system schema is not allowed",
+						Statement: qualifier,
+					}
 				}
 			}
 		}

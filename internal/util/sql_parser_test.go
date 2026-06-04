@@ -233,6 +233,49 @@ func TestValidateSQLWithParser_AllowSystemSchemas(t *testing.T) {
 	}
 }
 
+func TestValidateDatabaseAccess(t *testing.T) {
+	// mysql always blocked regardless of flag
+	for _, db := range []string{"mysql", "MYSQL", "MySQL"} {
+		if err := ValidateDatabaseAccess(db); err == nil {
+			t.Errorf("expected mysql (%q) to be blocked, got nil", db)
+		}
+	}
+
+	// diagnostic schemas blocked by default (flag off)
+	SetAllowSystemSchemas(false)
+	for _, db := range []string{"information_schema", "performance_schema", "sys", "INFORMATION_SCHEMA", "SYS"} {
+		if err := ValidateDatabaseAccess(db); err == nil {
+			t.Errorf("expected %q to be blocked when flag is off, got nil", db)
+		}
+	}
+
+	// diagnostic schemas allowed when flag is on
+	SetAllowSystemSchemas(true)
+	defer SetAllowSystemSchemas(false)
+	for _, db := range []string{"information_schema", "performance_schema", "sys"} {
+		if err := ValidateDatabaseAccess(db); err != nil {
+			t.Errorf("expected %q to be allowed when flag is on, got: %v", db, err)
+		}
+	}
+
+	// mysql still blocked even with flag on
+	if err := ValidateDatabaseAccess("mysql"); err == nil {
+		t.Error("expected mysql to remain blocked even with flag on")
+	}
+
+	// empty string always allowed
+	if err := ValidateDatabaseAccess(""); err != nil {
+		t.Errorf("expected empty db to be allowed, got: %v", err)
+	}
+
+	// normal user databases allowed
+	for _, db := range []string{"appdb", "myapp", "testdb"} {
+		if err := ValidateDatabaseAccess(db); err != nil {
+			t.Errorf("expected user db %q to be allowed, got: %v", db, err)
+		}
+	}
+}
+
 func TestValidateSQLWithParser_SQLInjectionAttempts(t *testing.T) {
 	// Test injection attempts that should be caught by the parser
 	parserCaught := []struct {

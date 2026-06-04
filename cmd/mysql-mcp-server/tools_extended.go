@@ -150,6 +150,9 @@ func toolExplainQuery(
 	}
 
 	database := strings.TrimSpace(input.Database)
+	if err := util.ValidateDatabaseAccess(database); err != nil {
+		return nil, ExplainQueryOutput{}, fmt.Errorf("database access denied: %w", err)
+	}
 	if accessControlEnabled() && database == "" {
 		return nil, ExplainQueryOutput{}, fmt.Errorf("database is required when MYSQL_MCP_ALLOWED_DATABASES is set")
 	}

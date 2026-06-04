@@ -376,6 +376,9 @@ func toolRunQuery(
 		return nil, QueryResult{}, fmt.Errorf("sql is required")
 	}
 	database := strings.TrimSpace(input.Database)
+	if err := util.ValidateDatabaseAccess(database); err != nil {
+		return nil, QueryResult{}, fmt.Errorf("database access denied: %w", err)
+	}
 	if accessControlEnabled() {
 		if database == "" {
 			return nil, QueryResult{}, fmt.Errorf("database is required when MYSQL_MCP_ALLOWED_DATABASES is set")

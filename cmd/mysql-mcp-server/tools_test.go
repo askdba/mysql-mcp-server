@@ -11,6 +11,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/askdba/mysql-mcp-server/internal/config"
 	"github.com/askdba/mysql-mcp-server/internal/dbretry"
+	"github.com/askdba/mysql-mcp-server/internal/util"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -663,6 +664,72 @@ func TestToolRunQueryInvalidDatabase(t *testing.T) {
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+// TestToolRunQuerySystemDatabaseBypass verifies that passing database: "mysql"
+// (or other blocked schemas) with an unqualified SQL query is rejected before
+// any DB call is made — the SQL validator cannot see "mysql." in the query text.
+func TestToolRunQuerySystemDatabaseBypass(t *testing.T) {
+	mock, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	// mysql is always blocked
+	_, _, err := toolRunQuery(context.Background(), &mcp.CallToolRequest{}, RunQueryInput{
+		SQL:      "SELECT * FROM user",
+		Database: "mysql",
+	})
+	if err == nil {
+		t.Fatal("expected database: mysql to be rejected")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled mock expectations (DB was called): %v", err)
+	}
+
+	// diagnostic schemas blocked by default
+	for _, db := range []string{"information_schema", "performance_schema", "sys"} {
+		_, _, err := toolRunQuery(context.Background(), &mcp.CallToolRequest{}, RunQueryInput{
+			SQL:      "SELECT * FROM STATISTICS",
+			Database: db,
+		})
+		if err == nil {
+			t.Errorf("expected database: %q to be rejected when flag is off", db)
+		}
+	}
+}
+
+// TestToolRunQuerySystemDatabaseOptIn verifies that diagnostic schemas are
+// accessible via the database parameter when MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS=1,
+// while mysql stays blocked.
+func TestToolRunQuerySystemDatabaseOptIn(t *testing.T) {
+	mock, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	util.SetAllowSystemSchemas(true)
+	defer util.SetAllowSystemSchemas(false)
+
+	// information_schema allowed — query should reach the DB (USE + SELECT both expected)
+	mock.ExpectExec("USE").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"TABLE_NAME"}).AddRow("users"))
+	_, _, err := toolRunQuery(context.Background(), &mcp.CallToolRequest{}, RunQueryInput{
+		SQL:      "SELECT TABLE_NAME FROM information_schema.TABLES",
+		Database: "information_schema",
+	})
+	if err != nil {
+		t.Errorf("expected information_schema to be accessible with flag on, got: %v", err)
+	}
+
+	// mysql still blocked even with flag on — no DB call expected
+	_, _, err = toolRunQuery(context.Background(), &mcp.CallToolRequest{}, RunQueryInput{
+		SQL:      "SELECT * FROM user",
+		Database: "mysql",
+	})
+	if err == nil {
+		t.Error("expected mysql to remain blocked even with flag on")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled mock expectations: %v", err)
 	}
 }
 
