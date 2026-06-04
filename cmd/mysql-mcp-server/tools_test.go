@@ -1247,6 +1247,7 @@ func TestQueryAdvisorResourceURIs(t *testing.T) {
 
 	// Any DB error causes EXPLAIN to fail gracefully; the prompt still emits
 	// its full closing instruction including the resource URIs.
+	mock.ExpectExec("USE").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery("EXPLAIN").WillReturnError(fmt.Errorf("mock explain error"))
 
 	ctx := context.Background()
@@ -1264,7 +1265,11 @@ func TestQueryAdvisorResourceURIs(t *testing.T) {
 	if len(result.Messages) == 0 {
 		t.Fatal("promptQueryAdvisor returned no messages")
 	}
-	text := result.Messages[0].Content.(*mcp.TextContent).Text
+	tc, ok := result.Messages[0].Content.(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected *mcp.TextContent, got %T", result.Messages[0].Content)
+	}
+	text := tc.Text
 	const uri1 = "docs://mysql-mcp-server/query-optimization-guide"
 	const uri2 = "docs://mysql-mcp-server/query-optimization-comprehensive"
 	if !strings.Contains(text, uri1) {
@@ -1272,5 +1277,9 @@ func TestQueryAdvisorResourceURIs(t *testing.T) {
 	}
 	if !strings.Contains(text, uri2) {
 		t.Errorf("closing instruction missing %q", uri2)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
 	}
 }
