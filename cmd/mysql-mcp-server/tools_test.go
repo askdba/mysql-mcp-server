@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -1237,5 +1238,39 @@ func TestResourcesRegistered(t *testing.T) {
 	}
 	if docs.QueryOptimizationComprehensive == "" {
 		t.Fatal("QueryOptimizationComprehensive embed is empty")
+	}
+}
+
+func TestQueryAdvisorResourceURIs(t *testing.T) {
+	mock, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	// Any DB error causes EXPLAIN to fail gracefully; the prompt still emits
+	// its full closing instruction including the resource URIs.
+	mock.ExpectQuery("EXPLAIN").WillReturnError(fmt.Errorf("mock explain error"))
+
+	ctx := context.Background()
+	result, err := promptQueryAdvisor(ctx, &mcp.GetPromptRequest{
+		Params: &mcp.GetPromptParams{
+			Arguments: map[string]string{
+				"sql":      "SELECT 1",
+				"database": "testdb",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("promptQueryAdvisor returned error: %v", err)
+	}
+	if len(result.Messages) == 0 {
+		t.Fatal("promptQueryAdvisor returned no messages")
+	}
+	text := result.Messages[0].Content.(*mcp.TextContent).Text
+	const uri1 = "docs://mysql-mcp-server/query-optimization-guide"
+	const uri2 = "docs://mysql-mcp-server/query-optimization-comprehensive"
+	if !strings.Contains(text, uri1) {
+		t.Errorf("closing instruction missing %q", uri1)
+	}
+	if !strings.Contains(text, uri2) {
+		t.Errorf("closing instruction missing %q", uri2)
 	}
 }
