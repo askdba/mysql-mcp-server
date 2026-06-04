@@ -432,15 +432,6 @@ func getDB() *sql.DB {
 	return connManager.GetActiveDB()
 }
 
-// getClient returns the retry-capable mysql.Client for the active connection.
-// Use this for query execution paths that benefit from transient-error retry.
-func getClient() *mysqlclient.Client {
-	if connManager == nil {
-		panic("getClient called before connManager initialized")
-	}
-	return connManager.GetActiveClient()
-}
-
 // GetServerType returns the server type of the active connection.
 func (cm *ConnectionManager) GetServerType() ServerType {
 	cm.mu.RLock()

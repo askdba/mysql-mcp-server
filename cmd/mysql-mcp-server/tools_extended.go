@@ -878,10 +878,11 @@ func toolSearchSchema(
 	var tableArgs []interface{}
 	tableArgs = append(tableArgs, input.Pattern)
 
-	if input.Database != "" {
+	switch {
+	case input.Database != "":
 		tableQuery += " AND TABLE_SCHEMA = ?"
 		tableArgs = append(tableArgs, input.Database)
-	} else if accessControlEnabled() {
+	case accessControlEnabled():
 		allowed := allowedDatabasesLower()
 		if len(allowed) == 0 {
 			return nil, SearchSchemaOutput{}, fmt.Errorf("MYSQL_MCP_ALLOWED_DATABASES is set but empty; cannot run search_schema without a database filter")
@@ -892,7 +893,7 @@ func toolSearchSchema(
 		for _, db := range allowed {
 			tableArgs = append(tableArgs, db)
 		}
-	} else {
+	default:
 		tableQuery += " AND TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')"
 	}
 	tableQuery += " LIMIT ?"
@@ -923,10 +924,11 @@ func toolSearchSchema(
 	var colArgs []interface{}
 	colArgs = append(colArgs, input.Pattern)
 
-	if input.Database != "" {
+	switch {
+	case input.Database != "":
 		colQuery += " AND TABLE_SCHEMA = ?"
 		colArgs = append(colArgs, input.Database)
-	} else if accessControlEnabled() {
+	case accessControlEnabled():
 		allowed := allowedDatabasesLower()
 		if len(allowed) == 0 {
 			return nil, SearchSchemaOutput{}, fmt.Errorf("MYSQL_MCP_ALLOWED_DATABASES is set but empty; cannot run search_schema without a database filter")
@@ -937,7 +939,7 @@ func toolSearchSchema(
 		for _, db := range allowed {
 			colArgs = append(colArgs, db)
 		}
-	} else {
+	default:
 		colQuery += " AND TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')"
 	}
 	colQuery += " LIMIT ?"
@@ -1493,7 +1495,7 @@ func parseExplainFilteredField(v interface{}) (float64, error) {
 	}
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		return 0, fmt.Errorf("%w: cannot parse %q as numeric string: %v", errExplainFilteredValue, s, err)
+		return 0, fmt.Errorf("%w: cannot parse %q as numeric string: %w", errExplainFilteredValue, s, err)
 	}
 	return f, nil
 }
