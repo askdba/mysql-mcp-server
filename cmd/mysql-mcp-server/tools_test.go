@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/askdba/mysql-mcp-server/docs"
 	"github.com/askdba/mysql-mcp-server/internal/config"
 	"github.com/askdba/mysql-mcp-server/internal/dbretry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -1227,5 +1228,14 @@ func TestToolRunQueryPaginationRequiresSelect(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestResourcesRegistered(t *testing.T) {
+	if docs.QueryOptimizationGuide == "" {
+		t.Fatal("QueryOptimizationGuide embed is empty")
+	}
+	if docs.QueryOptimizationComprehensive == "" {
+		t.Fatal("QueryOptimizationComprehensive embed is empty")
 	}
 }
