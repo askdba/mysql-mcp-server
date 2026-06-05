@@ -7,36 +7,25 @@ Semantic Versioning.
 
 ## [Unreleased]
 
-## [1.7.1-rc.4] - 2026-06-05
+## [1.7.1] - 2026-06-05
 
-### Fixed
-
-- **Lint**: Removed unused `getClient` function from `connection.go`; changed `%v` to `%w` in `tools_extended.go` to preserve error wrapping; rewrote two `if-else` chains to `switch` statements in `search_schema` query builder.
-- **CI**: Added MySQL 9.7 to the integration test matrix.
-
-### Tests
-
-- **`TestQueryAdvisorResourceURIs`**: New unit test asserting the `query_advisor` prompt's closing instruction contains both MCP resource URIs (`docs://mysql-mcp-server/query-optimization-guide` and `docs://mysql-mcp-server/query-optimization-comprehensive`).
-
-## [1.7.1-rc.3] - 2026-06-04
-
-### Fixed
-
-- **Docker image build**: Added `.dockerignore` exceptions for `docs/embed.go`, `docs/query_optimization_guide.md`, and `docs/mysql_query_optimization_comprehensive.md` so the Go embed directives can locate the optimization guide files inside the Docker build context.
-
-## [1.7.1-rc.2] - 2026-06-04
+Patch release. Tested on MySQL 8.0, 8.4, and 9.7.
 
 ### Added
 
 - **MCP Resources**: Two query optimization guides are now available as MCP resources (`docs://mysql-mcp-server/query-optimization-guide`, `docs://mysql-mcp-server/query-optimization-comprehensive`), surfacing SQL optimization patterns and advanced indexing strategies to Claude on demand. Content is embedded in the binary at build time.
 - **`run_query` tool description**: Updated to direct users toward the `query_advisor` prompt for complex query optimization workflows.
 - **`query_advisor` prompt**: Now references the two MCP resource URIs in its closing instruction for detailed index strategies and optimization patterns.
-
-## [1.7.1-rc.1] - 2026-06-04
-
-### Added
-
 - **`MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS`** (opt-in, default off): lifts the default block on the read-only diagnostic schemas `information_schema`, `performance_schema`, and `sys`, so `run_query` / `explain_query` can reference them for index diagnostics (cardinality via `information_schema.STATISTICS`, index usage via `performance_schema.table_io_waits_summary_by_index_usage`, redundant/unused indexes via `sys.*`). The `mysql` schema remains blocked unconditionally, and access is still subject to the connection's MySQL grants. Orthogonal to `MYSQL_MCP_ALLOWED_DATABASES`: both are enforced, so when an allowlist is set the relevant system schemas must also be added to it. As part of this, `explain_query` now runs the same `ValidateSQLCombined` checks as `run_query` (it previously did not, so EXPLAIN could reach system schemas regardless of any guard). Configurable via env var or the `security.allow_system_schemas` config-file key.
+
+### Fixed
+
+- **Docker image build**: Added `.dockerignore` exceptions for `docs/embed.go`, `docs/query_optimization_guide.md`, and `docs/mysql_query_optimization_comprehensive.md` so the Go embed directives can locate the optimization guide files inside the Docker build context.
+- **Lint**: Removed unused `getClient` function from `connection.go`; changed `%v` to `%w` in `tools_extended.go` to preserve error wrapping; rewrote two `if-else` chains to `switch` statements in `search_schema` query builder.
+
+### CI
+
+- Added MySQL 9.7 to the integration test matrix.
 
 ## [1.7.0] - 2026-04-19
 
