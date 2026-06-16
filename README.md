@@ -1474,5 +1474,5 @@ Quick steps: update [CHANGELOG.md](CHANGELOG.md), commit, then `git tag vX.Y.Z` 
 
 ## License
 
-Apache License 2.0  
-© 2025 Alkin Tezuysal
+MIT License
+© 2025 - 2026 Alkin Tezuysal
