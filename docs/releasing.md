@@ -18,6 +18,7 @@ Skipping CHANGELOG until after an RC tag ships the wrong story to users and Home
 - Tag format: **`v1.7.0-rc.1`**, **`v1.7.0-rc.2`**, etc. (semver pre-release after the patch segment).
 - Update **`CHANGELOG.md`** with an **`[1.7.0-rc.N] - date`** section (see existing **[Unreleased]** / RC headings).
 - **`goreleaser`** `release.prerelease: auto` marks GitHub Releases as **pre-release** when the tag indicates an RC.
+- RC tags do **not** update the Homebrew tap (`brews.skip_upload: auto`), so `brew upgrade` users stay on the latest GA. Test an RC with the binaries from its GitHub Release (or the Docker image).
 - After validation, ship **GA** as **`v1.7.0`** (or merge RC notes into **`v1.7.0 - date`** per section below).
 
 ```bash
@@ -56,7 +57,7 @@ git push origin v1.7.0-rc.1
    - Commit and push to `main`.
 
 5. **Homebrew tap**
-   - **Formula:** GoReleaser updates it when `HOMEBREW_TAP_TOKEN` is set. Ensure that secret is configured (token with `contents: write` on [askdba/homebrew-tap](https://github.com/askdba/homebrew-tap)).
+   - **Formula:** GoReleaser updates it for GA tags when `HOMEBREW_TAP_TOKEN` is set (the tap is the only formula source; there is no copy in this repo). Ensure that secret is configured (token with `contents: write` on [askdba/homebrew-tap](https://github.com/askdba/homebrew-tap)).
    - **Tap README:** Not auto-updated. After a release, update [askdba/homebrew-tap](https://github.com/askdba/homebrew-tap) README if needed (version refs, features, install/upgrade instructions), then commit and push to the tap’s `main`.
 
 6. **Local installation** (for you or users):  
