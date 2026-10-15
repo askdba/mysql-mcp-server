@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  GO_VERSION: '1.24'
+  GO_VERSION: '1.26'
 
 jobs:
   # ============================================
@@ -46,7 +46,7 @@ jobs:
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.1.6
+          version: v2.14.0
           args: --timeout=5m
         continue-on-error: true  # Don't block pipeline on lint issues
 
@@ -67,14 +67,14 @@ jobs:
           cache: true
 
       - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.23.0
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
 
       - name: Run gosec security scanner
         run: gosec -exclude-generated -severity medium ./...
         continue-on-error: true  # Security findings are warnings, not blockers
 
       - name: Check for vulnerabilities
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./...
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0 && govulncheck ./...
         continue-on-error: true  # Don't fail build on vuln check - informational only
 
   # ============================================
@@ -118,7 +118,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mysql-version: ['8.0', '8.4', '9.0', '9.7']
+        mysql-version: ['8.0', '8.4', '9.7', '26.7']
     
     services:
       mysql:
@@ -144,28 +144,21 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Wait for MySQL
+      - name: Initialize test and Sakila databases
+        # Use the server image's own client so client/server versions always match
+        # (the runner's mysql client is 8.0). Same SQL files as docker-compose.test.yml.
         run: |
-          for i in {1..30}; do
-            if mysqladmin ping -h 127.0.0.1 -u root -ptestpass --silent 2>/dev/null; then
-              echo "MySQL is ready"
-              break
-            fi
-            echo "Waiting for MySQL..."
-            sleep 2
+          for f in init.sql sakila-schema.sql sakila-data.sql mcp_test_user.sql mcp_test_user_sakila.sql; do
+            echo "Loading $f"
+            docker exec -i ${{ job.services.mysql.id }} mysql -uroot -ptestpass < tests/sql/$f
           done
-
-      - name: Initialize test database
-        run: |
-          # Use same init.sql as local Docker Compose for consistent schema
-          mysql -h 127.0.0.1 -u root -ptestpass < tests/sql/init.sql
-          mysql -h 127.0.0.1 -u root -ptestpass < tests/sql/mcp_test_user.sql
-          echo "Database initialized with test schema and data"
 
       - name: Run integration tests
         env:
           MYSQL_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/testdb?parseTime=true"
           MYSQL_TEST_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/testdb?parseTime=true"
+          MYSQL_SAKILA_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/sakila?parseTime=true"
+          MYSQL_TC_IMAGE: "mysql:${{ matrix.mysql-version }}"
         run: |
           # Run MCP server tests with real MySQL
           go test -v -tags=integration ./...
@@ -179,16 +172,20 @@ jobs:
           echo "CLI startup test passed"
 
   # ============================================
-  # Stage 4b: Integration Tests (MariaDB 11.4)
+  # Stage 4b: Integration Tests (MariaDB)
   # ============================================
   integration-tests-mariadb:
-    name: Integration Tests (MariaDB 11.4)
+    name: Integration Tests (MariaDB ${{ matrix.mariadb-version }})
     runs-on: ubuntu-latest
     needs: [unit-tests]
+    strategy:
+      fail-fast: false
+      matrix:
+        mariadb-version: ['11.4', '12.3']
 
     services:
       mariadb:
-        image: mariadb:11.4
+        image: mariadb:${{ matrix.mariadb-version }}
         env:
           MARIADB_ROOT_PASSWORD: testpass
           MARIADB_DATABASE: testdb
@@ -210,28 +207,20 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Wait for MariaDB
+      - name: Initialize test and Sakila databases
+        # MariaDB 11+ images ship only the `mariadb` client (no `mysql` alias).
         run: |
-          for i in {1..30}; do
-            if mysqladmin ping -h 127.0.0.1 -u root -ptestpass --silent 2>/dev/null; then
-              echo "MariaDB is ready"
-              break
-            fi
-            echo "Waiting for MariaDB..."
-            sleep 2
+          for f in init.sql sakila-schema.sql sakila-data.sql mcp_test_user.sql mcp_test_user_sakila.sql; do
+            echo "Loading $f"
+            docker exec -i ${{ job.services.mariadb.id }} mariadb -uroot -ptestpass < tests/sql/$f
           done
-
-      - name: Initialize test database
-        run: |
-          # Use same init.sql as local Docker Compose for consistent schema
-          mysql -h 127.0.0.1 -u root -ptestpass < tests/sql/init.sql
-          mysql -h 127.0.0.1 -u root -ptestpass < tests/sql/mcp_test_user.sql
-          echo "Database initialized with test schema and data"
 
       - name: Run integration tests
         env:
           MYSQL_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/testdb?parseTime=true"
           MYSQL_TEST_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/testdb?parseTime=true"
+          MYSQL_SAKILA_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/sakila?parseTime=true"
+          MYSQL_TC_IMAGE: "mariadb:${{ matrix.mariadb-version }}"
         run: |
           # Run MCP server tests with real MariaDB
           go test -v -tags=integration ./...

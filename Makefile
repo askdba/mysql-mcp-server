@@ -17,6 +17,17 @@ VERSION_FLAGS = -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME) -X ma
 LDFLAGS = -ldflags "$(VERSION_FLAGS)"
 LDFLAGS_RELEASE = -ldflags "$(VERSION_FLAGS) -s -w"
 
+# Host ports for docker-compose.test.yml services. Exported so compose uses the
+# same values; override when a port clashes with a local server, e.g.
+#   make test-integration-84 MYSQL84_PORT=13307
+export MYSQL80_PORT ?= 13306
+export MYSQL84_PORT ?= 3307
+export MYSQL90_PORT ?= 3308
+export MYSQL97_PORT ?= 13309
+export MYSQL267_PORT ?= 13311
+export MARIADB11_PORT ?= 3310
+export MARIADB12_PORT ?= 13312
+
 # Colors
 YELLOW=\033[1;33m
 GREEN=\033[1;32m
@@ -71,7 +82,7 @@ integration:
 # Integration tests with Docker Compose
 test-integration: test-mysql-up
 	@echo "$(BLUE)🐋 Running full integration test suite...$(RESET)"
-	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:13306)/testdb?parseTime=true" \
+	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL80_PORT))/testdb?parseTime=true" \
 		go test -tags=integration -v ./...; \
 		TEST_EXIT=$$?; \
 		docker compose -f docker-compose.test.yml down; \
@@ -79,7 +90,7 @@ test-integration: test-mysql-up
 
 test-integration-80: test-mysql-up
 	@echo "$(BLUE)🐋 Running integration tests against MySQL 8.0...$(RESET)"
-	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:13306)/testdb?parseTime=true" \
+	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL80_PORT))/testdb?parseTime=true" \
 		go test -tags=integration -v ./tests/integration/...; \
 		TEST_EXIT=$$?; \
 		docker compose -f docker-compose.test.yml down; \
@@ -88,7 +99,7 @@ test-integration-80: test-mysql-up
 test-integration-84:
 	@echo "$(BLUE)🐋 Running integration tests against MySQL 8.4...$(RESET)"
 	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 60 mysql84
-	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3307)/testdb?parseTime=true" \
+	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL84_PORT))/testdb?parseTime=true" \
 		go test -tags=integration -v ./tests/integration/...; \
 		TEST_EXIT=$$?; \
 		docker compose -f docker-compose.test.yml stop mysql84; \
@@ -97,10 +108,30 @@ test-integration-84:
 test-integration-90:
 	@echo "$(BLUE)🐋 Running integration tests against MySQL 9.0...$(RESET)"
 	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 60 mysql90
-	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3308)/testdb?parseTime=true" \
+	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL90_PORT))/testdb?parseTime=true" \
 		go test -tags=integration -v ./tests/integration/...; \
 		TEST_EXIT=$$?; \
 		docker compose -f docker-compose.test.yml stop mysql90; \
+		exit $$TEST_EXIT
+
+test-integration-97:
+	@echo "$(BLUE)🐋 Running integration tests against MySQL 9.7...$(RESET)"
+	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 90 mysql97
+	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL97_PORT))/testdb?parseTime=true" \
+		MYSQL_SAKILA_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL97_PORT))/sakila?parseTime=true" \
+		go test -tags=integration -v ./tests/integration/...; \
+		TEST_EXIT=$$?; \
+		docker compose -f docker-compose.test.yml stop mysql97; \
+		exit $$TEST_EXIT
+
+test-integration-267:
+	@echo "$(BLUE)🐋 Running integration tests against MySQL 26.7...$(RESET)"
+	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 90 mysql267
+	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL267_PORT))/testdb?parseTime=true" \
+		MYSQL_SAKILA_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL267_PORT))/sakila?parseTime=true" \
+		go test -tags=integration -v ./tests/integration/...; \
+		TEST_EXIT=$$?; \
+		docker compose -f docker-compose.test.yml stop mysql267; \
 		exit $$TEST_EXIT
 
 test-integration-all:
@@ -108,16 +139,29 @@ test-integration-all:
 	@$(MAKE) test-integration-80
 	@$(MAKE) test-integration-84
 	@$(MAKE) test-integration-90
+	@$(MAKE) test-integration-97
+	@$(MAKE) test-integration-267
 	@$(MAKE) test-integration-mariadb-11
+	@$(MAKE) test-integration-mariadb-12
 	@echo "$(GREEN)✔ All integration tests complete$(RESET)"
 
 test-integration-mariadb-11:
 	@echo "$(BLUE)🐋 Running integration tests against MariaDB 11.4...$(RESET)"
 	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 60 mariadb11
-	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3310)/testdb?parseTime=true&charset=utf8mb4" \
+	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MARIADB11_PORT))/testdb?parseTime=true&charset=utf8mb4" \
 		go test -tags=integration -v ./tests/integration/...; \
 		TEST_EXIT=$$?; \
 		docker compose -f docker-compose.test.yml stop mariadb11; \
+		exit $$TEST_EXIT
+
+test-integration-mariadb-12:
+	@echo "$(BLUE)🐋 Running integration tests against MariaDB 12.3...$(RESET)"
+	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 90 mariadb12
+	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MARIADB12_PORT))/testdb?parseTime=true&charset=utf8mb4" \
+		MYSQL_SAKILA_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MARIADB12_PORT))/sakila?parseTime=true" \
+		go test -tags=integration -v ./tests/integration/...; \
+		TEST_EXIT=$$?; \
+		docker compose -f docker-compose.test.yml stop mariadb12; \
 		exit $$TEST_EXIT
 
 # SSH tunnel integration test (issue #79): requires mysql80 + ssh_bastion
@@ -145,7 +189,7 @@ test-integration-ssh:
 # Sakila database integration tests
 test-sakila: test-mysql-up
 	@echo "$(BLUE)🎬 Running Sakila database integration tests...$(RESET)"
-	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:13306)/sakila?parseTime=true&multiStatements=true" \
+	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL80_PORT))/sakila?parseTime=true&multiStatements=true" \
 		go test -tags=integration -v -run "Sakila" ./tests/integration/...; \
 		TEST_EXIT=$$?; \
 		docker compose -f docker-compose.test.yml down; \
@@ -154,7 +198,7 @@ test-sakila: test-mysql-up
 test-sakila-84:
 	@echo "$(BLUE)🎬 Running Sakila tests against MySQL 8.4...$(RESET)"
 	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 90 mysql84
-	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3307)/sakila?parseTime=true&multiStatements=true" \
+	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL84_PORT))/sakila?parseTime=true&multiStatements=true" \
 		go test -tags=integration -v -run "Sakila" ./tests/integration/...; \
 		TEST_EXIT=$$?; \
 		docker compose -f docker-compose.test.yml stop mysql84; \
@@ -163,7 +207,7 @@ test-sakila-84:
 test-sakila-90:
 	@echo "$(BLUE)🎬 Running Sakila tests against MySQL 9.0...$(RESET)"
 	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 90 mysql90
-	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3308)/sakila?parseTime=true&multiStatements=true" \
+	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL90_PORT))/sakila?parseTime=true&multiStatements=true" \
 		go test -tags=integration -v -run "Sakila" ./tests/integration/...; \
 		TEST_EXIT=$$?; \
 		docker compose -f docker-compose.test.yml stop mysql90; \
@@ -354,7 +398,11 @@ help:
 	@echo "  make test-integration-ssh  - Test SSH tunnel (mysql80 + ssh_bastion)"
 	@echo "  make test-integration-84  - Test against MySQL 8.4"
 	@echo "  make test-integration-90  - Test against MySQL 9.0"
-	@echo "  make test-integration-all - Test against all MySQL versions"
+	@echo "  make test-integration-97  - Test against MySQL 9.7"
+	@echo "  make test-integration-267 - Test against MySQL 26.7"
+	@echo "  make test-integration-mariadb-11 - Test against MariaDB 11.4"
+	@echo "  make test-integration-mariadb-12 - Test against MariaDB 12.3"
+	@echo "  make test-integration-all - Test against all MySQL and MariaDB versions"
 	@echo "  make test-sakila       - Run Sakila database tests (MySQL 8.0)"
 	@echo "  make test-sakila-local - Run Sakila tests vs local MySQL (set MYSQL_TEST_DSN; e.g. :3306)"
 	@echo "  make test-sakila-84    - Run Sakila tests against MySQL 8.4"

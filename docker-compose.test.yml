@@ -8,6 +8,13 @@
 #   Run tests against MySQL 8.0: MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:13306)/testdb?parseTime=true" go test -tags=integration ./...
 #   Run tests against MySQL 8.4: MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3307)/testdb?parseTime=true" go test -tags=integration ./...
 #   Run tests against MySQL 9.0: MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3308)/testdb?parseTime=true" go test -tags=integration ./...
+#   Run tests against MySQL 9.7:  make test-integration-97   (host port 13309)
+#   Run tests against MySQL 26.7: make test-integration-267  (host port 13311)
+#   Run tests against MariaDB 12.3: make test-integration-mariadb-12 (host port 13312)
+#
+# Host ports: every published port can be overridden when it clashes with a local server,
+#   e.g. MYSQL84_PORT=13307 make test-integration-84
+#   (MYSQL80_PORT, MYSQL84_PORT, MYSQL90_PORT, MYSQL97_PORT, MYSQL267_PORT, MARIADB11_PORT, MARIADB12_PORT)
 #
 # Sakila Database:
 #   The Sakila sample database is also loaded for realistic integration testing.
@@ -29,7 +36,7 @@ services:
       MYSQL_PASSWORD: testpass
     ports:
       # Host 13306 avoids clashing with a local MySQL install on 3306 (common on dev machines).
-      - "13306:3306"
+      - "${MYSQL80_PORT:-13306}:3306"
     volumes:
       - mysql80_data:/var/lib/mysql
       - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -46,7 +53,7 @@ services:
     command: >
       --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
 
-  # MySQL 8.4 - Innovation release
+  # MySQL 8.4 - LTS release
   mysql84:
     image: mysql:8.4
     container_name: mysql-mcp-test-84
@@ -56,7 +63,7 @@ services:
       MYSQL_USER: testuser
       MYSQL_PASSWORD: testpass
     ports:
-      - "3307:3306"
+      - "${MYSQL84_PORT:-3307}:3306"
     volumes:
       - mysql84_data:/var/lib/mysql
       - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -73,7 +80,7 @@ services:
     command: >
       --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
 
-  # MySQL 9.0 - Latest innovation release
+  # MySQL 9.0 - Innovation release (EOL; kept for local regression checks)
   mysql90:
     image: mysql:9.0
     container_name: mysql-mcp-test-90
@@ -83,9 +90,63 @@ services:
       MYSQL_USER: testuser
       MYSQL_PASSWORD: testpass
     ports:
-      - "3308:3306"
+      - "${MYSQL90_PORT:-3308}:3306"
     volumes:
       - mysql90_data:/var/lib/mysql
+      - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./tests/sql/sakila-schema.sql:/docker-entrypoint-initdb.d/02-sakila-schema.sql:ro
+      - ./tests/sql/sakila-data.sql:/docker-entrypoint-initdb.d/03-sakila-data.sql:ro
+      - ./tests/sql/mcp_test_user.sql:/docker-entrypoint-initdb.d/04-mcp-test-user.sql:ro
+      - ./tests/sql/mcp_test_user_sakila.sql:/docker-entrypoint-initdb.d/05-mcp-test-user-sakila.sql:ro
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  # MySQL 9.7 - LTS release
+  mysql97:
+    image: mysql:9.7
+    container_name: mysql-mcp-test-97
+    environment:
+      MYSQL_ROOT_PASSWORD: testpass
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpass
+    ports:
+      - "${MYSQL97_PORT:-13309}:3306"
+    volumes:
+      - mysql97_data:/var/lib/mysql
+      - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./tests/sql/sakila-schema.sql:/docker-entrypoint-initdb.d/02-sakila-schema.sql:ro
+      - ./tests/sql/sakila-data.sql:/docker-entrypoint-initdb.d/03-sakila-data.sql:ro
+      - ./tests/sql/mcp_test_user.sql:/docker-entrypoint-initdb.d/04-mcp-test-user.sql:ro
+      - ./tests/sql/mcp_test_user_sakila.sql:/docker-entrypoint-initdb.d/05-mcp-test-user-sakila.sql:ro
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  # MySQL 26.7 - Innovation release
+  mysql267:
+    image: mysql:26.7
+    container_name: mysql-mcp-test-267
+    environment:
+      MYSQL_ROOT_PASSWORD: testpass
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpass
+    ports:
+      - "${MYSQL267_PORT:-13311}:3306"
+    volumes:
+      - mysql267_data:/var/lib/mysql
       - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
       - ./tests/sql/sakila-schema.sql:/docker-entrypoint-initdb.d/02-sakila-schema.sql:ro
       - ./tests/sql/sakila-data.sql:/docker-entrypoint-initdb.d/03-sakila-data.sql:ro
@@ -119,7 +180,7 @@ services:
       retries: 10
       start_period: 5s
 
-  # MariaDB 11.4 - Latest stable
+  # MariaDB 11.4 - LTS release
   mariadb11:
     image: mariadb:11.4
     container_name: mysql-mcp-test-mariadb-11
@@ -129,9 +190,36 @@ services:
       MARIADB_USER: testuser
       MARIADB_PASSWORD: testpass
     ports:
-      - "3310:3306"
+      - "${MARIADB11_PORT:-3310}:3306"
     volumes:
       - mariadb11_data:/var/lib/mysql
+      - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./tests/sql/sakila-schema.sql:/docker-entrypoint-initdb.d/02-sakila-schema.sql:ro
+      - ./tests/sql/sakila-data.sql:/docker-entrypoint-initdb.d/03-sakila-data.sql:ro
+      - ./tests/sql/mcp_test_user.sql:/docker-entrypoint-initdb.d/04-mcp-test-user.sql:ro
+      - ./tests/sql/mcp_test_user_sakila.sql:/docker-entrypoint-initdb.d/05-mcp-test-user-sakila.sql:ro
+    healthcheck:
+      test: [ "CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-ptestpass" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  # MariaDB 12.3 - LTS release
+  mariadb12:
+    image: mariadb:12.3
+    container_name: mysql-mcp-test-mariadb-12
+    environment:
+      MARIADB_ROOT_PASSWORD: testpass
+      MARIADB_DATABASE: testdb
+      MARIADB_USER: testuser
+      MARIADB_PASSWORD: testpass
+    ports:
+      - "${MARIADB12_PORT:-13312}:3306"
+    volumes:
+      - mariadb12_data:/var/lib/mysql
       - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
       - ./tests/sql/sakila-schema.sql:/docker-entrypoint-initdb.d/02-sakila-schema.sql:ro
       - ./tests/sql/sakila-data.sql:/docker-entrypoint-initdb.d/03-sakila-data.sql:ro
@@ -150,7 +238,10 @@ volumes:
   mysql80_data:
   mysql84_data:
   mysql90_data:
+  mysql97_data:
+  mysql267_data:
   mariadb11_data:
+  mariadb12_data:
 
 
 networks:
