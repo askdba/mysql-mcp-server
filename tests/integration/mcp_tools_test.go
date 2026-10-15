@@ -593,8 +593,9 @@ func TestMCPTool_ErrorHandling(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := db.QueryContext(ctx, tc.query)
+			rows, err := db.QueryContext(ctx, tc.query)
 			if err == nil {
+				rows.Close()
 				t.Error("expected query to fail")
 			}
 		})
@@ -610,8 +611,9 @@ func TestMCPTool_QueryTimeout(t *testing.T) {
 	defer cancel()
 
 	// This query should timeout
-	_, err := db.QueryContext(ctx, "SELECT SLEEP(5)")
+	rows, err := db.QueryContext(ctx, "SELECT SLEEP(5)")
 	if err == nil {
+		rows.Close()
 		t.Error("expected query to timeout")
 	}
 }
