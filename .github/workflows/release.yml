@@ -36,6 +36,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: '1.26'
+          check-latest: true  # pick up the newest patch (security fixes), not a cached one
           cache: true
 
       - name: Download modules
@@ -88,6 +89,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: '1.26'
+          check-latest: true  # pick up the newest patch (security fixes), not a cached one
           cache: true
 
       - name: Run GoReleaser

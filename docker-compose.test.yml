@@ -45,7 +45,7 @@ services:
       - ./tests/sql/mcp_test_user.sql:/docker-entrypoint-initdb.d/04-mcp-test-user.sql:ro
       - ./tests/sql/mcp_test_user_sakila.sql:/docker-entrypoint-initdb.d/05-mcp-test-user-sakila.sql:ro
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass" ]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-ptestpass" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -72,7 +72,7 @@ services:
       - ./tests/sql/mcp_test_user.sql:/docker-entrypoint-initdb.d/04-mcp-test-user.sql:ro
       - ./tests/sql/mcp_test_user_sakila.sql:/docker-entrypoint-initdb.d/05-mcp-test-user-sakila.sql:ro
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass" ]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-ptestpass" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -99,7 +99,7 @@ services:
       - ./tests/sql/mcp_test_user.sql:/docker-entrypoint-initdb.d/04-mcp-test-user.sql:ro
       - ./tests/sql/mcp_test_user_sakila.sql:/docker-entrypoint-initdb.d/05-mcp-test-user-sakila.sql:ro
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass" ]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-ptestpass" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -126,7 +126,7 @@ services:
       - ./tests/sql/mcp_test_user.sql:/docker-entrypoint-initdb.d/04-mcp-test-user.sql:ro
       - ./tests/sql/mcp_test_user_sakila.sql:/docker-entrypoint-initdb.d/05-mcp-test-user-sakila.sql:ro
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass" ]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-ptestpass" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -153,7 +153,7 @@ services:
       - ./tests/sql/mcp_test_user.sql:/docker-entrypoint-initdb.d/04-mcp-test-user.sql:ro
       - ./tests/sql/mcp_test_user_sakila.sql:/docker-entrypoint-initdb.d/05-mcp-test-user-sakila.sql:ro
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpass" ]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-ptestpass" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -199,7 +199,7 @@ services:
       - ./tests/sql/mcp_test_user.sql:/docker-entrypoint-initdb.d/04-mcp-test-user.sql:ro
       - ./tests/sql/mcp_test_user_sakila.sql:/docker-entrypoint-initdb.d/05-mcp-test-user-sakila.sql:ro
     healthcheck:
-      test: [ "CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-ptestpass" ]
+      test: [ "CMD", "mariadb-admin", "ping", "-h", "127.0.0.1", "-u", "root", "-ptestpass" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -226,7 +226,7 @@ services:
       - ./tests/sql/mcp_test_user.sql:/docker-entrypoint-initdb.d/04-mcp-test-user.sql:ro
       - ./tests/sql/mcp_test_user_sakila.sql:/docker-entrypoint-initdb.d/05-mcp-test-user-sakila.sql:ro
     healthcheck:
-      test: [ "CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-ptestpass" ]
+      test: [ "CMD", "mariadb-admin", "ping", "-h", "127.0.0.1", "-u", "root", "-ptestpass" ]
       interval: 10s
       timeout: 5s
       retries: 5

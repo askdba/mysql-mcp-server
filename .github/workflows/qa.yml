@@ -29,6 +29,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true  # pick up the newest patch (security fixes), not a cached one
           cache: false
 
       - name: Check formatting
@@ -64,6 +65,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true  # pick up the newest patch (security fixes), not a cached one
           cache: true
 
       - name: Install gosec
@@ -91,6 +93,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true  # pick up the newest patch (security fixes), not a cached one
           cache: true
 
       - name: Download dependencies
@@ -129,7 +132,7 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h localhost -u root -ptestpass"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -ptestpass"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -142,6 +145,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true  # pick up the newest patch (security fixes), not a cached one
           cache: true
 
       - name: Initialize test and Sakila databases
@@ -192,7 +196,7 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mariadb-admin ping -h localhost -u root -ptestpass"
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -u root -ptestpass"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -205,6 +209,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true  # pick up the newest patch (security fixes), not a cached one
           cache: true
 
       - name: Initialize test and Sakila databases
@@ -258,6 +263,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true  # pick up the newest patch (security fixes), not a cached one
           cache: true
 
       - name: Build binary
@@ -314,7 +320,7 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h localhost -u root -ptestpass"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -ptestpass"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -327,6 +333,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true  # pick up the newest patch (security fixes), not a cached one
           cache: true
 
       - name: Wait for MySQL
