@@ -2,7 +2,8 @@
 package sshtunnel
 
 import (
-	"crypto/md5"
+	"context"
+	"crypto/md5" // #nosec G501 -- only for legacy MD5 SSH host-key fingerprint comparison
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
@@ -57,7 +58,7 @@ func expandTilde(path string) (string, error) {
 
 func buildHostKeyCallback(cfg Config) (ssh.HostKeyCallback, error) {
 	if cfg.InsecureIgnoreHostKey {
-		return ssh.InsecureIgnoreHostKey(), nil
+		return ssh.InsecureIgnoreHostKey(), nil // #nosec G106 -- explicit opt-in via InsecureIgnoreHostKey config
 	}
 
 	if fp := strings.TrimSpace(cfg.HostKeyFingerprint); fp != "" {
@@ -137,7 +138,7 @@ func fingerprintEqual(key ssh.PublicKey, exp fingerprintNorm) bool {
 		got := base64.RawStdEncoding.EncodeToString(sum[:])
 		return subtleConstantTimeEq(got, exp.raw)
 	case "md5":
-		sum := md5.Sum(key.Marshal()) //nolint:gosec // MD5 used only for SSH legacy fingerprint comparison
+		sum := md5.Sum(key.Marshal()) // #nosec G401 -- MD5 used only for SSH legacy fingerprint comparison
 		got := fmt.Sprintf("%x", sum[:])
 		return subtleConstantTimeEq(got, exp.raw)
 	default:
@@ -173,7 +174,7 @@ func Tunnel(cfg Config, remoteAddr string) (localAddr string, closeFn func(), er
 	if err != nil {
 		return "", nil, err
 	}
-	key, err := os.ReadFile(keyPath)
+	key, err := os.ReadFile(keyPath) // #nosec G304 -- key path is operator-supplied configuration
 	if err != nil {
 		return "", nil, fmt.Errorf("read SSH key: %w", err)
 	}
@@ -206,7 +207,7 @@ func Tunnel(cfg Config, remoteAddr string) (localAddr string, closeFn func(), er
 		return "", nil, fmt.Errorf("ssh dial: %w", err)
 	}
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		client.Close()
 		return "", nil, fmt.Errorf("listen: %w", err)

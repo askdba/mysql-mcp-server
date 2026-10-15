@@ -184,9 +184,10 @@ func toolExplainQuery(
 	}
 
 	explainSQL := "EXPLAIN "
-	if format == "json" {
+	switch format {
+	case "json":
 		explainSQL = "EXPLAIN FORMAT=JSON "
-	} else if format == "tree" {
+	case "tree":
 		explainSQL = "EXPLAIN FORMAT=TREE "
 	}
 	explainSQL += sqlText

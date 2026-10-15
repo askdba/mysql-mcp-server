@@ -192,7 +192,7 @@ func (c *Client) ListTables(ctx context.Context, database string) ([]string, err
 		ctx, cancel := c.withTimeout(ctx)
 		defer cancel()
 
-		rows, err := c.db.QueryContext(ctx, "SHOW TABLES FROM "+dbName)
+		rows, err := c.db.QueryContext(ctx, "SHOW TABLES FROM "+dbName) // #nosec G202 -- dbName escaped by util.QuoteIdent
 		if err != nil {
 			return err
 		}
