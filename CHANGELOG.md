@@ -7,6 +7,31 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+Security and compatibility release. Tested on MySQL 8.0, 8.4, 9.7, 26.7 and MariaDB 11.4, 12.3.
+
+### Security
+
+- **Go toolchain 1.24 → 1.26** (builds, Docker image and CI). Go 1.24 is out of support; `govulncheck` reported 37 reachable vulnerabilities in the 1.24 standard library (`net/http`, `crypto/tls`, `crypto/x509`, `net/url`, …) and dependencies. The scan is now clean.
+- **`golang.org/x/crypto` v0.43.0 → v0.58.0**: fixes SSH client DoS issues reachable through the SSH tunnel (GO-2026-6354, GO-2026-6355, and others).
+- **`github.com/modelcontextprotocol/go-sdk` v1.2.0 → v1.8.0**: fixes GO-2026-5771 (DNS-rebinding protection off by default). The server only uses the stdio transport, so practical exposure was low.
+- Also updated: `go-sql-driver/mysql` v1.10.1, `testcontainers-go` v0.44.0.
+
+### Changed
+
+- **Minimum Go version for building from source is now 1.26** (`go.mod`). Prebuilt binaries and Docker images are unaffected.
+- `docker-compose.test.yml` adds `mysql97` (MySQL 9.7), `mysql267` (MySQL 26.7) and `mariadb12` (MariaDB 12.3) with `make test-integration-97`, `test-integration-267` and `test-integration-mariadb-12`. You can override any host port (`MYSQL84_PORT=13307 make test-integration-84`, etc.) when it clashes with a local server.
+
+### Fixed
+
+- `internal/mysql` testcontainers test: no longer panics when Docker is unavailable (it is skipped instead). It now works against MariaDB, whose logs never contain the "MySQL Community Server" readiness line. It uses `MYSQL_TC_IMAGE` instead of a hard-coded `mysql:8.0.36` (default `mysql:8.4`).
+- Integration tests close result rows when a query that should fail unexpectedly succeeds.
+
+### CI
+
+- Integration matrix: MySQL **8.0, 8.4, 9.7, 26.7** (9.0 removed: EOL innovation release, superseded by 9.7) and MariaDB **11.4, 12.3**.
+- CI now loads the Sakila database, so the Sakila integration tests run instead of being silently skipped. Fixtures are loaded with the server image's own client, so client and server versions always match.
+- Fixed silently broken informational jobs: `.golangci.yml` migrated to the v2 config format (golangci-lint v2 rejected the v1 file), golangci-lint bumped to v2.14.0, gosec unpinned from v2.23.0 to v2.29.0, and `govulncheck` pinned to v1.9.0 (`@latest` required a newer Go than CI used). Triaged gosec and lint findings; intentional patterns are annotated with `#nosec` and a reason.
+
 ## [1.7.1] - 2026-06-05
 
 Patch release. Tested on MySQL 8.0, 8.4, and 9.7.
