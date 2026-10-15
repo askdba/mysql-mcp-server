@@ -42,8 +42,12 @@ func startMySQLContainer(t *testing.T) (string, *tc_mysql.MySQLContainer) {
 		tc_mysql.WithPassword("testpass"),
 		// The module's default waits for "MySQL Community Server", which MariaDB
 		// never logs. Both servers log "port: 3306  " only once the final
-		// (non-bootstrap) server is accepting connections.
-		tc.WithWaitStrategy(wait.ForLog("port: 3306  ").WithStartupTimeout(3*time.Minute)),
+		// (non-bootstrap) server is accepting connections; also keep the
+		// module's mapped-port check.
+		tc.WithWaitStrategyAndDeadline(3*time.Minute,
+			wait.ForLog("port: 3306  "),
+			wait.ForListeningPort("3306/tcp"),
+		),
 	)
 	if err != nil {
 		t.Fatalf("failed to start mysql container: %v", err)

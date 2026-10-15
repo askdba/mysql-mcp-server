@@ -30,7 +30,7 @@ Security and compatibility release. Tested on MySQL 8.0, 8.4, 9.7, 26.7 and Mari
 
 - Integration matrix: MySQL **8.0, 8.4, 9.7, 26.7** (9.0 removed: EOL innovation release, superseded by 9.7) and MariaDB **11.4, 12.3**.
 - CI now loads the Sakila database, so the Sakila integration tests run instead of being silently skipped. Fixtures are loaded with the server image's own client, so client and server versions always match.
-- Fixed silently broken informational jobs: `.golangci.yml` migrated to the v2 config format (golangci-lint v2 rejected the v1 file), golangci-lint bumped to v2.14.0, gosec unpinned from v2.23.0 to v2.29.0, and `govulncheck` pinned to v1.9.0 (`@latest` required a newer Go than CI used). Triaged gosec and lint findings; intentional patterns are annotated with `#nosec` and a reason.
+- Fixed silently broken informational jobs: `.golangci.yml` migrated to the v2 config format (golangci-lint v2 rejected the v1 file), golangci-lint bumped to v2.14.0, gosec bumped from v2.23.0 to v2.29.0 (still pinned; the old pin existed only because of Go 1.24), and `govulncheck` pinned to v1.9.0 (`@latest` required a newer Go than CI used). Triaged gosec and lint findings; intentional patterns are annotated with `#nosec` and a reason.
 
 ## [1.7.1] - 2026-06-05
 

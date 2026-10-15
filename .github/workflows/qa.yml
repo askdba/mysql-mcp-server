@@ -133,6 +133,7 @@ jobs:
           - 3306:3306
         options: >-
           --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -ptestpass"
+          --health-start-period=30s
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -197,6 +198,7 @@ jobs:
           - 3306:3306
         options: >-
           --health-cmd="mariadb-admin ping -h 127.0.0.1 -u root -ptestpass"
+          --health-start-period=30s
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -321,6 +323,7 @@ jobs:
           - 3306:3306
         options: >-
           --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -ptestpass"
+          --health-start-period=30s
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5

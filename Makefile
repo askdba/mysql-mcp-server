@@ -98,7 +98,7 @@ test-integration-80: test-mysql-up
 
 test-integration-84:
 	@echo "$(BLUE)🐋 Running integration tests against MySQL 8.4...$(RESET)"
-	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 60 mysql84
+	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 90 mysql84
 	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL84_PORT))/testdb?parseTime=true" \
 		go test -tags=integration -v ./tests/integration/...; \
 		TEST_EXIT=$$?; \
@@ -107,7 +107,7 @@ test-integration-84:
 
 test-integration-90:
 	@echo "$(BLUE)🐋 Running integration tests against MySQL 9.0...$(RESET)"
-	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 60 mysql90
+	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 90 mysql90
 	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL90_PORT))/testdb?parseTime=true" \
 		go test -tags=integration -v ./tests/integration/...; \
 		TEST_EXIT=$$?; \
@@ -147,7 +147,7 @@ test-integration-all:
 
 test-integration-mariadb-11:
 	@echo "$(BLUE)🐋 Running integration tests against MariaDB 11.4...$(RESET)"
-	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 60 mariadb11
+	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 90 mariadb11
 	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MARIADB11_PORT))/testdb?parseTime=true&charset=utf8mb4" \
 		go test -tags=integration -v ./tests/integration/...; \
 		TEST_EXIT=$$?; \
@@ -158,7 +158,7 @@ test-integration-mariadb-12:
 	@echo "$(BLUE)🐋 Running integration tests against MariaDB 12.3...$(RESET)"
 	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 90 mariadb12
 	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MARIADB12_PORT))/testdb?parseTime=true&charset=utf8mb4" \
-		MYSQL_SAKILA_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MARIADB12_PORT))/sakila?parseTime=true" \
+		MYSQL_SAKILA_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MARIADB12_PORT))/sakila?parseTime=true&charset=utf8mb4" \
 		go test -tags=integration -v ./tests/integration/...; \
 		TEST_EXIT=$$?; \
 		docker compose -f docker-compose.test.yml stop mariadb12; \
@@ -228,7 +228,7 @@ test-sakila-local:
 # Docker Compose helpers for test databases
 test-mysql-up:
 	@echo "$(CYAN)🐳 Starting MySQL test containers...$(RESET)"
-	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 60 mysql80
+	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 90 mysql80
 
 test-mysql-down:
 	@echo "$(CYAN)🐳 Stopping MySQL test containers...$(RESET)"
