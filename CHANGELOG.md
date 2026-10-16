@@ -7,6 +7,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [1.8.0-rc.1] - 2026-10-16
+
 Security and compatibility release. Tested on MySQL 8.0, 8.4, 9.7, 26.7 and MariaDB 11.4, 12.3.
 
 ### Security
