@@ -306,6 +306,7 @@ func checkTableExpr(tableExpr sqlparser.TableExpr) error {
 		if tableName, ok := t.Expr.(sqlparser.TableName); ok {
 			// Check if accessing a dangerous schema
 			qualifier := strings.ToLower(tableName.Qualifier.String())
+			//nolint:staticcheck // QF1001: "not (opted in and read-only schema)" reads clearer than De Morgan form
 			if qualifier != "" && DangerousSchemas[qualifier] &&
 				!(allowSystemSchemas && systemReadSchemas[qualifier]) {
 				return &ParserValidationError{

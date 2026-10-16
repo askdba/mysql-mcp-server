@@ -5,27 +5,49 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"os"
 	"testing"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	tc "github.com/testcontainers/testcontainers-go"
 	tc_mysql "github.com/testcontainers/testcontainers-go/modules/mysql"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
+
+// defaultTestImage is used unless MYSQL_TC_IMAGE overrides it
+// (e.g. MYSQL_TC_IMAGE=mariadb:12.3 or mysql:9.7).
+const defaultTestImage = "mysql:8.4"
 
 // startMySQLContainer starts a disposable MySQL container for tests
 // and returns a DSN suitable for github.com/go-sql-driver/mysql.
 func startMySQLContainer(t *testing.T) (string, *tc_mysql.MySQLContainer) {
 	t.Helper()
 
+	// Skip instead of panicking when no Docker daemon is reachable.
+	tc.SkipIfProviderIsNotHealthy(t)
+
 	ctx := context.Background()
+
+	image := os.Getenv("MYSQL_TC_IMAGE")
+	if image == "" {
+		image = defaultTestImage
+	}
 
 	mysqlContainer, err := tc_mysql.Run(
 		ctx,
-		"mysql:8.0.36",
+		image,
 		tc_mysql.WithDatabase("testdb"),
 		tc_mysql.WithUsername("testuser"),
 		tc_mysql.WithPassword("testpass"),
+		// The module's default waits for "MySQL Community Server", which MariaDB
+		// never logs. Both servers log "port: 3306  " only once the final
+		// (non-bootstrap) server is accepting connections; also keep the
+		// module's mapped-port check.
+		tc.WithWaitStrategyAndDeadline(3*time.Minute,
+			wait.ForLog("port: 3306  "),
+			wait.ForListeningPort("3306/tcp"),
+		),
 	)
 	if err != nil {
 		t.Fatalf("failed to start mysql container: %v", err)

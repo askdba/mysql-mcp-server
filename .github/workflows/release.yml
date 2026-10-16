@@ -22,7 +22,8 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h localhost -u root -ptestpass"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -ptestpass"
+          --health-start-period=30s
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -35,7 +36,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.26'
+          check-latest: true  # pick up the newest patch (security fixes), not a cached one
           cache: true
 
       - name: Download modules
@@ -47,30 +49,20 @@ jobs:
       - name: Unit tests
         run: go test -race -covermode=atomic ./...
 
-      - name: Wait for MySQL
+      - name: Initialize test and Sakila databases
+        # Same fixtures and loader as qa.yml: the server image's own client, so
+        # client/server versions match. The Sakila tests need the sakila schema.
         run: |
-          for i in $(seq 1 30); do
-            if mysqladmin ping -h 127.0.0.1 -u root -ptestpass --silent 2>/dev/null; then
-              echo "MySQL ready"
-              break
-            fi
-            echo "Waiting for MySQL... (${i}/30)"
-            sleep 2
+          for f in init.sql sakila-schema.sql sakila-data.sql mcp_test_user.sql mcp_test_user_sakila.sql; do
+            echo "Loading $f"
+            docker exec -i ${{ job.services.mysql.id }} mysql -uroot -ptestpass < tests/sql/$f
           done
-          if ! mysqladmin ping -h 127.0.0.1 -u root -ptestpass --silent 2>/dev/null; then
-            echo "MySQL did not become ready after 30 attempts"
-            exit 1
-          fi
-
-      - name: Initialize test database
-        run: |
-          mysql -h 127.0.0.1 -u root -ptestpass < tests/sql/init.sql
-          mysql -h 127.0.0.1 -u root -ptestpass < tests/sql/mcp_test_user.sql
 
       - name: Integration tests
         env:
           MYSQL_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/testdb?parseTime=true"
           MYSQL_TEST_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/testdb?parseTime=true"
+          MYSQL_SAKILA_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/sakila?parseTime=true"
         run: go test -v -tags=integration ./...
 
   goreleaser:
@@ -87,7 +79,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.26'
+          check-latest: true  # pick up the newest patch (security fixes), not a cached one
           cache: true
 
       - name: Run GoReleaser

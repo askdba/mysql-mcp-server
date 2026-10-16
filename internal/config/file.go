@@ -173,7 +173,7 @@ func FindConfigFile() string {
 
 // LoadConfigFile loads configuration from a file (YAML or JSON).
 func LoadConfigFile(path string) (*FileConfig, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- config path is operator-supplied (flag/env)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}

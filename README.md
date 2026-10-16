@@ -4,7 +4,7 @@
   <img src="./MysqlMCPServerBanner.png" alt="MySQL MCP Server Banner" width="800"/>
   
   [![Version](https://img.shields.io/badge/version-1.7.1-blue.svg)](https://github.com/askdba/mysql-mcp-server/releases)
-  [![Go](https://img.shields.io/badge/go-1.24+-00ADD8.svg)](https://golang.org/)
+  [![Go](https://img.shields.io/badge/go-1.26+-00ADD8.svg)](https://golang.org/)
   [![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
 </div>
 
@@ -16,7 +16,7 @@ This project exposes safe MySQL introspection tools to Claude Desktop via MCP. C
 
 - Fully read-only (blocks all non-SELECT/SHOW/DESCRIBE/EXPLAIN)
 - **Multi-DSN Support**: Connect to multiple MySQL or MariaDB instances, switch via tool
-- **MariaDB Support**: Native compatibility with MariaDB 10.x and 11.x
+- **MariaDB Support**: Native compatibility with MariaDB 10.x, 11.x and 12.x
 - **Vector Search** (MySQL 9.0+): Similarity search on vector columns
 - MCP tools:
   - list_databases, list_tables, describe_table
@@ -24,7 +24,7 @@ This project exposes safe MySQL introspection tools to Claude Desktop via MCP. C
   - ping, server_info
   - list_connections, use_connection (multi-DSN)
   - vector_search, vector_info (MySQL 9.0+)
-- Supports MySQL 8.0, 8.4, 9.0+ and MariaDB 10.x, 11.x
+- Supports MySQL 8.0, 8.4, 9.x, 26.x and MariaDB 10.x, 11.x, 12.x (CI-tested on MySQL 8.0, 8.4, 9.7, 26.7 and MariaDB 11.4, 12.3)
 - Query timeouts, structured logging, audit logs; optional **live token metrics** and **`/status`** dashboard in HTTP mode
 - **Performance**: configurable pool/query timeouts, server-side row caps, `explain_query` plan warnings
 - Single Go binary
@@ -999,7 +999,7 @@ YAML file equivalents live under **`security:`** in the config file (`allowed_da
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.26+
 - Docker and Docker Compose (for integration tests)
 - MySQL client (optional, for manual database access)
 
@@ -1027,10 +1027,12 @@ make test-integration-80
 make test-integration-84
 ```
 
-**Test against MySQL 9.0:**
+**Test against MySQL 9.0 / 9.7 / 26.7:**
 
 ```bash
 make test-integration-90
+make test-integration-97
+make test-integration-267
 ```
 
 **Test against all supported versions (MySQL & MariaDB):**
@@ -1039,11 +1041,16 @@ make test-integration-90
 make test-integration-all
 ```
 
-**Test specifically against MariaDB 11.4:**
+**Test specifically against MariaDB 11.4 or 12.3:**
 
 ```bash
 make test-integration-mariadb-11
+make test-integration-mariadb-12
 ```
+
+If a host port clashes with a server already running locally, override it, e.g. `make test-integration-84 MYSQL84_PORT=13307`. The variables are `MYSQL80_PORT`, `MYSQL84_PORT`, `MYSQL90_PORT`, `MYSQL97_PORT`, `MYSQL267_PORT`, `MARIADB11_PORT` and `MARIADB12_PORT`.
+
+The testcontainers-based client test in `internal/mysql` defaults to `mysql:8.4`; set `MYSQL_TC_IMAGE` (e.g. `mariadb:12.3`) to run it against another image. It is skipped when no Docker daemon is reachable.
 
 ### Sakila Database Tests
 
@@ -1092,7 +1099,7 @@ Start and stop test MySQL containers manually:
 # Start MySQL 8.0 container
 make test-mysql-up
 
-# Start all MySQL versions (8.0, 8.4, 9.0)
+# Start all MySQL and MariaDB versions
 make test-mysql-all-up
 
 # Stop all test containers
@@ -1115,6 +1122,12 @@ export MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3307)/testdb?parseTime=tr
 
 # MySQL 9.0 (port 3308)
 export MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3308)/testdb?parseTime=true"
+
+# MySQL 9.7 (13309), MySQL 26.7 (13311), MariaDB 11.4 (3310), MariaDB 12.3 (13312)
+export MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:13309)/testdb?parseTime=true"
+
+# Sakila tests read MYSQL_SAKILA_DSN (falls back to MYSQL_TEST_DSN)
+export MYSQL_SAKILA_DSN="mcpuser:mcppass00@tcp(127.0.0.1:13309)/sakila?parseTime=true"
 ```
 
 Test credentials are **`mcpuser` / `mcppass00`** (see `tests/sql/mcp_test_user.sql`). On **`testdb`**, this user has DDL/DML so integration tests can create fixtures; **`sakila`** stays read-only via `mcp_test_user_sakila.sql`. After upgrading an existing Docker volume, recreate it so init scripts run: `docker compose -f docker-compose.test.yml down -v`.

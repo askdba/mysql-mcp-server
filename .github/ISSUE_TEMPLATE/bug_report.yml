@@ -65,7 +65,11 @@ body:
         - MySQL 8.0.x
         - MySQL 8.4.x
         - MySQL 9.0.x
-        - MariaDB
+        - MySQL 9.7.x
+        - MySQL 26.x
+        - MariaDB 11.x
+        - MariaDB 12.x
+        - MariaDB (other)
         - Other (specify in description)
     validations:
       required: true

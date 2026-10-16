@@ -581,6 +581,7 @@ func httpStatusPage(w http.ResponseWriter, r *http.Request) {
 
 // tokenCardHTML is the embedded HTML for the live Token Tracking Card dashboard.
 // It auto-refreshes every 3 seconds via a JavaScript fetch of /api/metrics/tokens.
+// #nosec G101 -- static HTML template, no credentials
 const tokenCardHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -859,6 +860,7 @@ func startTokenMetricsHTTPServer(port int, tokenCardEnabled bool) {
 			http.NotFound(w, r)
 			return
 		}
+		// #nosec G101 -- route descriptions, no credentials
 		endpoints := map[string]string{
 			"GET  /health":             "Health check",
 			"GET  /api":                "This index (metrics-only; MCP uses stdio)",

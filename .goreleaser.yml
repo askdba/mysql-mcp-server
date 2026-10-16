@@ -32,11 +32,11 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     files:
       - README.md
       - LICENSE
@@ -77,6 +77,9 @@ changelog:
 # Homebrew formula - automatically updates askdba/homebrew-tap
 brews:
   - name: mysql-mcp-server
+    # Only GA tags update the tap; RC tags (vX.Y.Z-rc.N) are skipped so
+    # `brew upgrade` never moves users onto a release candidate.
+    skip_upload: auto
     repository:
       owner: askdba
       name: homebrew-tap

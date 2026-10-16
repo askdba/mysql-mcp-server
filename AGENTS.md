@@ -14,7 +14,7 @@ Follow **[workflow.md](./workflow.md)** for branching, worktrees, multi-agent sp
 
 ## Project basics
 
-- **Language:** Go (`go 1.24+` per `go.mod`).
+- **Language:** Go (`go 1.26+` per `go.mod`).
 - **Tests:** Run `go test ./...` before treating work as complete. Integration tests (`make test-integration` or Compose-backed targets in the `Makefile`) matter when you touch connection, tools, or Docker/SSH paths.
 - **Scope:** Keep changes focused on the requested task; avoid unrelated refactors.
 

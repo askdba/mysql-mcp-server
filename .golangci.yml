@@ -1,5 +1,7 @@
-# golangci-lint configuration
-# https://golangci-lint.run/usage/configuration/
+# golangci-lint configuration (v2 format)
+# https://golangci-lint.run/docs/configuration/
+
+version: "2"
 
 run:
   timeout: 5m
@@ -17,36 +19,43 @@ linters:
     - sqlclosecheck  # Checks that sql.Rows and sql.Stmt are closed
     - unconvert      # Remove unnecessary type conversions
 
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    exclude-functions:
-      - (io.Closer).Close
-      - (*os.File).Close
-      - (net/http.ResponseWriter).Write
+  settings:
+    errcheck:
+      check-type-assertions: true
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (net/http.ResponseWriter).Write
 
-  gocritic:
-    enabled-tags:
-      - diagnostic
-    disabled-checks:
-      - hugeParam        # MCP interface requires value params
-      - exitAfterDefer   # Acceptable for fatal startup errors
+    gocritic:
+      enabled-tags:
+        - diagnostic
+      disabled-checks:
+        - exitAfterDefer   # Acceptable for fatal startup errors
 
-  gosec:
-    excludes:
-      - G104  # Allow unhandled errors in some cases
+    gosec:
+      excludes:
+        - G104  # Allow unhandled errors in some cases
 
-  misspell:
-    locale: US
+    misspell:
+      locale: US
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Exclude some linters from running on tests files
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gocritic
+          - gosec
+          - noctx
 
 issues:
-  exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go
-      linters:
-        - errcheck
-        - gocritic
-        - gosec
-
   max-issues-per-linter: 50
   max-same-issues: 5

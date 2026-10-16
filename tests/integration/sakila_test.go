@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 )
 
 var (
@@ -37,10 +37,14 @@ func getSakilaDSN(t *testing.T) string {
 		if baseDSN == "" {
 			t.Skip("MYSQL_SAKILA_DSN, MYSQL_TEST_DSN, or MYSQL_DSN not set, skipping Sakila integration test")
 		}
-		// Modify DSN to use sakila database
-		// Assumes format: user:pass@tcp(host:port)/db?params
-		// We need to use the sakila database
-		dsn = baseDSN
+		// Point the DSN at the sakila schema. A "USE sakila" in setup only
+		// affects one pooled connection, so the DSN itself must name it.
+		cfg, err := mysql.ParseDSN(baseDSN)
+		if err != nil {
+			t.Fatalf("invalid base DSN for Sakila tests: %v", err)
+		}
+		cfg.DBName = "sakila"
+		dsn = cfg.FormatDSN()
 	}
 	return dsn
 }

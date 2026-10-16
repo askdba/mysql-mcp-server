@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -24,7 +25,7 @@ func maybeDaemonize(parsed parsedArgs) {
 		}
 		args = append(args, a)
 	}
-	cmd := exec.Command(os.Args[0], args...)
+	cmd := exec.CommandContext(context.Background(), os.Args[0], args...) // #nosec G204 G702 -- re-execs this binary with its own args for --daemon
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil
