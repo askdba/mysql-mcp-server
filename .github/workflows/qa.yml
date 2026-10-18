@@ -70,6 +70,7 @@ jobs:
 
       - name: Install gosec
         run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+        continue-on-error: true  # gosec is informational; a broken install must not block QA
 
       - name: Run gosec security scanner
         run: gosec -exclude-generated -severity medium ./...
