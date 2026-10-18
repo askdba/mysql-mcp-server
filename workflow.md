@@ -56,7 +56,7 @@ Optional locally: `golangci-lint run --timeout=5m` if you have it installed (sam
 
 ## Open backlog snapshot
 
-**Snapshot date: 2026-04-05** (refreshed after closing delivered items). Regenerate with `gh issue list --state open` (or the GitHub UI). This table is a **working snapshot** for agents and contributors, not an automated export.
+**Snapshot date: 2026-10-18** (refreshed after the v1.8.0 release; open issues unchanged since 2026-04-05). Regenerate with `gh issue list --state open` (or the GitHub UI). This table is a **working snapshot** for agents and contributors, not an automated export.
 
 | # | Title |
 |---|--------|
@@ -65,7 +65,10 @@ Optional locally: `golangci-lint run --timeout=5m` if you have it installed (sam
 | 64 | Add support for local LLMs (Ollama, LM Studio, llama.cpp) |
 | 24 | Add TiDB compatibility support |
 
-**Recently delivered (closed):** #106 (`add_connection`, merged PR **#127**); #104 (richer EXPLAIN, merged PR **#126**); earlier: #102 (metrics HTTP sidecar), #117 (column masking), #119 (`schema_diff`), #120 (`search_schema`), #110 / #111 / #121 (retries, pagination, pool ping)—on `main` via PRs **#122**–**#124** and subsequent merges.
+**Recently delivered:**
+- **v1.8.0** (2026-10-17): Go 1.26 and dependency security updates (37 → 0 reachable vulnerabilities); CI for MySQL 8.0/8.4/9.7/26.7 and MariaDB 11.4/12.3 with Sakila; RC tags kept out of the Homebrew tap (PR **#133**). Since then: govulncheck blocking on every release target (PR **#134**), releases no longer push to `main` (PR **#135**), and **QA Summary** is a required check on `main`.
+- **v1.7.1** (2026-06-05): `MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS` opt-in and MCP query-optimization resources (PR **#132**); reliability, schema tools, column masking and prompt workflows (PR **#131**).
+- **v1.7.0** (2026-04-19): #128 (CI/release hardening, PR **#129**); #106 (`add_connection`, PR **#127**); #104 (richer EXPLAIN, PR **#126**); earlier: #102 (metrics HTTP sidecar), #117 (column masking), #119 (`schema_diff`), #120 (`search_schema`), #110 / #111 / #121 (retries, pagination, pool ping) via PRs **#122**–**#124**.
 
 ## AI-specific notes
 
