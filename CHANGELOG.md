@@ -7,6 +7,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### CI
+
+- **`govulncheck` is now blocking.** It fails the QA pipeline (the QA Summary job now checks the Security Scan job) and the pre-release gate in `release.yml`, so a release cannot publish binaries with known-reachable vulnerabilities. gosec and golangci-lint stay informational.
+
 ## [1.8.0] - 2026-10-17
 
 Security and compatibility release. Tested on MySQL 8.0, 8.4, 9.7, 26.7 and MariaDB 11.4, 12.3.

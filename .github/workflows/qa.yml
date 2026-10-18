@@ -75,9 +75,14 @@ jobs:
         run: gosec -exclude-generated -severity medium ./...
         continue-on-error: true  # Security findings are warnings, not blockers
 
-      - name: Check for vulnerabilities
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0 && govulncheck ./...
-        continue-on-error: true  # Don't fail build on vuln check - informational only
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+
+      # Blocking: fails when code reachable from this module calls a known-vulnerable
+      # function (stdlib or dependency). Fix by upgrading Go (check-latest above) or
+      # the affected module. gosec above stays informational.
+      - name: Check for vulnerabilities (govulncheck)
+        run: govulncheck ./...
 
   # ============================================
   # Stage 3: Unit Tests with Coverage
@@ -417,8 +422,10 @@ jobs:
           echo "Docker: ${{ needs.docker.result }}"
           echo "API Tests: ${{ needs.api-tests.result }}"
           
-          # Fail on unit tests, build, and integration tests; lint/security are informational
+          # Fail on unit tests, build, integration tests, and the security job
+          # (govulncheck is blocking; gosec and lint are informational)
           if [ "${{ needs.unit-tests.result }}" != "success" ] || \
+             [ "${{ needs.security.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ] || \
              [ "${{ needs.integration-tests.result }}" != "success" ] || \
              [ "${{ needs.integration-tests-mariadb.result }}" != "success" ]; then

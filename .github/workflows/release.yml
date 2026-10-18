@@ -49,6 +49,12 @@ jobs:
       - name: Unit tests
         run: go test -race -covermode=atomic ./...
 
+      # Never publish binaries built against known-vulnerable code paths.
+      - name: Vulnerability check (govulncheck)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          govulncheck ./...
+
       - name: Initialize test and Sakila databases
         # Same fixtures and loader as qa.yml: the server image's own client, so
         # client/server versions match. The Sakila tests need the sakila schema.
