@@ -94,7 +94,7 @@ type Config struct {
 	MCPHTTPTLSCert        string        // TLS certificate path
 	MCPHTTPTLSKey         string        // TLS key path
 	MCPHTTPStateless      bool          // stateless MCP sessions (no Mcp-Session-Id)
-	MCPHTTPSessionTimeout time.Duration // idle session timeout; 0 = never
+	MCPHTTPSessionTimeout time.Duration // idle session timeout; unset/0 defaults to 30m (cannot be disabled)
 	MCPHTTPAllowedOrigins []string      // extra trusted origins for cross-origin protection
 	MCPHTTPAllowInsecure  bool          // permit non-loopback bind without TLS (e.g. behind a TLS proxy)
 
