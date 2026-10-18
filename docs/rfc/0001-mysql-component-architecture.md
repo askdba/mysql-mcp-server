@@ -253,7 +253,7 @@ Folded into §5.2's Go-side changes. On its own it delivers none of G1–G3.
 
 - Today the Go server offers MCP over stdio only; its HTTP mode is REST, not MCP. The `go-sdk` already supports Streamable HTTP.
 - Adding it gives remote MCP on **every** MySQL version and on managed cloud, for a fraction of `component_mcp`'s cost.
-- It does not meet G1 (it is still a sidecar), so it does not replace §5.3. But it should land **first**, as a separate issue in this repo:
+- It does not meet G1 (it is still a sidecar), so it does not replace §5.3. But it should land **first**, as a separate issue in this repo (#140):
   - it covers most "remote MCP" demand now;
   - it gives `component_mcp` a reference implementation to match for conformance and parity tests;
   - it lowers the stakes of the §10 go/no-go.
@@ -358,7 +358,7 @@ Innovation releases are supported only until the next one ships. Each new Innova
 | Phase | Deliverable | Depends on | Estimate |
 |---|---|---|---|
 | 0 | Refresh source trees (8.4.11, 9.7.2); hello-world `component_mcp_guard` building on 8.4, 9.7, 26.7 via the MyVector scripts; add `sql/mcp/LICENSE` (Apache-2.0) and the `NOTICE` entry | — | 1 week |
-| 0b | (this repo, separate issue) Streamable HTTP MCP transport in the Go server (§6.1a) | — | 1–2 weeks |
+| 0b | (this repo, #140) Streamable HTTP MCP transport in the Go server (§6.1a) | — | 1–2 weeks |
 | 1 | SQL tool pack v1 + Go `install-schema` + parity tests | 0 (license) | 2–3 weeks |
 | 2 | `component_mcp_guard`: privileges, sysvars, read-only + schema enforcement, status vars, MTR | 0 | 3–4 weeks |
 | 3 | `P_S.mcp_tool_calls`, audit emission; Go query attributes, `server_info` detection, error mapping; Docker images | 2 | 2–3 weeks |
