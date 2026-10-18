@@ -4,6 +4,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -82,6 +83,21 @@ type Config struct {
 	HTTPPort           int
 	HTTPRequestTimeout time.Duration
 
+	// MCP transport: "stdio" (default) or "http" (MCP Streamable HTTP; see MCPHTTP*).
+	Transport string
+
+	// MCP Streamable HTTP settings (Transport == "http"). Port is HTTPPort.
+	MCPHTTPBind           string        // listen address; default 127.0.0.1
+	MCPHTTPPath           string        // endpoint path; default /mcp
+	MCPHTTPToken          string        // bearer token (from MYSQL_MCP_HTTP_TOKEN or token file)
+	MCPHTTPTokenFile      string        // file holding the bearer token
+	MCPHTTPTLSCert        string        // TLS certificate path
+	MCPHTTPTLSKey         string        // TLS key path
+	MCPHTTPStateless      bool          // stateless MCP sessions (no Mcp-Session-Id)
+	MCPHTTPSessionTimeout time.Duration // idle session timeout; 0 = never
+	MCPHTTPAllowedOrigins []string      // extra trusted origins for cross-origin protection
+	MCPHTTPAllowInsecure  bool          // permit non-loopback bind without TLS (e.g. behind a TLS proxy)
+
 	// Rate limiting (HTTP mode only)
 	RateLimitEnabled bool
 	RateLimitRPS     float64 // requests per second
@@ -137,6 +153,7 @@ func Load() (*Config, error) {
 			DBRetryMaxInterval: 10 * time.Second,
 		}
 	}
+	applyMCPHTTPDefaults(cfg)
 
 	// Apply environment variable overrides (env vars take precedence)
 	applyEnvOverrides(cfg)
@@ -153,6 +170,13 @@ func Load() (*Config, error) {
 	// Ensure we have at least one connection
 	if len(cfg.Connections) == 0 {
 		return nil, fmt.Errorf("no MySQL connections configured. Set MYSQL_DSN, MYSQL_CONNECTIONS, or use a config file")
+	}
+
+	if err := resolveMCPHTTPToken(cfg); err != nil {
+		return nil, err
+	}
+	if err := ValidateTransport(cfg); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil
@@ -240,6 +264,39 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("MYSQL_HTTP_REQUEST_TIMEOUT_SECONDS"); v != "" {
 		cfg.HTTPRequestTimeout = time.Duration(getEnvInt("MYSQL_HTTP_REQUEST_TIMEOUT_SECONDS", int(cfg.HTTPRequestTimeout.Seconds()))) * time.Second
 	}
+	if v := os.Getenv("MYSQL_MCP_TRANSPORT"); v != "" {
+		cfg.Transport = strings.ToLower(strings.TrimSpace(v))
+	}
+	if v := os.Getenv("MYSQL_MCP_HTTP_BIND"); v != "" {
+		cfg.MCPHTTPBind = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("MYSQL_MCP_HTTP_PATH"); v != "" {
+		cfg.MCPHTTPPath = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("MYSQL_MCP_HTTP_TOKEN"); v != "" {
+		cfg.MCPHTTPToken = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("MYSQL_MCP_HTTP_TOKEN_FILE"); v != "" {
+		cfg.MCPHTTPTokenFile = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("MYSQL_MCP_HTTP_TLS_CERT"); v != "" {
+		cfg.MCPHTTPTLSCert = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("MYSQL_MCP_HTTP_TLS_KEY"); v != "" {
+		cfg.MCPHTTPTLSKey = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("MYSQL_MCP_HTTP_STATELESS"); v != "" {
+		cfg.MCPHTTPStateless = getEnvBool("MYSQL_MCP_HTTP_STATELESS")
+	}
+	if v := os.Getenv("MYSQL_MCP_HTTP_SESSION_TIMEOUT_MINUTES"); v != "" {
+		cfg.MCPHTTPSessionTimeout = time.Duration(getEnvInt("MYSQL_MCP_HTTP_SESSION_TIMEOUT_MINUTES", int(cfg.MCPHTTPSessionTimeout.Minutes()))) * time.Minute
+	}
+	if v := os.Getenv("MYSQL_MCP_HTTP_ALLOWED_ORIGINS"); v != "" {
+		cfg.MCPHTTPAllowedOrigins = parseCSVList(v)
+	}
+	if v := os.Getenv("MYSQL_MCP_HTTP_ALLOW_INSECURE"); v != "" {
+		cfg.MCPHTTPAllowInsecure = getEnvBool("MYSQL_MCP_HTTP_ALLOW_INSECURE")
+	}
 	if v := os.Getenv("MYSQL_HTTP_RATE_LIMIT"); v != "" {
 		cfg.RateLimitEnabled = getEnvBool("MYSQL_HTTP_RATE_LIMIT")
 	}
@@ -276,6 +333,90 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("MYSQL_MCP_SLOW_QUERY_TOOL"); v != "" {
 		cfg.SlowQueryTool = getEnvBool("MYSQL_MCP_SLOW_QUERY_TOOL")
 	}
+}
+
+// Transport values for Config.Transport.
+const (
+	TransportStdio = "stdio"
+	TransportHTTP  = "http"
+)
+
+// Defaults for the MCP Streamable HTTP transport.
+const (
+	DefaultMCPHTTPBind                  = "127.0.0.1"
+	DefaultMCPHTTPPath                  = "/mcp"
+	DefaultMCPHTTPSessionTimeoutMinutes = 30
+)
+
+// applyMCPHTTPDefaults fills unset MCP HTTP transport fields with defaults.
+func applyMCPHTTPDefaults(cfg *Config) {
+	if cfg.Transport == "" {
+		cfg.Transport = TransportStdio
+	}
+	if cfg.MCPHTTPBind == "" {
+		cfg.MCPHTTPBind = DefaultMCPHTTPBind
+	}
+	if cfg.MCPHTTPPath == "" {
+		cfg.MCPHTTPPath = DefaultMCPHTTPPath
+	}
+	if cfg.MCPHTTPSessionTimeout == 0 {
+		cfg.MCPHTTPSessionTimeout = time.Duration(DefaultMCPHTTPSessionTimeoutMinutes) * time.Minute
+	}
+}
+
+// resolveMCPHTTPToken reads the bearer token from MCPHTTPTokenFile when no token is set directly.
+func resolveMCPHTTPToken(cfg *Config) error {
+	if cfg.MCPHTTPToken != "" || cfg.MCPHTTPTokenFile == "" {
+		return nil
+	}
+	b, err := os.ReadFile(cfg.MCPHTTPTokenFile)
+	if err != nil {
+		return fmt.Errorf("failed to read MCP HTTP token file: %w", err)
+	}
+	cfg.MCPHTTPToken = strings.TrimSpace(string(b))
+	if cfg.MCPHTTPToken == "" {
+		return fmt.Errorf("MCP HTTP token file %s is empty", cfg.MCPHTTPTokenFile)
+	}
+	return nil
+}
+
+// IsLoopbackBind reports whether addr (a host or IP, no port) only accepts local connections.
+func IsLoopbackBind(addr string) bool {
+	host := strings.Trim(strings.TrimSpace(addr), "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// ValidateTransport checks the MCP transport settings for unsafe or conflicting combinations.
+func ValidateTransport(cfg *Config) error {
+	switch cfg.Transport {
+	case TransportStdio:
+		return nil
+	case TransportHTTP:
+	default:
+		return fmt.Errorf("invalid MYSQL_MCP_TRANSPORT %q (want %q or %q)", cfg.Transport, TransportStdio, TransportHTTP)
+	}
+	if cfg.HTTPMode {
+		return fmt.Errorf("MYSQL_MCP_TRANSPORT=http cannot be combined with the REST API (MYSQL_MCP_HTTP=1); run them as separate processes")
+	}
+	if !strings.HasPrefix(cfg.MCPHTTPPath, "/") || cfg.MCPHTTPPath == "/" {
+		return fmt.Errorf("MYSQL_MCP_HTTP_PATH must start with '/' and not be the root path (got %q)", cfg.MCPHTTPPath)
+	}
+	if (cfg.MCPHTTPTLSCert == "") != (cfg.MCPHTTPTLSKey == "") {
+		return fmt.Errorf("MYSQL_MCP_HTTP_TLS_CERT and MYSQL_MCP_HTTP_TLS_KEY must be set together")
+	}
+	if !IsLoopbackBind(cfg.MCPHTTPBind) {
+		if cfg.MCPHTTPToken == "" {
+			return fmt.Errorf("MCP HTTP bind %q is not loopback: a bearer token is required (MYSQL_MCP_HTTP_TOKEN or MYSQL_MCP_HTTP_TOKEN_FILE)", cfg.MCPHTTPBind)
+		}
+		if cfg.MCPHTTPTLSCert == "" && !cfg.MCPHTTPAllowInsecure {
+			return fmt.Errorf("MCP HTTP bind %q is not loopback: TLS is required (MYSQL_MCP_HTTP_TLS_CERT/KEY), or set MYSQL_MCP_HTTP_ALLOW_INSECURE=1 when a TLS proxy terminates in front", cfg.MCPHTTPBind)
+		}
+	}
+	return nil
 }
 
 // parseCSVList splits comma-separated values, trims space, drops empties.

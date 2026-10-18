@@ -138,7 +138,17 @@ Environment variables:
 | MYSQL_MCP_VECTOR | No | 0 | Enable vector tools for MySQL 9.0+ (set to 1) |
 | MYSQL_MCP_HTTP | No | 0 | Enable REST API mode (set to 1); **mutually exclusive** with stdio MCP |
 | MYSQL_MCP_METRICS_HTTP | No | 0 | With **stdio MCP only**: expose **`/status`** + **`/api/metrics/tokens`** on **`MYSQL_HTTP_PORT`** (same process as Claude/Cursor) |
-| MYSQL_HTTP_PORT | No | 9306 | Port for REST API **or** metrics sidecar |
+| MYSQL_HTTP_PORT | No | 9306 | Port for REST API, MCP HTTP transport, **or** metrics sidecar |
+| MYSQL_MCP_TRANSPORT | No | stdio | MCP transport: `stdio` or `http` ([MCP Streamable HTTP](#remote-mcp-over-http-streamable-http)). `http` cannot be combined with `MYSQL_MCP_HTTP=1` |
+| MYSQL_MCP_HTTP_BIND | No | 127.0.0.1 | Listen address for the MCP HTTP transport. Any non-loopback address requires a token **and** TLS |
+| MYSQL_MCP_HTTP_PATH | No | /mcp | MCP endpoint path |
+| MYSQL_MCP_HTTP_TOKEN | No | – | Bearer token clients must send (`Authorization: Bearer …`). Required for non-loopback binds |
+| MYSQL_MCP_HTTP_TOKEN_FILE | No | – | File containing the bearer token (keeps it out of the environment) |
+| MYSQL_MCP_HTTP_TLS_CERT / MYSQL_MCP_HTTP_TLS_KEY | No | – | Serve HTTPS. Required for non-loopback binds |
+| MYSQL_MCP_HTTP_ALLOW_INSECURE | No | 0 | Set `1` to allow a non-loopback bind **without** TLS when a reverse proxy terminates TLS in front. The token is still required |
+| MYSQL_MCP_HTTP_STATELESS | No | 0 | Set `1` for stateless sessions (no `Mcp-Session-Id`); `use_connection` then only lasts one request |
+| MYSQL_MCP_HTTP_SESSION_TIMEOUT_MINUTES | No | 30 | Close idle MCP HTTP sessions after this many minutes |
+| MYSQL_MCP_HTTP_ALLOWED_ORIGINS | No | – | Comma-separated extra trusted origins for browser-based MCP clients (cross-origin requests are rejected otherwise) |
 | MYSQL_HTTP_RATE_LIMIT | No | 0 | Enable rate limiting for HTTP mode (set to 1) |
 | MYSQL_HTTP_RATE_LIMIT_RPS | No | 100 | Rate limit: requests per second |
 | MYSQL_HTTP_RATE_LIMIT_BURST | No | 200 | Rate limit: burst size |
@@ -510,6 +520,67 @@ claude  # start Claude Code — MySQL tools will be available automatically
 To use the same config in your own project, copy `.mcp.json` to your project root and set `MYSQL_DSN` in your shell.
 
 **Verify the integration** by asking Claude Code: *"List all databases on this MySQL server."*
+
+## Remote MCP over HTTP (Streamable HTTP)
+
+Besides stdio, the server can speak MCP over the [Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http), so MCP clients connect over the network without launching a local process. It serves the **same tools, prompts and resources** as stdio, and the same safety rules apply (read-only validation, allow-lists, column masking, audit log).
+
+**Local (loopback only, no token needed):**
+
+```bash
+export MYSQL_DSN="user:password@tcp(127.0.0.1:3306)/mydb?parseTime=true"
+export MYSQL_MCP_TRANSPORT=http          # MCP at http://127.0.0.1:9306/mcp
+mysql-mcp-server
+```
+
+```bash
+claude mcp add --transport http mysql http://127.0.0.1:9306/mcp
+```
+
+**Remote (HTTPS + bearer token):**
+
+```bash
+openssl rand -hex 32 > /etc/mysql-mcp/token && chmod 600 /etc/mysql-mcp/token
+export MYSQL_MCP_TRANSPORT=http
+export MYSQL_MCP_HTTP_BIND=0.0.0.0
+export MYSQL_MCP_HTTP_TOKEN_FILE=/etc/mysql-mcp/token
+export MYSQL_MCP_HTTP_TLS_CERT=/etc/mysql-mcp/cert.pem
+export MYSQL_MCP_HTTP_TLS_KEY=/etc/mysql-mcp/key.pem
+mysql-mcp-server --daemon   # optional: run in background (Unix)
+```
+
+```bash
+claude mcp add --transport http mysql https://db-tools.example.com:9306/mcp \
+  --header "Authorization: Bearer $(cat /etc/mysql-mcp/token)"
+```
+
+Behavior and safety:
+
+- **Refuses to start unsafely:** a non-loopback bind without a token, or without TLS, is a startup error. If a reverse proxy terminates TLS, set `MYSQL_MCP_HTTP_ALLOW_INSECURE=1`; the token is still required.
+- **Browser protections:** requests from other origins are rejected unless listed in `MYSQL_MCP_HTTP_ALLOWED_ORIGINS`. On localhost, requests whose `Host` header is not a localhost name are rejected (DNS-rebinding protection).
+- **Per-session connections:** `use_connection` and `add_connection` switch the active connection for **that MCP session only**; other HTTP clients keep theirs. Connections registered with `add_connection` are shared by all sessions.
+- **Keep `add_connection` off for remote deployments** unless every token holder is trusted: it lets a client make the server connect to any host it can reach (`MYSQL_MCP_ENABLE_ADD_CONNECTION` is off by default).
+- **Other endpoints on the same port:** `GET /health` (no auth) and `GET /api/metrics/tokens` (same token). `/status` is served only when no token is configured, because a browser cannot send the bearer token.
+- `MYSQL_HTTP_RATE_LIMIT` applies to this transport too.
+- It cannot run in the same process as the REST API (`MYSQL_MCP_HTTP=1`); run two processes if you need both.
+
+Config file equivalent:
+
+```yaml
+transport: http
+http:
+  port: 9306
+  mcp:
+    bind: 0.0.0.0
+    path: /mcp
+    token_file: /etc/mysql-mcp/token   # the token itself is never stored in the config file
+    tls_cert: /etc/mysql-mcp/cert.pem
+    tls_key: /etc/mysql-mcp/key.pem
+    session_timeout_minutes: 30
+    # stateless: false
+    # allowed_origins: ["https://app.example.com"]
+    # allow_insecure: false
+```
 
 ## MCP Tools
 

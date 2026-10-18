@@ -347,7 +347,7 @@ func TestGetDBWithConnManager(t *testing.T) {
 	connManager = cm
 
 	// getDB should return the manager's active connection
-	result := getDB()
+	result := getDB(context.Background())
 	if result != mockDB {
 		t.Error("getDB should return connection manager's active db")
 	}
@@ -370,7 +370,7 @@ func TestGetDBWithoutConnManagerPanics(t *testing.T) {
 		}
 	}()
 
-	getDB() // This should panic
+	getDB(context.Background()) // This should panic
 }
 
 func TestConnectionConfigStruct(t *testing.T) {

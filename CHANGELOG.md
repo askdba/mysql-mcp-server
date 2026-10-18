@@ -7,6 +7,19 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **MCP Streamable HTTP transport** (`MYSQL_MCP_TRANSPORT=http`, #140). Remote MCP clients connect at `http://127.0.0.1:9306/mcp` (path, bind address and port configurable) and get the same tools, prompts and resources as stdio.
+  - Binds to loopback by default. Any other address requires a bearer token (`MYSQL_MCP_HTTP_TOKEN` / `MYSQL_MCP_HTTP_TOKEN_FILE`) and TLS (`MYSQL_MCP_HTTP_TLS_CERT` / `_KEY`); `MYSQL_MCP_HTTP_ALLOW_INSECURE=1` allows plain HTTP behind a TLS-terminating proxy.
+  - Cross-origin requests and DNS-rebinding `Host` headers are rejected; extra trusted origins go in `MYSQL_MCP_HTTP_ALLOWED_ORIGINS`.
+  - `use_connection` / `add_connection` switch the active connection per MCP session, not for the whole process.
+  - Stateless mode (`MYSQL_MCP_HTTP_STATELESS=1`), idle session timeout, rate limiting, `/health` and token metrics on the same port, `--daemon` support, and `transport:` / `http.mcp:` config-file keys.
+  - It cannot be combined with the REST API (`MYSQL_MCP_HTTP=1`) in one process.
+
+### Fixed
+
+- HTTP request logging middleware now exposes the underlying writer (`Unwrap`), so streaming responses can be flushed through it.
+
 ### CI
 
 - **`govulncheck` is now blocking.** It fails the QA pipeline (the QA Summary job now checks the Security Scan job) and the pre-release gate in `release.yml`, so a release cannot publish binaries with known-reachable vulnerabilities. It scans every release target (linux/darwin/windows × amd64/arm64, `CGO_ENABLED=0`), because govulncheck only analyzes the active `GOOS`/`GOARCH`. gosec (including its install step) and golangci-lint stay informational.

@@ -422,21 +422,106 @@ func (cm *ConnectionManager) Close() {
 	cm.pendingAdds = nil
 }
 
-// getDB returns the active database connection in a thread-safe manner.
+// getDB returns the active database connection for ctx in a thread-safe manner.
 // All database access should go through this function to ensure proper
 // connection management and avoid data races when connections are switched.
-func getDB() *sql.DB {
+// Over the MCP HTTP transport, ctx carries the MCP session's own active connection.
+func getDB(ctx context.Context) *sql.DB {
 	if connManager == nil {
 		panic("getDB called before connManager initialized")
 	}
-	return connManager.GetActiveDB()
+	db, _ := connManager.ActiveFor(ctx)
+	return db
 }
 
-// GetServerType returns the server type of the active connection.
-func (cm *ConnectionManager) GetServerType() ServerType {
+// ===== Per-session active connection (MCP HTTP transport) =====
+
+// sessionConn holds one MCP session's active connection name. An empty name means
+// "use the process-wide active connection". Stdio has a single client and never
+// attaches one, so it keeps the process-wide behavior.
+type sessionConn struct {
+	mu   sync.Mutex
+	name string
+}
+
+func (sc *sessionConn) get() string {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	return sc.name
+}
+
+func (sc *sessionConn) set(name string) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	sc.name = name
+}
+
+type sessionConnKey struct{}
+
+// withSessionConn returns a context whose connection lookups use sc.
+func withSessionConn(ctx context.Context, sc *sessionConn) context.Context {
+	return context.WithValue(ctx, sessionConnKey{}, sc)
+}
+
+// sessionConnFrom returns the session connection state attached to ctx, or nil.
+func sessionConnFrom(ctx context.Context) *sessionConn {
+	sc, _ := ctx.Value(sessionConnKey{}).(*sessionConn)
+	return sc
+}
+
+// activeNameLocked resolves the active connection name for ctx. Caller holds cm.mu.
+// A session choice that no longer exists falls back to the process-wide active connection.
+func (cm *ConnectionManager) activeNameLocked(ctx context.Context) string {
+	if sc := sessionConnFrom(ctx); sc != nil {
+		if name := sc.get(); name != "" {
+			if _, ok := cm.connections[name]; ok {
+				return name
+			}
+		}
+	}
+	return cm.activeConn
+}
+
+// ActiveFor returns the active database connection and its name for ctx.
+func (cm *ConnectionManager) ActiveFor(ctx context.Context) (*sql.DB, string) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	if st, exists := cm.serverTypes[cm.activeConn]; exists {
+	name := cm.activeNameLocked(ctx)
+	return cm.connections[name], name
+}
+
+// Has reports whether a connection with the given name is registered.
+func (cm *ConnectionManager) Has(name string) bool {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	_, ok := cm.connections[name]
+	return ok
+}
+
+// SetActiveFor switches the active connection for ctx: the MCP session's choice when ctx
+// carries session state, otherwise the process-wide active connection.
+func (cm *ConnectionManager) SetActiveFor(ctx context.Context, name string) error {
+	sc := sessionConnFrom(ctx)
+	if sc == nil {
+		return cm.SetActive(name)
+	}
+	if !cm.Has(name) {
+		return fmt.Errorf("connection '%s' not found", name)
+	}
+	sc.set(name)
+	return nil
+}
+
+// GetServerType returns the server type of the process-wide active connection.
+func (cm *ConnectionManager) GetServerType() ServerType {
+	return cm.ServerTypeFor(context.Background())
+}
+
+// ServerTypeFor returns the server type of the active connection for ctx.
+func (cm *ConnectionManager) ServerTypeFor(ctx context.Context) ServerType {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if st, exists := cm.serverTypes[cm.activeNameLocked(ctx)]; exists {
 		return st
 	}
 	return ServerTypeUnknown
@@ -470,10 +555,10 @@ func (cm *ConnectionManager) detectServerType(ctx context.Context, db *sql.DB) S
 	return ServerTypeMySQL
 }
 
-// getServerType is a helper to get the active server type.
-func getServerType() ServerType {
+// getServerType is a helper to get the active server type for ctx.
+func getServerType(ctx context.Context) ServerType {
 	if connManager == nil {
 		return ServerTypeUnknown
 	}
-	return connManager.GetServerType()
+	return connManager.ServerTypeFor(ctx)
 }

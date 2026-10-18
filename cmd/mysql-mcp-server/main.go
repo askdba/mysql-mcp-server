@@ -162,8 +162,8 @@ func main() {
 
 	// Daemon mode requires HTTP mode; defer until after config load so we can check.
 	if parsed.daemon {
-		if !cfg.HTTPMode {
-			fmt.Fprintf(os.Stderr, "Error: daemon mode requires HTTP mode (set MYSQL_MCP_HTTP=1 or http.enabled: true in config)\n")
+		if !cfg.HTTPMode && cfg.Transport != config.TransportHTTP {
+			fmt.Fprintf(os.Stderr, "Error: daemon mode requires HTTP (set MYSQL_MCP_HTTP=1, MYSQL_MCP_TRANSPORT=http, or http.enabled: true in config)\n")
 			os.Exit(1)
 		}
 		maybeDaemonize(parsed)
@@ -242,6 +242,7 @@ func main() {
 		"extendedMode":     extendedMode,
 		"vectorMode":       cfg.VectorMode,
 		"httpMode":         cfg.HTTPMode,
+		"transport":        cfg.Transport,
 		"metricsHTTP":      cfg.MetricsHTTP,
 		"httpPort":         cfg.HTTPPort,
 		"jsonLogging":      jsonLogging,
@@ -259,12 +260,26 @@ func main() {
 		return
 	}
 
+	// ---- MCP over Streamable HTTP (MYSQL_MCP_TRANSPORT=http) ----
+	if cfg.Transport == config.TransportHTTP {
+		startMCPHTTPServer(buildMCPServer(), cfg, tokenCard)
+		return
+	}
+
 	// Optional: token metrics + /status on HTTP while MCP uses stdio (Claude Desktop, Cursor)
 	if cfg.MetricsHTTP {
 		go startTokenMetricsHTTPServer(cfg.HTTPPort, tokenCard)
 	}
 
-	// ---- Build MCP server ----
+	// ---- Run over stdio ----
+	if err := buildMCPServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// buildMCPServer creates the MCP server and registers tools, prompts and resources.
+// The stdio and Streamable HTTP transports share it, so both expose the same tool set.
+func buildMCPServer() *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    "mysql-mcp-server",
@@ -295,10 +310,7 @@ func main() {
 		registerExtendedTools(server)
 	}
 
-	// ---- Run over stdio ----
-	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
-		log.Fatal(err)
-	}
+	return server
 }
 
 // ===== Tool Registration =====
@@ -513,7 +525,7 @@ OPTIONS:
     -v, --version               Show version information
     -c, --config PATH           Use config file at PATH
     -s, --silent                Suppress INFO and WARN logs (ERROR still printed)
-    -d, --daemon                Run in background (fork and detach; use with MYSQL_MCP_HTTP=1)
+    -d, --daemon                Run in background (fork and detach; use with MYSQL_MCP_HTTP=1 or MYSQL_MCP_TRANSPORT=http)
     --token-card                Enable live token monitoring UI at /status (HTTP mode)
     --print-config              Print current configuration as YAML
     --validate-config PATH      Validate config file at PATH
@@ -554,7 +566,18 @@ CONFIGURATION:
         MYSQL_MCP_VECTOR             Enable vector tools for MySQL 9.0+ (set to 1)
         MYSQL_MCP_HTTP               Enable REST API mode (set to 1)
         MYSQL_MCP_METRICS_HTTP       With stdio MCP only: serve /status and /api/metrics/tokens on MYSQL_HTTP_PORT (set to 1); not used when MYSQL_MCP_HTTP=1
-        MYSQL_HTTP_PORT              HTTP port for REST API or metrics sidecar (default: 9306)
+        MYSQL_HTTP_PORT              HTTP port for REST API, MCP HTTP transport, or metrics sidecar (default: 9306)
+        MYSQL_MCP_TRANSPORT          MCP transport: stdio (default) or http (MCP Streamable HTTP; not with MYSQL_MCP_HTTP=1)
+        MYSQL_MCP_HTTP_BIND          MCP HTTP listen address (default: 127.0.0.1)
+        MYSQL_MCP_HTTP_PATH          MCP HTTP endpoint path (default: /mcp)
+        MYSQL_MCP_HTTP_TOKEN         Bearer token for MCP HTTP (required for non-loopback binds)
+        MYSQL_MCP_HTTP_TOKEN_FILE    File containing the bearer token (alternative to MYSQL_MCP_HTTP_TOKEN)
+        MYSQL_MCP_HTTP_TLS_CERT      TLS certificate for MCP HTTP (required with MYSQL_MCP_HTTP_TLS_KEY for non-loopback binds)
+        MYSQL_MCP_HTTP_TLS_KEY       TLS private key for MCP HTTP
+        MYSQL_MCP_HTTP_ALLOW_INSECURE  Allow a non-loopback bind without TLS, e.g. behind a TLS proxy (set to 1)
+        MYSQL_MCP_HTTP_STATELESS     Stateless MCP sessions; use_connection then lasts one request (set to 1)
+        MYSQL_MCP_HTTP_SESSION_TIMEOUT_MINUTES  Close idle MCP HTTP sessions after N minutes (default: 30)
+        MYSQL_MCP_HTTP_ALLOWED_ORIGINS  Comma-separated extra trusted origins for browser-based clients
         MYSQL_HTTP_RATE_LIMIT        Enable rate limiting for HTTP mode (set to 1)
         MYSQL_HTTP_RATE_LIMIT_RPS    Rate limit: requests per second (default: 100)
         MYSQL_HTTP_RATE_LIMIT_BURST  Rate limit: burst size (default: 200)
@@ -611,6 +634,14 @@ EXAMPLES:
 
     # Silent mode (production; only errors to stderr)
     mysql-mcp-server --silent --config /etc/mysql-mcp-server/config.yaml
+
+    # MCP over Streamable HTTP (local; clients connect to http://127.0.0.1:9306/mcp)
+    export MYSQL_MCP_TRANSPORT=http
+    mysql-mcp-server
+
+    # Remote MCP over HTTPS with a bearer token
+    MYSQL_MCP_TRANSPORT=http MYSQL_MCP_HTTP_BIND=0.0.0.0 MYSQL_MCP_HTTP_TOKEN_FILE=/etc/mysql-mcp/token \
+      MYSQL_MCP_HTTP_TLS_CERT=/etc/mysql-mcp/cert.pem MYSQL_MCP_HTTP_TLS_KEY=/etc/mysql-mcp/key.pem mysql-mcp-server
 
     # Run HTTP server as daemon (Unix)
     MYSQL_MCP_HTTP=1 mysql-mcp-server --daemon --config /path/to/config.yaml

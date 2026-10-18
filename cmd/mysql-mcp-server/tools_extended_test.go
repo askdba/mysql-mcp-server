@@ -1161,7 +1161,7 @@ func TestIsVectorSupported(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.version, func(t *testing.T) {
-				result := isVectorSupported(tt.version)
+				result := isVectorSupported(context.Background(), tt.version)
 				if result != tt.expected {
 					t.Errorf("isVectorSupported(%s) = %v, expected %v", tt.version, result, tt.expected)
 				}
@@ -1176,7 +1176,7 @@ func TestIsVectorSupported(t *testing.T) {
 		versions := []string{"10.11.2", "11.4.2", "9.0.0", "8.0.30"}
 		for _, version := range versions {
 			t.Run(version, func(t *testing.T) {
-				if isVectorSupported(version) {
+				if isVectorSupported(context.Background(), version) {
 					t.Errorf("isVectorSupported(%s) should be false for MariaDB", version)
 				}
 			})
@@ -1190,7 +1190,7 @@ func TestIsVectorSupported(t *testing.T) {
 		versions := []string{"10.0.0", "11.0.0", "9.0.0", "8.0.30"}
 		for _, version := range versions {
 			t.Run(version, func(t *testing.T) {
-				if isVectorSupported(version) {
+				if isVectorSupported(context.Background(), version) {
 					t.Errorf("isVectorSupported(%s) should be false for Unknown server type", version)
 				}
 			})
@@ -1201,7 +1201,7 @@ func TestIsVectorSupported(t *testing.T) {
 		connManager = nil
 
 		// When connManager is nil, getServerType returns Unknown, so should be false
-		if isVectorSupported("9.0.0") {
+		if isVectorSupported(context.Background(), "9.0.0") {
 			t.Error("isVectorSupported should return false when connManager is nil")
 		}
 	})

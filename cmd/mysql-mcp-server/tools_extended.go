@@ -45,7 +45,7 @@ func toolListIndexes(
 	defer cancel()
 
 	query := fmt.Sprintf("SHOW INDEX FROM %s.%s", dbName, tableName)
-	rows, err := getDB().QueryContext(ctx, query)
+	rows, err := getDB(ctx).QueryContext(ctx, query)
 	if err != nil {
 		return nil, ListIndexesOutput{}, fmt.Errorf("SHOW INDEX failed: %w", err)
 	}
@@ -126,7 +126,7 @@ func toolShowCreateTable(
 
 	query := fmt.Sprintf("SHOW CREATE TABLE %s.%s", dbName, tableName)
 	var tbl, createStmt string
-	if err := getDB().QueryRowContext(ctx, query).Scan(&tbl, &createStmt); err != nil {
+	if err := getDB(ctx).QueryRowContext(ctx, query).Scan(&tbl, &createStmt); err != nil {
 		return nil, ShowCreateTableOutput{}, fmt.Errorf("SHOW CREATE TABLE failed: %w", err)
 	}
 
@@ -201,7 +201,7 @@ func toolExplainQuery(
 			return nil, ExplainQueryOutput{}, fmt.Errorf("invalid database name: %w", err)
 		}
 		var conn *sql.Conn
-		conn, err = getDB().Conn(ctx)
+		conn, err = getDB(ctx).Conn(ctx)
 		if err != nil {
 			return nil, ExplainQueryOutput{}, fmt.Errorf("failed to get connection: %w", err)
 		}
@@ -213,7 +213,7 @@ func toolExplainQuery(
 		}
 		rows, err = conn.QueryContext(ctx, explainSQL)
 	} else {
-		rows, err = getDB().QueryContext(ctx, explainSQL)
+		rows, err = getDB(ctx).QueryContext(ctx, explainSQL)
 	}
 
 	if err != nil {
@@ -366,7 +366,7 @@ func toolListViews(
 
 	query := `SELECT TABLE_NAME, DEFINER, SECURITY_TYPE, IS_UPDATABLE 
 		FROM information_schema.VIEWS WHERE TABLE_SCHEMA = ?`
-	rows, err := getDB().QueryContext(ctx, query, input.Database)
+	rows, err := getDB(ctx).QueryContext(ctx, query, input.Database)
 	if err != nil {
 		return nil, ListViewsOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -407,7 +407,7 @@ func toolListTriggers(
 
 	query := `SELECT TRIGGER_NAME, EVENT_MANIPULATION, EVENT_OBJECT_TABLE, ACTION_TIMING, 
 		LEFT(ACTION_STATEMENT, 200) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ?`
-	rows, err := getDB().QueryContext(ctx, query, input.Database)
+	rows, err := getDB(ctx).QueryContext(ctx, query, input.Database)
 	if err != nil {
 		return nil, ListTriggersOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -449,7 +449,7 @@ func toolListProcedures(
 	query := `SELECT ROUTINE_NAME, DEFINER, CREATED, LAST_ALTERED, 
 		IFNULL(PARAMETER_STYLE, '') FROM information_schema.ROUTINES 
 		WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'PROCEDURE'`
-	rows, err := getDB().QueryContext(ctx, query, input.Database)
+	rows, err := getDB(ctx).QueryContext(ctx, query, input.Database)
 	if err != nil {
 		return nil, ListProceduresOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -491,7 +491,7 @@ func toolListFunctions(
 	query := `SELECT ROUTINE_NAME, DEFINER, DTD_IDENTIFIER, CREATED 
 		FROM information_schema.ROUTINES 
 		WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'FUNCTION'`
-	rows, err := getDB().QueryContext(ctx, query, input.Database)
+	rows, err := getDB(ctx).QueryContext(ctx, query, input.Database)
 	if err != nil {
 		return nil, ListFunctionsOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -534,7 +534,7 @@ func toolListPartitions(
 		PARTITION_DESCRIPTION, TABLE_ROWS, DATA_LENGTH 
 		FROM information_schema.PARTITIONS 
 		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND PARTITION_NAME IS NOT NULL`
-	rows, err := getDB().QueryContext(ctx, query, input.Database, input.Table)
+	rows, err := getDB(ctx).QueryContext(ctx, query, input.Database, input.Table)
 	if err != nil {
 		return nil, ListPartitionsOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -596,9 +596,9 @@ func toolDatabaseSize(
 	var rows *sql.Rows
 	var err error
 	if database != "" {
-		rows, err = getDB().QueryContext(ctx, query, database)
+		rows, err = getDB(ctx).QueryContext(ctx, query, database)
 	} else {
-		rows, err = getDB().QueryContext(ctx, query)
+		rows, err = getDB(ctx).QueryContext(ctx, query)
 	}
 	if err != nil {
 		return nil, DatabaseSizeOutput{}, fmt.Errorf("query failed: %w", err)
@@ -658,7 +658,7 @@ func toolTableSize(
 	}
 	query += " ORDER BY total_mb DESC"
 
-	rows, err := getDB().QueryContext(ctx, query, args...)
+	rows, err := getDB(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, TableSizeOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -723,7 +723,7 @@ func toolForeignKeys(
 		args = append(args, input.Table)
 	}
 
-	rows, err := getDB().QueryContext(ctx, query, args...)
+	rows, err := getDB(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, ForeignKeysOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -763,19 +763,19 @@ func toolListStatus(
 
 	// Use performance_schema for better performance and flexibility
 	if input.Pattern != "" {
-		rows, err = getDB().QueryContext(ctx,
+		rows, err = getDB(ctx).QueryContext(ctx,
 			"SELECT VARIABLE_NAME, VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME LIKE ? ORDER BY VARIABLE_NAME",
 			input.Pattern)
 	} else {
-		rows, err = getDB().QueryContext(ctx,
+		rows, err = getDB(ctx).QueryContext(ctx,
 			"SELECT VARIABLE_NAME, VARIABLE_VALUE FROM performance_schema.global_status ORDER BY VARIABLE_NAME")
 	}
 	if err != nil {
 		// Fallback to SHOW GLOBAL STATUS for restricted environments or older versions
 		if input.Pattern != "" {
-			rows, err = getDB().QueryContext(ctx, "SHOW GLOBAL STATUS LIKE ?", input.Pattern)
+			rows, err = getDB(ctx).QueryContext(ctx, "SHOW GLOBAL STATUS LIKE ?", input.Pattern)
 		} else {
-			rows, err = getDB().QueryContext(ctx, "SHOW GLOBAL STATUS")
+			rows, err = getDB(ctx).QueryContext(ctx, "SHOW GLOBAL STATUS")
 		}
 		if err != nil {
 			return nil, ListStatusOutput{}, fmt.Errorf("query status failed: %w", err)
@@ -816,17 +816,17 @@ func toolListVariables(
 	// MySQL/MariaDB deployments. Some environments stall when selecting from
 	// performance_schema.global_variables; use that only as a fallback.
 	if input.Pattern != "" {
-		rows, err = getDB().QueryContext(ctx, "SHOW GLOBAL VARIABLES LIKE ?", input.Pattern)
+		rows, err = getDB(ctx).QueryContext(ctx, "SHOW GLOBAL VARIABLES LIKE ?", input.Pattern)
 	} else {
-		rows, err = getDB().QueryContext(ctx, "SHOW GLOBAL VARIABLES")
+		rows, err = getDB(ctx).QueryContext(ctx, "SHOW GLOBAL VARIABLES")
 	}
 	if err != nil {
 		if input.Pattern != "" {
-			rows, err = getDB().QueryContext(ctx,
+			rows, err = getDB(ctx).QueryContext(ctx,
 				"SELECT VARIABLE_NAME, VARIABLE_VALUE FROM performance_schema.global_variables WHERE VARIABLE_NAME LIKE ? ORDER BY VARIABLE_NAME",
 				input.Pattern)
 		} else {
-			rows, err = getDB().QueryContext(ctx,
+			rows, err = getDB(ctx).QueryContext(ctx,
 				"SELECT VARIABLE_NAME, VARIABLE_VALUE FROM performance_schema.global_variables ORDER BY VARIABLE_NAME")
 		}
 		if err != nil {
@@ -900,7 +900,7 @@ func toolSearchSchema(
 	tableQuery += " LIMIT ?"
 	tableArgs = append(tableArgs, maxRows)
 
-	rows, err := getDB().QueryContext(ctx, tableQuery, tableArgs...)
+	rows, err := getDB(ctx).QueryContext(ctx, tableQuery, tableArgs...)
 	if err != nil {
 		return nil, SearchSchemaOutput{}, fmt.Errorf("table search failed: %w", err)
 	}
@@ -947,7 +947,7 @@ func toolSearchSchema(
 	colArgs = append(colArgs, maxRows-len(out.Matches))
 
 	if len(out.Matches) < maxRows {
-		crows, err := getDB().QueryContext(ctx, colQuery, colArgs...)
+		crows, err := getDB(ctx).QueryContext(ctx, colQuery, colArgs...)
 		if err != nil {
 			return nil, SearchSchemaOutput{}, fmt.Errorf("column search failed: %w", err)
 		}
@@ -995,7 +995,7 @@ func toolSchemaDiff(
 
 	// Get tables from source
 	sourceTables := make(map[string]bool)
-	sourceRows, err := getDB().QueryContext(ctx, "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?", input.SourceDatabase)
+	sourceRows, err := getDB(ctx).QueryContext(ctx, "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?", input.SourceDatabase)
 	if err != nil {
 		return nil, SchemaDiffOutput{}, fmt.Errorf("failed to list source tables: %w", err)
 	}
@@ -1014,7 +1014,7 @@ func toolSchemaDiff(
 
 	// Get tables from target
 	targetTables := make(map[string]bool)
-	targetRows, err := getDB().QueryContext(ctx, "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?", input.TargetDatabase)
+	targetRows, err := getDB(ctx).QueryContext(ctx, "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?", input.TargetDatabase)
 	if err != nil {
 		return nil, SchemaDiffOutput{}, fmt.Errorf("failed to list target tables: %w", err)
 	}
@@ -1073,7 +1073,7 @@ func compareTableSchema(ctx context.Context, sourceDB, targetDB, table string) (
 		ORDER BY COLUMN_NAME`
 
 	getSourceCols := func(dbName string) (map[string]string, error) {
-		rows, err := getDB().QueryContext(ctx, query, dbName, table)
+		rows, err := getDB(ctx).QueryContext(ctx, query, dbName, table)
 		if err != nil {
 			return nil, err
 		}
@@ -1206,7 +1206,7 @@ func toolVectorSearch(
 
 	query += fmt.Sprintf(" ORDER BY _distance ASC LIMIT %d", limit)
 
-	rows, err := getDB().QueryContext(ctx, query)
+	rows, err := getDB(ctx).QueryContext(ctx, query)
 	if err != nil {
 		if strings.Contains(err.Error(), "DISTANCE") || strings.Contains(err.Error(), "STRING_TO_VECTOR") {
 			return nil, VectorSearchOutput{}, fmt.Errorf("vector search failed (MySQL 9.0+ required): %w", err)
@@ -1273,13 +1273,13 @@ func toolVectorInfo(
 
 	// Check MySQL version for vector support
 	var version string
-	if err := getDB().QueryRowContext(ctx, "SELECT VERSION()").Scan(&version); err != nil {
+	if err := getDB(ctx).QueryRowContext(ctx, "SELECT VERSION()").Scan(&version); err != nil {
 		return nil, VectorInfoOutput{}, fmt.Errorf("failed to get version: %w", err)
 	}
 	out.MySQLVersion = version
 
 	// Check if VECTOR type is supported (MySQL 9.0+)
-	out.VectorSupport = isVectorSupported(version)
+	out.VectorSupport = isVectorSupported(ctx, version)
 
 	if !out.VectorSupport {
 		return nil, out, nil
@@ -1299,7 +1299,7 @@ func toolVectorInfo(
 		args = append(args, input.Table)
 	}
 
-	rows, err := getDB().QueryContext(ctx, query, args...)
+	rows, err := getDB(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, VectorInfoOutput{}, fmt.Errorf("failed to query vector columns: %w", err)
 	}
@@ -1328,7 +1328,7 @@ func toolVectorInfo(
 			WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?
 		`
 		var indexName, indexType sql.NullString
-		_ = getDB().QueryRowContext(ctx, indexQuery, input.Database, tableName, colName).Scan(&indexName, &indexType)
+		_ = getDB(ctx).QueryRowContext(ctx, indexQuery, input.Database, tableName, colName).Scan(&indexName, &indexType)
 		info.IndexName = indexName.String
 		info.IndexType = indexType.String
 
@@ -1350,8 +1350,8 @@ func buildVectorString(vec []float64) string {
 // isVectorSupported checks if MySQL version supports VECTOR type (9.0+).
 // Returns false for MariaDB and unknown server types to avoid incorrectly
 // enabling MySQL-specific features.
-func isVectorSupported(version string) bool {
-	serverType := getServerType()
+func isVectorSupported(ctx context.Context, version string) bool {
+	serverType := getServerType(ctx)
 	if serverType == ServerTypeMariaDB || serverType == ServerTypeUnknown {
 		return false
 	}

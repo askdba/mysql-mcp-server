@@ -18,7 +18,7 @@ This document provides detailed architecture diagrams for the MySQL MCP Server.
 
 ## High-Level Architecture
 
-The MySQL MCP Server acts as a bridge between AI clients and MySQL databases, supporting MCP over **stdio**, an optional **HTTP REST API** when **`MYSQL_MCP_HTTP=1`**, and an optional **metrics-only HTTP listener** when **`MYSQL_MCP_METRICS_HTTP=1`** (stdio MCP plus **`/health`**, **`/status`**, **`/api/metrics/tokens`** on **`MYSQL_HTTP_PORT`**).
+The MySQL MCP Server acts as a bridge between AI clients and MySQL databases, supporting MCP over **stdio** or **Streamable HTTP** (**`MYSQL_MCP_TRANSPORT=http`**; per-session active connection, bearer token and TLS for remote binds), an optional **HTTP REST API** when **`MYSQL_MCP_HTTP=1`**, and an optional **metrics-only HTTP listener** when **`MYSQL_MCP_METRICS_HTTP=1`** (stdio MCP plus **`/health`**, **`/status`**, **`/api/metrics/tokens`** on **`MYSQL_HTTP_PORT`**).
 
 ```mermaid
 graph TB
@@ -28,11 +28,13 @@ graph TB
         ChatGPT[("ChatGPT<br/>Custom GPT")]
         HTTPClient[("HTTP Clients<br/>curl, Postman")]
         Browser[("Browser / curl<br/>(/status dashboard)")]
+        Remote[("Remote MCP clients<br/>(Claude Code, agents)")]
     end
     
     subgraph "MySQL MCP Server"
         direction TB
         MCP["MCP Protocol Handler<br/>(stdio JSON-RPC)"]
+        MCPHTTP["MCP Streamable HTTP<br/>(optional; MYSQL_MCP_TRANSPORT=http)"]
         HTTP["HTTP REST API<br/>(full API; MYSQL_MCP_HTTP)"]
         MetricsHTTP["Metrics HTTP<br/>(optional; MYSQL_MCP_METRICS_HTTP)"]
         Tools["Tool Handlers<br/>(Core, Extended, Vector)"]
@@ -52,6 +54,8 @@ graph TB
     HTTPClient -->|"HTTP/HTTPS"| HTTP
     Browser -->|"GET /status, /health"| MetricsHTTP
     
+    Remote -->|"HTTPS<br/>MCP Streamable HTTP<br/>+ bearer token"| MCPHTTP
+    MCPHTTP --> Tools
     MCP --> Tools
     HTTP --> Tools
     MetricsHTTP -.->|"same process<br/>as MCP"| MCP

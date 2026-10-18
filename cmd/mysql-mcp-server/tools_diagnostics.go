@@ -34,7 +34,7 @@ func toolProcessList(
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 
-	rows, err := getDB().QueryContext(ctx, "SHOW FULL PROCESSLIST")
+	rows, err := getDB(ctx).QueryContext(ctx, "SHOW FULL PROCESSLIST")
 	if err != nil {
 		return nil, ProcessListOutput{
 			Note: fmt.Sprintf("SHOW FULL PROCESSLIST failed (need PROCESS privilege): %v", err),
@@ -108,7 +108,7 @@ func toolKillQuery(
 
 	// Safe: id is numeric only. KILL QUERY ends the current statement only; bare KILL drops the connection.
 	q := fmt.Sprintf("KILL QUERY %d", input.ID)
-	if _, err := getDB().ExecContext(ctx, q); err != nil {
+	if _, err := getDB(ctx).ExecContext(ctx, q); err != nil {
 		return nil, KillQueryOutput{OK: false, Message: err.Error()}, nil
 	}
 	return nil, KillQueryOutput{OK: true, Message: fmt.Sprintf("KILL QUERY %d issued", input.ID)}, nil
@@ -152,7 +152,7 @@ func toolSlowQueryLog(
 	out := SlowQueryLogOutput{Settings: map[string]string{}}
 
 	var slowOn, logOutput string
-	if err := getDB().QueryRowContext(ctx, "SELECT @@slow_query_log, @@log_output").Scan(&slowOn, &logOutput); err != nil {
+	if err := getDB(ctx).QueryRowContext(ctx, "SELECT @@slow_query_log, @@log_output").Scan(&slowOn, &logOutput); err != nil {
 		out.Mode = "error"
 		out.Message = fmt.Sprintf("could not read slow query log settings: %v", err)
 		return nil, out, nil
@@ -161,7 +161,7 @@ func toolSlowQueryLog(
 	out.Settings["log_output"] = logOutput
 
 	var slowName, slowVal string
-	if err := getDB().QueryRowContext(ctx, "SHOW GLOBAL STATUS LIKE 'Slow_queries'").Scan(&slowName, &slowVal); err == nil {
+	if err := getDB(ctx).QueryRowContext(ctx, "SHOW GLOBAL STATUS LIKE 'Slow_queries'").Scan(&slowName, &slowVal); err == nil {
 		out.SlowQueries, _ = strconv.ParseInt(strings.TrimSpace(slowVal), 10, 64)
 	}
 
@@ -173,7 +173,7 @@ func toolSlowQueryLog(
 
 	if !strings.Contains(strings.ToUpper(logOutput), "TABLE") {
 		var path sql.NullString
-		_ = getDB().QueryRowContext(ctx, "SELECT @@slow_query_log_file").Scan(&path)
+		_ = getDB(ctx).QueryRowContext(ctx, "SELECT @@slow_query_log_file").Scan(&path)
 		out.Mode = "file"
 		if path.Valid {
 			out.Settings["slow_query_log_file"] = path.String
@@ -204,9 +204,9 @@ func toolSlowQueryLog(
 			args = append(args, db)
 		}
 		args = append(args, limit)
-		rows, err = getDB().QueryContext(ctx, q, args...)
+		rows, err = getDB(ctx).QueryContext(ctx, q, args...)
 	} else {
-		rows, err = getDB().QueryContext(ctx,
+		rows, err = getDB(ctx).QueryContext(ctx,
 			`SELECT * FROM mysql.slow_log ORDER BY start_time DESC LIMIT ?`, limit)
 	}
 	if err != nil {

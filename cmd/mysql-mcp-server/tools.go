@@ -35,7 +35,7 @@ func toolListDatabases(
 	defer cancel()
 
 	// Use information_schema for better compatibility and to filter out system dbs if needed
-	rows, err := getDB().QueryContext(ctx, "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA ORDER BY SCHEMA_NAME")
+	rows, err := getDB(ctx).QueryContext(ctx, "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA ORDER BY SCHEMA_NAME")
 	if err != nil {
 		return nil, ListDatabasesOutput{}, fmt.Errorf("ListDatabases failed: %w", err)
 	}
@@ -84,7 +84,7 @@ func toolListTables(
 			  WHERE TABLE_SCHEMA = ?
 			  ORDER BY TABLE_NAME`
 
-	rows, err := getDB().QueryContext(ctx, query, input.Database)
+	rows, err := getDB(ctx).QueryContext(ctx, query, input.Database)
 	if err != nil {
 		return nil, ListTablesOutput{}, fmt.Errorf("ListTables failed: %w", err)
 	}
@@ -170,7 +170,7 @@ func toolDescribeTable(
 			  WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
 			  ORDER BY ORDINAL_POSITION`
 
-	rows, err := getDB().QueryContext(ctx, query, input.Database, input.Table)
+	rows, err := getDB(ctx).QueryContext(ctx, query, input.Database, input.Table)
 	if err != nil {
 		return nil, DescribeTableOutput{}, fmt.Errorf("DescribeTable failed: %w", err)
 	}
@@ -227,7 +227,7 @@ func toolDescribeTable(
 
 func schemaExists(ctx context.Context, database string) (bool, error) {
 	var found int
-	err := getDB().QueryRowContext(
+	err := getDB(ctx).QueryRowContext(
 		ctx,
 		"SELECT 1 FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ? LIMIT 1",
 		database,
@@ -243,7 +243,7 @@ func schemaExists(ctx context.Context, database string) (bool, error) {
 
 func tableExists(ctx context.Context, database, table string) (bool, error) {
 	var found int
-	err := getDB().QueryRowContext(
+	err := getDB(ctx).QueryRowContext(
 		ctx,
 		"SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? LIMIT 1",
 		database,
@@ -459,7 +459,7 @@ func toolRunQuery(
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 
-	db := getDB()
+	db := getDB(ctx)
 	var out QueryResult
 	err := dbretry.Do(ctx, db, dbRetryCfg, pingTimeout, func() error {
 		var e error
@@ -540,7 +540,7 @@ func toolPing(
 	defer cancel()
 
 	start := NewQueryTimer("ping")
-	db := getDB()
+	db := getDB(ctx)
 	err := dbretry.Do(ctx, db, dbRetryCfg, pingTimeout, func() error {
 		return db.PingContext(ctx)
 	})
@@ -573,15 +573,15 @@ func toolServerInfo(
 	out := ServerInfoOutput{}
 
 	// Get version and version comment
-	row := getDB().QueryRowContext(ctx, "SELECT VERSION()")
+	row := getDB(ctx).QueryRowContext(ctx, "SELECT VERSION()")
 	if err := row.Scan(&out.Version); err != nil {
 		return nil, ServerInfoOutput{}, fmt.Errorf("failed to get version: %w", err)
 	}
 
-	out.ServerEngine = string(getServerType())
+	out.ServerEngine = string(getServerType(ctx))
 
 	// Get various server variables in one query
-	rows, err := getDB().QueryContext(ctx, `
+	rows, err := getDB(ctx).QueryContext(ctx, `
 		SELECT VARIABLE_NAME, VARIABLE_VALUE
 		FROM performance_schema.global_variables
 		WHERE VARIABLE_NAME IN (
@@ -593,7 +593,7 @@ func toolServerInfo(
 	`)
 	if err != nil {
 		// Fallback for older MySQL or restricted permissions
-		rows, err = getDB().QueryContext(ctx, `
+		rows, err = getDB(ctx).QueryContext(ctx, `
 			SHOW VARIABLES WHERE Variable_name IN (
 				'version_comment',
 				'character_set_server',
@@ -629,14 +629,14 @@ func toolServerInfo(
 	}
 
 	// Get uptime and threads connected from status
-	statusRows, err := getDB().QueryContext(ctx, `
+	statusRows, err := getDB(ctx).QueryContext(ctx, `
 		SELECT VARIABLE_NAME, VARIABLE_VALUE
 		FROM performance_schema.global_status
 		WHERE VARIABLE_NAME IN ('Uptime', 'Threads_connected')
 	`)
 	if err != nil {
 		// Fallback for older MySQL or restricted permissions
-		statusRows, err = getDB().QueryContext(ctx, `
+		statusRows, err = getDB(ctx).QueryContext(ctx, `
 			SHOW GLOBAL STATUS WHERE Variable_name IN ('Uptime', 'Threads_connected')
 		`)
 		if err != nil {
@@ -663,7 +663,7 @@ func toolServerInfo(
 	}
 
 	// Get current user and database
-	row = getDB().QueryRowContext(ctx, "SELECT CURRENT_USER(), IFNULL(DATABASE(), '')")
+	row = getDB(ctx).QueryRowContext(ctx, "SELECT CURRENT_USER(), IFNULL(DATABASE(), '')")
 	if err := row.Scan(&out.CurrentUser, &out.CurrentDatabase); err != nil {
 		return nil, ServerInfoOutput{}, fmt.Errorf("failed to get current user/database: %w", err)
 	}
@@ -683,7 +683,7 @@ func toolServerInfo(
 		h := &ServerHealthSnapshot{}
 		pctx, pcancel := context.WithTimeout(ctx, pingTimeout)
 		t0 := time.Now()
-		_ = getDB().PingContext(pctx)
+		_ = getDB(ctx).PingContext(pctx)
 		pcancel()
 		h.PingLatencyMs = time.Since(t0).Milliseconds()
 
@@ -698,9 +698,9 @@ func toolServerInfo(
 		for i := range keyVars {
 			args[i] = keyVars[i]
 		}
-		stRows, err := getDB().QueryContext(ctx, q, args...)
+		stRows, err := getDB(ctx).QueryContext(ctx, q, args...)
 		if err != nil {
-			stRows, err = getDB().QueryContext(ctx,
+			stRows, err = getDB(ctx).QueryContext(ctx,
 				`SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_running','Slow_queries','Questions','Innodb_buffer_pool_read_requests','Innodb_buffer_pool_reads')`)
 		}
 		if err == nil {
@@ -763,7 +763,7 @@ func toolListConnections(
 	}
 
 	configs := connManager.List()
-	_, activeName := connManager.GetActive()
+	_, activeName := connManager.ActiveFor(ctx)
 
 	out := ListConnectionsOutput{
 		Connections: make([]ConnectionInfo, 0, len(configs)),
@@ -795,7 +795,7 @@ func toolUseConnection(
 		return nil, UseConnectionOutput{}, fmt.Errorf("connection name is required")
 	}
 
-	if err := connManager.SetActive(input.Name); err != nil {
+	if err := connManager.SetActiveFor(ctx, input.Name); err != nil {
 		return nil, UseConnectionOutput{
 			Success: false,
 			Message: err.Error(),
@@ -805,7 +805,7 @@ func toolUseConnection(
 	// Get current database (informational, don't fail if this errors)
 	var currentDB sql.NullString
 	var dbQueryErr error
-	if err := getDB().QueryRowContext(ctx, "SELECT DATABASE()").Scan(&currentDB); err != nil {
+	if err := getDB(ctx).QueryRowContext(ctx, "SELECT DATABASE()").Scan(&currentDB); err != nil {
 		dbQueryErr = err
 		logWarn("failed to get current database after connection switch", map[string]interface{}{
 			"connection": input.Name,
@@ -904,8 +904,8 @@ func toolAddConnection(
 		return nil, AddConnectionOutput{}, fmt.Errorf("failed to add connection: %w", err)
 	}
 
-	// 3. Automatically switch to it (process-wide active DSN; see spec)
-	if err := cm.SetActive(name); err != nil {
+	// 3. Automatically switch to it (process-wide over stdio; per MCP session over HTTP)
+	if err := cm.SetActiveFor(ctx, name); err != nil {
 		if rbErr := cm.RemoveConnection(name); rbErr != nil {
 			return nil, AddConnectionOutput{}, fmt.Errorf("failed to activate connection: %w (rollback of added connection also failed: %w)", err, rbErr)
 		}
