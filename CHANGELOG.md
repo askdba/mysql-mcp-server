@@ -9,7 +9,7 @@ Semantic Versioning.
 
 ### CI
 
-- **`govulncheck` is now blocking.** It fails the QA pipeline (the QA Summary job now checks the Security Scan job) and the pre-release gate in `release.yml`, so a release cannot publish binaries with known-reachable vulnerabilities. gosec and golangci-lint stay informational.
+- **`govulncheck` is now blocking.** It fails the QA pipeline (the QA Summary job now checks the Security Scan job) and the pre-release gate in `release.yml`, so a release cannot publish binaries with known-reachable vulnerabilities. It scans every release target (linux/darwin/windows × amd64/arm64, `CGO_ENABLED=0`), because govulncheck only analyzes the active `GOOS`/`GOARCH`. gosec (including its install step) and golangci-lint stay informational.
 
 ## [1.8.0] - 2026-10-17
 
