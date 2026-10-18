@@ -83,7 +83,17 @@ jobs:
       # function (stdlib or dependency). Fix by upgrading Go (check-latest above) or
       # the affected module. gosec above stays informational.
       - name: Check for vulnerabilities (govulncheck)
-        run: govulncheck ./...
+        run: |
+          # Scan every GoReleaser target: govulncheck only analyzes the active
+          # GOOS/GOARCH, so OS-specific code (e.g. daemon_windows.go) and stdlib
+          # paths would otherwise go unchecked. Keep in sync with .goreleaser.yml.
+          fail=0
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            echo "::group::govulncheck $target"
+            GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 govulncheck ./... || fail=1
+            echo "::endgroup::"
+          done
+          exit $fail
 
   # ============================================
   # Stage 3: Unit Tests with Coverage
