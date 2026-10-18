@@ -46,7 +46,10 @@ git push origin v1.7.0-rc.1
    Pushing the tag triggers the **Release** workflow. It will:
    - Run GoReleaser: build binaries, create GitHub Release with changelog, update Homebrew formula (if `HOMEBREW_TAP_TOKEN` is set).
    - Build and push Docker image to `ghcr.io/askdba/mysql-mcp-server`.
-   - Update the README version badge on `main` (update-readme job).
+
+   The README version badge reads the latest GitHub release dynamically, so nothing is pushed back to `main`. (`main` requires the **QA Summary** check, which a bot push could not satisfy.)
+
+   Release CHANGELOG commits are pushed straight to `main` by an admin, who bypasses the required check. Don't use `[skip ci]` in those commits: the QA run on `main` is the only CI those commits get.
 
 ## Post-release
 
