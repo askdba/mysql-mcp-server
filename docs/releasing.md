@@ -49,6 +49,8 @@ git push origin v1.7.0-rc.1
 
    The README version badge reads the latest GitHub release dynamically, so nothing is pushed back to `main`. (`main` requires the **QA Summary** check, which a bot push could not satisfy.)
 
+   Release CHANGELOG commits are pushed straight to `main` by an admin, who bypasses the required check. Don't use `[skip ci]` in those commits: the QA run on `main` is the only CI those commits get.
+
 ## Post-release
 
 4. **CHANGELOG on main**  

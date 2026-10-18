@@ -49,7 +49,8 @@ Optional locally: `golangci-lint run --timeout=5m` if you have it installed (sam
 
 1. Push a branch and open a **Pull Request** against `main` so **Go CI** and **QA Pipeline** run on GitHub Actions.
 2. In the PR description, link work to GitHub issues using a **closing keyword** so the issue auto-closes when the PR merges: **`Closes #123`**, **`Fixes #123`**, or **`Resolves #123`** (one issue per line or comma-separated is fine). Plain **`Refs #123`** does **not** close the issue. See [Linking a pull request to an issue](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue).
-3. Treat **required** outcomes as: successful **unit tests**, **build**, and **integration tests** (MySQL and MariaDB) jobs (the QA summary job fails the workflow if any of those fail; lint and some security steps are configured as non-blocking—see `qa.yml`).
+3. **QA Summary is a required status check on `main`**: a PR cannot merge until it passes. It fails if **unit tests**, **build**, **integration tests** (MySQL and MariaDB), or **govulncheck** (Security Scan job) fail; lint and gosec are non-blocking (see `qa.yml`). Admins can bypass for release housekeeping.
+   - **Never put `[skip ci]` (or `[ci skip]`, `[no ci]`, `[skip actions]`) anywhere in a commit message on a PR branch, not even in prose describing it.** GitHub then runs no workflows, QA Summary never reports, and the PR stays blocked. If it happens, reword the commit (`git commit --amend`) and force-push your branch.
 4. Read and act on **automated review** feedback (for example GitHub **Copilot** review, **Cursor Bugbot**, or similar): fix correctness, security, and clear regressions; use judgment on pure style suggestions.
 5. Re-push until checks you care about are green, then proceed with human review per team practice.
 
