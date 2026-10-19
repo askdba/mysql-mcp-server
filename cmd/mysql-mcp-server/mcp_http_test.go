@@ -461,3 +461,119 @@ func TestGetDBWithoutActiveConnectionReturnsError(t *testing.T) {
 		t.Error("missing-connection handle should be cached")
 	}
 }
+
+func TestSessionConnReserveResolveClose(t *testing.T) {
+	sc := newSessionConn()
+	other := newSessionConn()
+	if sc.id == "" || sc.id == other.id {
+		t.Fatalf("session ids must be unique and non-empty: %q %q", sc.id, other.id)
+	}
+	key, err := sc.reserve("staging")
+	if err != nil || !isSessionConnKey(key) || !strings.HasSuffix(key, "/staging") {
+		t.Fatalf("reserve: key=%q err=%v", key, err)
+	}
+	if _, err := sc.reserve("staging"); err == nil {
+		t.Error("duplicate name in one session must fail")
+	}
+	if k2, err := other.reserve("staging"); err != nil || k2 == key {
+		t.Errorf("another session may reuse the name with its own key: %q %v", k2, err)
+	}
+	if sc.resolve("staging") != key || sc.resolve("prod") != "prod" || sc.displayName(key) != "staging" {
+		t.Error("resolve/displayName mismatch")
+	}
+	for i := 1; i < maxSessionConnections; i++ {
+		if _, err := sc.reserve(fmt.Sprintf("c%d", i)); err != nil {
+			t.Fatalf("reserve %d: %v", i, err)
+		}
+	}
+	if _, err := sc.reserve("one-too-many"); err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Errorf("expected per-session limit, got %v", err)
+	}
+	if keys := sc.close(); len(keys) != maxSessionConnections {
+		t.Errorf("close returned %d keys, want %d", len(keys), maxSessionConnections)
+	}
+	if _, err := sc.reserve("late"); err == nil {
+		t.Error("reserve after close must fail")
+	}
+}
+
+func TestMCPHTTPSessionOwnedConnectionsAreIsolated(t *testing.T) {
+	f := newMCPHTTPFixture(t, nil)
+
+	// Simulate what add_connection registers for two sessions.
+	s1, s2 := newSessionConn(), newSessionConn()
+	k1, _ := s1.reserve("extra")
+	k2, _ := s2.reserve("extra")
+	for _, k := range []string{k1, k2} {
+		db, _, err := sqlmock.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.cm.mu.Lock()
+		f.cm.connections[k] = db
+		f.cm.configs[k] = config.ConnectionConfig{Name: k, DSN: "u:p@tcp(x:3306)/x"}
+		f.cm.mu.Unlock()
+	}
+	ctx1 := withSessionConn(context.Background(), s1)
+	if err := f.cm.SetActiveFor(ctx1, "extra"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, out, err := toolListConnections(ctx1, nil, ListConnectionsInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, c := range out.Connections {
+		names = append(names, c.Name)
+		if isSessionConnKey(c.Name) {
+			t.Errorf("internal key leaked into list_connections: %q", c.Name)
+		}
+	}
+	slices.Sort(names)
+	if !slices.Equal(names, []string{"a", "b", "extra"}) || out.Active != "extra" {
+		t.Errorf("session 1 sees %v active=%q, want [a b extra] active=extra", names, out.Active)
+	}
+
+	// A session cannot address another session's connection, even by its internal key.
+	ctx3 := withSessionConn(context.Background(), newSessionConn())
+	for _, name := range []string{"extra", k1} {
+		if err := f.cm.SetActiveFor(ctx3, name); err == nil {
+			t.Errorf("session 3 switched to %q owned by another session", name)
+		}
+	}
+	_, out3, _ := toolListConnections(ctx3, nil, ListConnectionsInput{})
+	if len(out3.Connections) != 2 {
+		t.Errorf("session 3 should only see process-wide connections, got %+v", out3.Connections)
+	}
+
+	// Ending session 1 closes its connection and leaves session 2's alone.
+	closeSessionConnections(s1)
+	if f.cm.Has(k1) || !f.cm.Has(k2) {
+		t.Errorf("after session 1 ends: has k1=%v (want false), has k2=%v (want true)", f.cm.Has(k1), f.cm.Has(k2))
+	}
+}
+
+func TestAddConnectionHTTPGuards(t *testing.T) {
+	cm := NewConnectionManager()
+	ctx := withSessionConn(context.Background(), newSessionConn())
+
+	_, _, err := toolAddConnection(ctx, nil, AddConnectionInput{Name: "x", DSN: "user:p@tcp(h:3306)/d"}, cm, &config.Config{MCPHTTPStateless: true})
+	if err == nil || !strings.Contains(err.Error(), "stateless") {
+		t.Errorf("stateless mode: %v", err)
+	}
+	_, _, err = toolAddConnection(ctx, nil, AddConnectionInput{Name: sessionConnPrefix + "abc/x", DSN: "user:p@tcp(h:3306)/d"}, cm, &config.Config{})
+	if err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Errorf("reserved prefix: %v", err)
+	}
+	db, _, _ := sqlmock.New()
+	defer db.Close()
+	cm.mu.Lock()
+	cm.connections["prod"] = db
+	cm.configs["prod"] = config.ConnectionConfig{Name: "prod"}
+	cm.mu.Unlock()
+	_, _, err = toolAddConnection(ctx, nil, AddConnectionInput{Name: "prod", DSN: "user:p@tcp(h:3306)/d"}, cm, &config.Config{})
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("shadowing a process-wide name: %v", err)
+	}
+}

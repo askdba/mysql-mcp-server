@@ -3,8 +3,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -472,12 +474,32 @@ func (m missingDriver) Open(string) (driver.Conn, error) { return nil, m.err }
 
 // ===== Per-session active connection (MCP HTTP transport) =====
 
-// sessionConn holds one MCP session's active connection name. An empty name means
-// "use the process-wide active connection". Stdio has a single client and never
-// attaches one, so it keeps the process-wide behavior.
+// sessionConnPrefix namespaces connections registered by add_connection over the MCP
+// HTTP transport: "mcp-session/<session id>/<name>". Users cannot pick such names.
+const sessionConnPrefix = "mcp-session/"
+
+// maxSessionConnections caps how many connections one MCP HTTP session may register.
+const maxSessionConnections = 5
+
+// sessionConn holds one MCP session's connection state over the HTTP transport. Stdio has
+// a single client and never attaches one, so it keeps the process-wide behavior.
+//
+// name is the connection manager key of the session's active connection ("" = use the
+// process-wide active connection). owned maps the names this session registered with
+// add_connection to their manager keys; they are visible only to this session and are
+// removed when it ends.
 type sessionConn struct {
-	mu   sync.Mutex
-	name string
+	mu     sync.Mutex
+	id     string
+	name   string
+	owned  map[string]string
+	closed bool
+}
+
+func newSessionConn() *sessionConn {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return &sessionConn{id: hex.EncodeToString(b), owned: make(map[string]string)}
 }
 
 func (sc *sessionConn) get() string {
@@ -486,10 +508,94 @@ func (sc *sessionConn) get() string {
 	return sc.name
 }
 
-func (sc *sessionConn) set(name string) {
+func (sc *sessionConn) set(key string) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
-	sc.name = name
+	sc.name = key
+}
+
+// resolve maps a user-facing connection name to its manager key: a connection this
+// session registered wins over a process-wide one with the same name.
+func (sc *sessionConn) resolve(name string) string {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if key, ok := sc.owned[name]; ok {
+		return key
+	}
+	return name
+}
+
+// displayName maps a manager key back to the name the session used.
+func (sc *sessionConn) displayName(key string) string {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	for name, k := range sc.owned {
+		if k == key {
+			return name
+		}
+	}
+	return key
+}
+
+// ownedNames returns the session's registered connections as name -> manager key.
+func (sc *sessionConn) ownedNames() map[string]string {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	out := make(map[string]string, len(sc.owned))
+	for n, k := range sc.owned {
+		out[n] = k
+	}
+	return out
+}
+
+// reserve claims name for a new session-owned connection and returns its manager key.
+func (sc *sessionConn) reserve(name string) (string, error) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if sc.closed {
+		return "", fmt.Errorf("MCP session has ended")
+	}
+	if _, ok := sc.owned[name]; ok {
+		return "", ErrConnectionAlreadyExists
+	}
+	if len(sc.owned) >= maxSessionConnections {
+		return "", fmt.Errorf("this MCP session already registered %d connections (limit %d)", len(sc.owned), maxSessionConnections)
+	}
+	key := sessionConnPrefix + sc.id + "/" + name
+	sc.owned[name] = key
+	return key, nil
+}
+
+// release forgets a reservation after a failed add.
+func (sc *sessionConn) release(name string) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	delete(sc.owned, name)
+}
+
+// isClosed reports whether the session has ended.
+func (sc *sessionConn) isClosed() bool {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	return sc.closed
+}
+
+// close marks the session ended and returns the manager keys of its connections.
+func (sc *sessionConn) close() []string {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	sc.closed = true
+	keys := make([]string, 0, len(sc.owned))
+	for _, k := range sc.owned {
+		keys = append(keys, k)
+	}
+	sc.owned = map[string]string{}
+	return keys
+}
+
+// isSessionConnKey reports whether name is a session-owned manager key.
+func isSessionConnKey(name string) bool {
+	return strings.HasPrefix(name, sessionConnPrefix)
 }
 
 type sessionConnKey struct{}
@@ -540,10 +646,12 @@ func (cm *ConnectionManager) SetActiveFor(ctx context.Context, name string) erro
 	if sc == nil {
 		return cm.SetActive(name)
 	}
-	if !cm.Has(name) {
+	key := sc.resolve(name)
+	if (isSessionConnKey(name) && key == name) || !cm.Has(key) {
+		// Another session's connections are never addressable by their internal key.
 		return fmt.Errorf("connection '%s' not found", name)
 	}
-	sc.set(name)
+	sc.set(key)
 	return nil
 }
 

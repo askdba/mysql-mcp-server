@@ -26,7 +26,8 @@ import (
 
 // sessionConnMiddleware attaches per-MCP-session connection state to every request, so
 // use_connection / add_connection switch only the calling session's active connection.
-// State is dropped when the session ends.
+// When the session ends, its state is dropped and the connections it registered with
+// add_connection are closed.
 func sessionConnMiddleware() mcp.Middleware {
 	var sessions sync.Map // *mcp.ServerSession -> *sessionConn
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
@@ -35,16 +36,30 @@ func sessionConnMiddleware() mcp.Middleware {
 				v, ok := sessions.Load(ss) // fast path: no allocation for known sessions
 				if !ok {
 					var loaded bool
-					if v, loaded = sessions.LoadOrStore(ss, &sessionConn{}); !loaded {
+					if v, loaded = sessions.LoadOrStore(ss, newSessionConn()); !loaded {
+						sc := v.(*sessionConn)
 						go func() {
 							_ = ss.Wait()
 							sessions.Delete(ss)
+							closeSessionConnections(sc)
 						}()
 					}
 				}
 				ctx = withSessionConn(ctx, v.(*sessionConn))
 			}
 			return next(ctx, method, req)
+		}
+	}
+}
+
+// closeSessionConnections removes the connections a finished MCP session registered.
+func closeSessionConnections(sc *sessionConn) {
+	for _, key := range sc.close() {
+		if connManager == nil {
+			return
+		}
+		if err := connManager.RemoveConnection(key); err == nil {
+			logInfo("closed session connection", map[string]interface{}{"connection": key})
 		}
 	}
 }

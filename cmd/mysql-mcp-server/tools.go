@@ -763,7 +763,19 @@ func toolListConnections(
 	}
 
 	configs := connManager.List()
-	_, activeName := connManager.ActiveFor(ctx)
+	_, activeKey := connManager.ActiveFor(ctx)
+
+	// Over the HTTP transport, show this session's own connections under the names it
+	// gave them and hide every other session's.
+	sc := sessionConnFrom(ctx)
+	owned := map[string]string{} // manager key -> session name
+	activeName := activeKey
+	if sc != nil {
+		for name, key := range sc.ownedNames() {
+			owned[key] = name
+		}
+		activeName = sc.displayName(activeKey)
+	}
 
 	out := ListConnectionsOutput{
 		Connections: make([]ConnectionInfo, 0, len(configs)),
@@ -771,11 +783,19 @@ func toolListConnections(
 	}
 
 	for _, cfg := range configs {
+		name := cfg.Name
+		if isSessionConnKey(cfg.Name) {
+			n, ok := owned[cfg.Name]
+			if !ok {
+				continue
+			}
+			name = n
+		}
 		out.Connections = append(out.Connections, ConnectionInfo{
-			Name:        cfg.Name,
+			Name:        name,
 			DSN:         cfg.DSN, // Already masked
 			Description: cfg.Description,
-			Active:      cfg.Name == activeName,
+			Active:      cfg.Name == activeKey,
 		})
 	}
 
@@ -891,22 +911,59 @@ func toolAddConnection(
 		return nil, AddConnectionOutput{}, fmt.Errorf("security policy: runtime registration of 'root' user is not allowed")
 	}
 
+	if isSessionConnKey(name) {
+		return nil, AddConnectionOutput{}, fmt.Errorf("connection names starting with %q are reserved", sessionConnPrefix)
+	}
+
+	// Over the HTTP transport the connection belongs to the calling MCP session: it is
+	// registered under a session-scoped key, visible only to that session, and removed
+	// when the session ends. Over stdio it is process-wide, as before.
+	key := name
+	sc := sessionConnFrom(ctx)
+	if sc != nil {
+		if cfg != nil && cfg.MCPHTTPStateless {
+			return nil, AddConnectionOutput{}, fmt.Errorf("add_connection is not available in stateless HTTP mode: the connection would be closed when this request ends")
+		}
+		if cm.Has(name) {
+			return nil, AddConnectionOutput{}, fmt.Errorf("connection '%s' already exists", name)
+		}
+		var err error
+		if key, err = sc.reserve(name); err != nil {
+			if errors.Is(err, ErrConnectionAlreadyExists) {
+				return nil, AddConnectionOutput{}, fmt.Errorf("connection '%s' already exists", name)
+			}
+			return nil, AddConnectionOutput{}, err
+		}
+	}
+
 	// 2. Add connection (brief duplicate check + register after ping; see AddConnectionIfAbsentWithPoolConfig)
 	connCfg := config.ConnectionConfig{
-		Name:        name,
+		Name:        key,
 		DSN:         dsn,
 		Description: input.Description,
 	}
 	if err := cm.AddConnectionIfAbsentWithPoolConfig(ctx, connCfg, cfg); err != nil {
+		if sc != nil {
+			sc.release(name)
+		}
 		if errors.Is(err, ErrConnectionAlreadyExists) {
 			return nil, AddConnectionOutput{}, fmt.Errorf("connection '%s' already exists", name)
 		}
 		return nil, AddConnectionOutput{}, fmt.Errorf("failed to add connection: %w", err)
 	}
+	if sc != nil && sc.isClosed() {
+		// The session ended while the connection was being opened; its cleanup has
+		// already run, so remove the connection here.
+		_ = cm.RemoveConnection(key)
+		return nil, AddConnectionOutput{}, fmt.Errorf("MCP session has ended")
+	}
 
 	// 3. Automatically switch to it (process-wide over stdio; per MCP session over HTTP)
 	if err := cm.SetActiveFor(ctx, name); err != nil {
-		if rbErr := cm.RemoveConnection(name); rbErr != nil {
+		if sc != nil {
+			sc.release(name)
+		}
+		if rbErr := cm.RemoveConnection(key); rbErr != nil {
 			return nil, AddConnectionOutput{}, fmt.Errorf("failed to activate connection: %w (rollback of added connection also failed: %w)", err, rbErr)
 		}
 		return nil, AddConnectionOutput{}, fmt.Errorf("failed to activate connection: %w", err)

@@ -112,3 +112,88 @@ func TestMCPHTTPIntegrationCoreTools(t *testing.T) {
 		t.Error("expected run_query to reject DELETE over HTTP")
 	}
 }
+
+// TestMCPHTTPIntegrationAddConnectionIsSessionScoped registers a connection over HTTP and
+// checks that it is private to the session and closed when the session ends.
+func TestMCPHTTPIntegrationAddConnectionIsSessionScoped(t *testing.T) {
+	dsn := os.Getenv("MYSQL_TEST_DSN")
+	if dsn == "" {
+		dsn = os.Getenv("MYSQL_DSN")
+	}
+	if dsn == "" {
+		t.Skip("MYSQL_TEST_DSN or MYSQL_DSN not set")
+	}
+	t.Setenv("MYSQL_MCP_ENABLE_ADD_CONNECTION", "1")
+
+	c := &config.Config{
+		Transport:             config.TransportHTTP,
+		MCPHTTPBind:           config.DefaultMCPHTTPBind,
+		MCPHTTPPath:           config.DefaultMCPHTTPPath,
+		MCPHTTPSessionTimeout: time.Minute,
+		ExtendedMode:          true,
+		MaxRows:               config.DefaultMaxRows,
+		QueryTimeout:          time.Duration(config.DefaultQueryTimeoutSecs) * time.Second,
+		PingTimeout:           time.Duration(config.DefaultPingTimeoutSecs) * time.Second,
+		MaxOpenConns:          config.DefaultMaxOpenConns,
+		MaxIdleConns:          config.DefaultMaxIdleConns,
+		ConnMaxLifetime:       time.Duration(config.DefaultConnMaxLifetimeMins) * time.Minute,
+		ConnMaxIdleTime:       time.Duration(config.DefaultConnMaxIdleTimeMins) * time.Minute,
+	}
+	cm := NewConnectionManager()
+	defer cm.Close()
+	if err := cm.AddConnectionWithPoolConfig(config.ConnectionConfig{Name: "default", DSN: dsn}, c); err != nil {
+		t.Fatalf("add connection: %v", err)
+	}
+	oldCfg, oldCM, oldAudit, oldMax, oldTimeout, oldExt := cfg, connManager, auditLogger, maxRows, queryTimeout, extendedMode
+	cfg, connManager, auditLogger, maxRows, queryTimeout, extendedMode = c, cm, &AuditLogger{}, c.MaxRows, c.QueryTimeout, true
+	defer func() {
+		cfg, connManager, auditLogger, maxRows, queryTimeout, extendedMode = oldCfg, oldCM, oldAudit, oldMax, oldTimeout, oldExt
+	}()
+
+	handler, err := newMCPHTTPHandler(buildMCPServer(), c, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	f := &mcpHTTPFixture{srv: srv, cm: cm}
+
+	// add_connection rejects root DSNs; CI and the Makefile use a non-root user.
+	s1 := f.connect(t, nil)
+	added := callTool[AddConnectionOutput](t, s1, "add_connection", map[string]any{"name": "extra", "dsn": dsn})
+	if !added.Success || added.Active != "extra" {
+		t.Fatalf("add_connection: %+v", added)
+	}
+	if got := callTool[ListConnectionsOutput](t, s1, "list_connections", map[string]any{}); got.Active != "extra" || len(got.Connections) != 2 {
+		t.Errorf("session 1 list: %+v", got)
+	}
+
+	s2 := f.connect(t, nil)
+	if got := callTool[ListConnectionsOutput](t, s2, "list_connections", map[string]any{}); len(got.Connections) != 1 || got.Active != "default" {
+		t.Errorf("session 2 must not see session 1's connection: %+v", got)
+	}
+	if again := callTool[AddConnectionOutput](t, s2, "add_connection", map[string]any{"name": "extra", "dsn": dsn}); !again.Success {
+		t.Errorf("session 2 should be able to reuse the name: %+v", again)
+	}
+
+	countSessionConns := func() int {
+		n := 0
+		for _, cc := range cm.List() {
+			if isSessionConnKey(cc.Name) {
+				n++
+			}
+		}
+		return n
+	}
+	if n := countSessionConns(); n != 2 {
+		t.Fatalf("session connections registered = %d, want 2", n)
+	}
+	_ = s1.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for countSessionConns() != 1 {
+		if time.Now().After(deadline) {
+			t.Fatalf("session 1's connection was not closed when the session ended (have %d)", countSessionConns())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}

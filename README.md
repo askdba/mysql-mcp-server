@@ -563,11 +563,13 @@ Behavior and safety:
   - If it forwards to a non-loopback bind, also set `MYSQL_MCP_HTTP_ALLOW_INSECURE=1`; the token is still required.
 - **Browser protections:** requests from other origins are rejected. Origins listed in `MYSQL_MCP_HTTP_ALLOWED_ORIGINS` get CORS headers, including answers to preflight requests, so browser-based clients work. On localhost, requests whose `Host` header is not a localhost name (or an allowed host) are rejected (DNS-rebinding protection).
 - **Per-session connections:** `use_connection` and `add_connection` switch the active connection for **that MCP session only**; other HTTP clients keep theirs. If a session's connection is removed, its tools fail with "connection '…' no longer exists" instead of silently running on another server. In stateless mode (`MYSQL_MCP_HTTP_STATELESS=1`) a switch lasts only for the request that made it.
-- **`add_connection` over HTTP is process-wide; keep it off for remote deployments** (`MYSQL_MCP_ENABLE_ADD_CONNECTION` is off by default) unless every token holder is trusted:
-  - Only the *switch* is per session. The registered connection (its pool, SSH tunnel and credentials) belongs to the whole process and **outlives the session that added it**. Nothing removes it until the server restarts.
-  - Every other session sees it in `list_connections` and can `use_connection` into it, using the credentials the first client supplied.
-  - Names are global, so a second session adding the same name gets "already exists".
-  - It lets a client make the server connect to any host the server can reach.
+- **`add_connection` over HTTP belongs to the session** (`MYSQL_MCP_ENABLE_ADD_CONNECTION=1`; off by default):
+  - The new connection is visible only to the session that added it, in `list_connections` and `use_connection`. Other sessions cannot see or use it, or its credentials.
+  - Names are per session: two sessions can each add `staging`. A name that is already a configured, process-wide connection is refused.
+  - It is closed (pool and SSH tunnel) when the session ends, either by the client disconnecting or after `MYSQL_MCP_HTTP_SESSION_TIMEOUT_MINUTES` idle.
+  - Each session can register at most 5 connections.
+  - It is refused in stateless mode, where the connection would close as soon as the request ends.
+  - It still lets any token holder make the server connect to any host the server can reach, so enable it for remote deployments only when every token holder is trusted.
 - **Other endpoints on the same port:** `GET /health` (no auth) and `GET /api/metrics/tokens` (same token). `/status` is served only when no token is configured, because a browser cannot send the bearer token.
 - `MYSQL_HTTP_RATE_LIMIT` applies to this transport too.
 - It cannot run in the same process as the REST API (`MYSQL_MCP_HTTP=1`); run two processes if you need both.
@@ -703,7 +705,7 @@ Output:
 
 ### add_connection
 
-**MCP tool.** Available when the server runs in **MCP mode** (stdio or [Streamable HTTP](#remote-mcp-over-http-streamable-http)) with **`MYSQL_MCP_EXTENDED=1`** and **`MYSQL_MCP_ENABLE_ADD_CONNECTION=1`**. It registers a new named MySQL connection at runtime and switches to it: over stdio the **process-wide** active connection changes; over Streamable HTTP only **the calling MCP session** switches, while the registered connection itself stays process-wide and visible to other sessions. There is **no** REST API route to register a new DSN. **REST API mode** (`MYSQL_MCP_HTTP=1`) is a **separate** process: [`GET /api/connections`](#api-endpoints) and [`POST /api/connections/use`](#api-endpoints) only list and switch connections **loaded in that HTTP server instance**—they do **not** see names added via MCP in a stdio process, and MCP does not reach into a separate HTTP-only deployment.
+**MCP tool.** Available when the server runs in **MCP mode** (stdio or [Streamable HTTP](#remote-mcp-over-http-streamable-http)) with **`MYSQL_MCP_EXTENDED=1`** and **`MYSQL_MCP_ENABLE_ADD_CONNECTION=1`**. It registers a new named MySQL connection at runtime and switches to it: over stdio the **process-wide** active connection changes; over Streamable HTTP the connection belongs to **the calling MCP session**: only that session sees and uses it, and it is closed when the session ends ([details](#remote-mcp-over-http-streamable-http)). There is **no** REST API route to register a new DSN. **REST API mode** (`MYSQL_MCP_HTTP=1`) is a **separate** process: [`GET /api/connections`](#api-endpoints) and [`POST /api/connections/use`](#api-endpoints) only list and switch connections **loaded in that HTTP server instance**—they do **not** see names added via MCP in a stdio process, and MCP does not reach into a separate HTTP-only deployment.
 
 Enable:
 
