@@ -204,3 +204,74 @@ http:
 		t.Errorf("PrintConfig missing MCP HTTP settings:\n%s", printed)
 	}
 }
+
+func TestValidateTransportBindAndPath(t *testing.T) {
+	tests := []struct {
+		bind, path, wantErr string
+	}{
+		{"[::1]", "/mcp", ""},
+		{"::1", "/v1/mcp", ""},
+		{"0.0.0.0:9306", "/mcp", "without a port"},
+		{"127.0.0.1:9306", "/mcp", "without a port"},
+		{"127.0.0.1", "/health", "reserved"},
+		{"127.0.0.1", "/api/metrics/tokens", "reserved"},
+		{"127.0.0.1", "/mcp/", "clean literal path"},
+		{"127.0.0.1", "/{x}", "clean literal path"},
+		{"127.0.0.1", "/a/../mcp", "clean literal path"},
+	}
+	for _, tc := range tests {
+		c := &Config{Transport: TransportHTTP, MCPHTTPBind: tc.bind, MCPHTTPPath: tc.path}
+		applyMCPHTTPDefaults(c)
+		err := ValidateTransport(c)
+		if tc.wantErr == "" {
+			if err != nil {
+				t.Errorf("bind=%q path=%q: unexpected error %v", tc.bind, tc.path, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("bind=%q path=%q: error %v, want containing %q", tc.bind, tc.path, err, tc.wantErr)
+		}
+	}
+	c := &Config{MCPHTTPBind: "[::1]"}
+	applyMCPHTTPDefaults(c)
+	if c.MCPHTTPBind != "::1" {
+		t.Errorf("bracketed bind normalized to %q, want ::1", c.MCPHTTPBind)
+	}
+}
+
+func TestValidateConfigFileTransport(t *testing.T) {
+	clearEnv()
+	defer clearEnv()
+	dir := t.TempDir()
+	write := func(body string) string {
+		p := filepath.Join(dir, "c.yaml")
+		if err := os.WriteFile(p, []byte("connections:\n  default:\n    dsn: \"u:p@tcp(h:3306)/d\"\n"+body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	tokenFile := filepath.Join(dir, "token")
+	if err := os.WriteFile(tokenFile, []byte("t"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ValidateConfigFile(write("transport: htp\n")); err == nil || !strings.Contains(err.Error(), "invalid MYSQL_MCP_TRANSPORT") {
+		t.Errorf("typo transport: %v", err)
+	}
+	if err := ValidateConfigFile(write("transport: http\nhttp:\n  mcp:\n    bind: 0.0.0.0\n")); err == nil || !strings.Contains(err.Error(), "bearer token is required") {
+		t.Errorf("remote bind without token: %v", err)
+	}
+	if err := ValidateConfigFile(write("transport: http\nhttp:\n  mcp:\n    tls_cert: c.pem\n")); err == nil || !strings.Contains(err.Error(), "set together") {
+		t.Errorf("cert without key: %v", err)
+	}
+	ok := "transport: http\nhttp:\n  mcp:\n    bind: 0.0.0.0\n    token_file: " + tokenFile + "\n    allow_insecure: true\n    allowed_hosts: [mcp.example.com]\n"
+	if err := ValidateConfigFile(write(ok)); err != nil {
+		t.Errorf("valid remote config rejected: %v", err)
+	}
+	// A token supplied by the environment at runtime satisfies the check.
+	os.Setenv("MYSQL_MCP_HTTP_TOKEN", "env-token")
+	if err := ValidateConfigFile(write("transport: http\nhttp:\n  mcp:\n    bind: 0.0.0.0\n    allow_insecure: true\n")); err != nil {
+		t.Errorf("env token not honored: %v", err)
+	}
+}

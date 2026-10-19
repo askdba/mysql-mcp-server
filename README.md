@@ -140,15 +140,16 @@ Environment variables:
 | MYSQL_MCP_METRICS_HTTP | No | 0 | With **stdio MCP only**: expose **`/status`** + **`/api/metrics/tokens`** on **`MYSQL_HTTP_PORT`** (same process as Claude/Cursor) |
 | MYSQL_HTTP_PORT | No | 9306 | Port for REST API, MCP HTTP transport, **or** metrics sidecar |
 | MYSQL_MCP_TRANSPORT | No | stdio | MCP transport: `stdio` or `http` ([MCP Streamable HTTP](#remote-mcp-over-http-streamable-http)). `http` cannot be combined with `MYSQL_MCP_HTTP=1` |
-| MYSQL_MCP_HTTP_BIND | No | 127.0.0.1 | Listen address for the MCP HTTP transport. Any non-loopback address requires a token **and** TLS |
-| MYSQL_MCP_HTTP_PATH | No | /mcp | MCP endpoint path |
+| MYSQL_MCP_HTTP_BIND | No | 127.0.0.1 | Listen address (host or IP, no port; `[::1]` is accepted) for the MCP HTTP transport. Any non-loopback address requires a token **and** TLS |
+| MYSQL_MCP_HTTP_PATH | No | /mcp | MCP endpoint path: a literal path without trailing `/` or wildcards, not `/health`, `/status` or `/api/metrics/tokens` |
 | MYSQL_MCP_HTTP_TOKEN | No | – | Bearer token clients must send (`Authorization: Bearer …`). Required for non-loopback binds |
 | MYSQL_MCP_HTTP_TOKEN_FILE | No | – | File containing the bearer token (keeps it out of the environment) |
 | MYSQL_MCP_HTTP_TLS_CERT / MYSQL_MCP_HTTP_TLS_KEY | No | – | Serve HTTPS. Required for non-loopback binds |
 | MYSQL_MCP_HTTP_ALLOW_INSECURE | No | 0 | Set `1` to allow a non-loopback bind **without** TLS when a reverse proxy terminates TLS in front. The token is still required |
 | MYSQL_MCP_HTTP_STATELESS | No | 0 | Set `1` for stateless sessions (no `Mcp-Session-Id`); `use_connection` then only lasts one request |
 | MYSQL_MCP_HTTP_SESSION_TIMEOUT_MINUTES | No | 30 | Close idle MCP HTTP sessions after this many minutes |
-| MYSQL_MCP_HTTP_ALLOWED_ORIGINS | No | – | Comma-separated extra trusted origins for browser-based MCP clients (cross-origin requests are rejected otherwise) |
+| MYSQL_MCP_HTTP_ALLOWED_ORIGINS | No | – | Comma-separated browser origins (e.g. `https://app.example.com`) allowed to call the endpoint: they get CORS headers and pass cross-origin protection. Other origins are rejected |
+| MYSQL_MCP_HTTP_ALLOWED_HOSTS | No | – | Comma-separated public host names a **reverse proxy on the same machine** forwards to the loopback listener (e.g. `mcp.example.com`). Without it, such requests fail the DNS-rebinding check with 403 |
 | MYSQL_HTTP_RATE_LIMIT | No | 0 | Enable rate limiting for HTTP mode (set to 1) |
 | MYSQL_HTTP_RATE_LIMIT_RPS | No | 100 | Rate limit: requests per second |
 | MYSQL_HTTP_RATE_LIMIT_BURST | No | 200 | Rate limit: burst size |
@@ -556,10 +557,17 @@ claude mcp add --transport http mysql https://db-tools.example.com:9306/mcp \
 
 Behavior and safety:
 
-- **Refuses to start unsafely:** a non-loopback bind without a token, or without TLS, is a startup error. If a reverse proxy terminates TLS, set `MYSQL_MCP_HTTP_ALLOW_INSECURE=1`; the token is still required.
-- **Browser protections:** requests from other origins are rejected unless listed in `MYSQL_MCP_HTTP_ALLOWED_ORIGINS`. On localhost, requests whose `Host` header is not a localhost name are rejected (DNS-rebinding protection).
-- **Per-session connections:** `use_connection` and `add_connection` switch the active connection for **that MCP session only**; other HTTP clients keep theirs. Connections registered with `add_connection` are shared by all sessions.
-- **Keep `add_connection` off for remote deployments** unless every token holder is trusted: it lets a client make the server connect to any host it can reach (`MYSQL_MCP_ENABLE_ADD_CONNECTION` is off by default).
+- **Refuses to start unsafely:** a non-loopback bind without a token, or without TLS, is a startup error. `--validate-config` runs the same checks.
+- **Behind a reverse proxy** (nginx, Caddy, …) that terminates TLS:
+  - If the proxy forwards to the loopback listener (default bind), list its public names in `MYSQL_MCP_HTTP_ALLOWED_HOSTS`. Otherwise the DNS-rebinding check rejects its `Host` header.
+  - If it forwards to a non-loopback bind, also set `MYSQL_MCP_HTTP_ALLOW_INSECURE=1`; the token is still required.
+- **Browser protections:** requests from other origins are rejected. Origins listed in `MYSQL_MCP_HTTP_ALLOWED_ORIGINS` get CORS headers, including answers to preflight requests, so browser-based clients work. On localhost, requests whose `Host` header is not a localhost name (or an allowed host) are rejected (DNS-rebinding protection).
+- **Per-session connections:** `use_connection` and `add_connection` switch the active connection for **that MCP session only**; other HTTP clients keep theirs. If a session's connection is removed, its tools fail with "connection '…' no longer exists" instead of silently running on another server. In stateless mode (`MYSQL_MCP_HTTP_STATELESS=1`) a switch lasts only for the request that made it.
+- **`add_connection` over HTTP is process-wide; keep it off for remote deployments** (`MYSQL_MCP_ENABLE_ADD_CONNECTION` is off by default) unless every token holder is trusted:
+  - Only the *switch* is per session. The registered connection (its pool, SSH tunnel and credentials) belongs to the whole process and **outlives the session that added it**. Nothing removes it until the server restarts.
+  - Every other session sees it in `list_connections` and can `use_connection` into it, using the credentials the first client supplied.
+  - Names are global, so a second session adding the same name gets "already exists".
+  - It lets a client make the server connect to any host the server can reach.
 - **Other endpoints on the same port:** `GET /health` (no auth) and `GET /api/metrics/tokens` (same token). `/status` is served only when no token is configured, because a browser cannot send the bearer token.
 - `MYSQL_HTTP_RATE_LIMIT` applies to this transport too.
 - It cannot run in the same process as the REST API (`MYSQL_MCP_HTTP=1`); run two processes if you need both.
@@ -578,7 +586,8 @@ http:
     tls_key: /etc/mysql-mcp/key.pem
     session_timeout_minutes: 30
     # stateless: false
-    # allowed_origins: ["https://app.example.com"]
+    # allowed_origins: ["https://app.example.com"]   # browser clients (CORS)
+    # allowed_hosts: ["mcp.example.com"]             # reverse proxy forwarding to loopback
     # allow_insecure: false
 ```
 

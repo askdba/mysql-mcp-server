@@ -122,6 +122,7 @@ type FileMCPHTTPConfig struct {
 	Stateless             bool     `yaml:"stateless,omitempty" json:"stateless,omitempty"`
 	SessionTimeoutMinutes int      `yaml:"session_timeout_minutes,omitempty" json:"session_timeout_minutes,omitempty"`
 	AllowedOrigins        []string `yaml:"allowed_origins,omitempty" json:"allowed_origins,omitempty"`
+	AllowedHosts          []string `yaml:"allowed_hosts,omitempty" json:"allowed_hosts,omitempty"`
 	AllowInsecure         bool     `yaml:"allow_insecure,omitempty" json:"allow_insecure,omitempty"`
 }
 
@@ -246,7 +247,17 @@ func ValidateConfigFile(path string) error {
 		}
 	}
 
-	return nil
+	// Transport settings: same checks as startup. The bearer token may also come from
+	// MYSQL_MCP_HTTP_TOKEN at runtime, so honor it here.
+	rc := cfg.ToConfig()
+	applyMCPHTTPDefaults(rc)
+	if v := strings.TrimSpace(os.Getenv("MYSQL_MCP_HTTP_TOKEN")); v != "" {
+		rc.MCPHTTPToken = v
+	}
+	if err := resolveMCPHTTPToken(rc); err != nil {
+		return err
+	}
+	return ValidateTransport(rc)
 }
 
 // ToConfig converts a FileConfig to the runtime Config struct.
@@ -368,6 +379,7 @@ func (fc *FileConfig) ToConfig() *Config {
 			cfg.MCPHTTPSessionTimeout = time.Duration(m.SessionTimeoutMinutes) * time.Minute
 		}
 		cfg.MCPHTTPAllowedOrigins = m.AllowedOrigins
+		cfg.MCPHTTPAllowedHosts = m.AllowedHosts
 		cfg.MCPHTTPAllowInsecure = m.AllowInsecure
 	}
 
@@ -470,6 +482,7 @@ func PrintConfig(cfg *Config) string {
 			Stateless:             cfg.MCPHTTPStateless,
 			SessionTimeoutMinutes: int(cfg.MCPHTTPSessionTimeout.Minutes()),
 			AllowedOrigins:        cfg.MCPHTTPAllowedOrigins,
+			AllowedHosts:          cfg.MCPHTTPAllowedHosts,
 			AllowInsecure:         cfg.MCPHTTPAllowInsecure,
 		}
 	}

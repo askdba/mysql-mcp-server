@@ -11,8 +11,9 @@ Semantic Versioning.
 
 - **MCP Streamable HTTP transport** (`MYSQL_MCP_TRANSPORT=http`, #140). Remote MCP clients connect at `http://127.0.0.1:9306/mcp` (path, bind address and port configurable) and get the same tools, prompts and resources as stdio.
   - Binds to loopback by default. Any other address requires a bearer token (`MYSQL_MCP_HTTP_TOKEN` / `MYSQL_MCP_HTTP_TOKEN_FILE`) and TLS (`MYSQL_MCP_HTTP_TLS_CERT` / `_KEY`); `MYSQL_MCP_HTTP_ALLOW_INSECURE=1` allows plain HTTP behind a TLS-terminating proxy.
-  - Cross-origin requests and DNS-rebinding `Host` headers are rejected; extra trusted origins go in `MYSQL_MCP_HTTP_ALLOWED_ORIGINS`.
-  - `use_connection` / `add_connection` switch the active connection per MCP session, not for the whole process.
+  - Cross-origin requests and DNS-rebinding `Host` headers are rejected. Browser clients from `MYSQL_MCP_HTTP_ALLOWED_ORIGINS` get full CORS support (preflight answered before the token check). `MYSQL_MCP_HTTP_ALLOWED_HOSTS` lets a same-host reverse proxy forward its public names to the loopback listener.
+  - `use_connection` / `add_connection` switch the active connection per MCP session, not for the whole process. A session whose connection was removed gets a clear error instead of silently using another connection. Connections registered by `add_connection` remain process-wide (see README).
+  - `--validate-config` checks the transport settings; invalid bind addresses (with a port) and endpoint paths (reserved, wildcard or non-literal) are rejected at startup.
   - Stateless mode (`MYSQL_MCP_HTTP_STATELESS=1`), idle session timeout, rate limiting, `/health` and token metrics on the same port, `--daemon` support, and `transport:` / `http.mcp:` config-file keys.
   - It cannot be combined with the REST API (`MYSQL_MCP_HTTP=1`) in one process.
 

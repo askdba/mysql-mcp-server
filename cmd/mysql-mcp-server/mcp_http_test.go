@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -54,10 +55,10 @@ func newMCPHTTPFixture(t *testing.T, mutate func(*config.Config)) *mcpHTTPFixtur
 		mutate(c)
 	}
 
-	oldCfg, oldCM := cfg, connManager
-	cfg, connManager = c, cm
+	oldCfg, oldCM, oldTimeout := cfg, connManager, queryTimeout
+	cfg, connManager, queryTimeout = c, cm, 5*time.Second
 	t.Cleanup(func() {
-		cfg, connManager = oldCfg, oldCM
+		cfg, connManager, queryTimeout = oldCfg, oldCM, oldTimeout
 		_ = dbA.Close()
 		_ = dbB.Close()
 	})
@@ -333,5 +334,130 @@ func TestMCPHTTPStatelessDoesNotLeakSessions(t *testing.T) {
 			t.Fatalf("goroutines grew from %d to %d after 50 stateless requests", base, runtime.NumGoroutine())
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func postInitialize(t *testing.T, url string, mod func(*http.Request)) *http.Response {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, url, strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"x","version":"0"}}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	if mod != nil {
+		mod(req)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp
+}
+
+func TestMCPHTTPAllowedHostsForReverseProxy(t *testing.T) {
+	// Without allowed hosts, a proxy's public Host on a loopback listener is rejected.
+	f := newMCPHTTPFixture(t, nil)
+	if code := postInitialize(t, f.srv.URL+"/mcp", func(r *http.Request) { r.Host = "mcp.example.com" }).StatusCode; code != http.StatusForbidden {
+		t.Fatalf("proxy Host without allowlist: %d, want 403", code)
+	}
+
+	f = newMCPHTTPFixture(t, func(c *config.Config) { c.MCPHTTPAllowedHosts = []string{"MCP.example.com"} })
+	if code := postInitialize(t, f.srv.URL+"/mcp", func(r *http.Request) { r.Host = "mcp.example.com:443" }).StatusCode; code != http.StatusOK {
+		t.Errorf("allowed proxy Host: %d, want 200", code)
+	}
+	if code := postInitialize(t, f.srv.URL+"/mcp", func(r *http.Request) { r.Host = "evil.example" }).StatusCode; code != http.StatusForbidden {
+		t.Errorf("unlisted Host: %d, want 403", code)
+	}
+	if code := postInitialize(t, f.srv.URL+"/mcp", nil).StatusCode; code != http.StatusOK {
+		t.Errorf("localhost Host: %d, want 200", code)
+	}
+}
+
+func TestMCPHTTPCORSPreflightBeforeAuth(t *testing.T) {
+	f := newMCPHTTPFixture(t, func(c *config.Config) {
+		c.MCPHTTPToken = "s3cret"
+		c.MCPHTTPAllowedOrigins = []string{"https://app.example"}
+	})
+
+	preflight := func(origin string) *http.Response {
+		req, _ := http.NewRequest(http.MethodOptions, f.srv.URL+"/mcp", nil)
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Access-Control-Request-Method", "POST")
+		req.Header.Set("Access-Control-Request-Headers", "authorization, content-type")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+
+	resp := preflight("https://app.example")
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("allowed preflight: %d, want 204", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "https://app.example" {
+		t.Errorf("Access-Control-Allow-Origin = %q", got)
+	}
+	if !strings.Contains(resp.Header.Get("Access-Control-Allow-Headers"), "Authorization") {
+		t.Errorf("Access-Control-Allow-Headers = %q", resp.Header.Get("Access-Control-Allow-Headers"))
+	}
+
+	resp = preflight("https://evil.example")
+	if resp.Header.Get("Access-Control-Allow-Origin") != "" {
+		t.Error("disallowed origin must not get CORS headers")
+	}
+
+	resp = postInitialize(t, f.srv.URL+"/mcp", func(r *http.Request) {
+		r.Header.Set("Origin", "https://app.example")
+		r.Header.Set("Sec-Fetch-Site", "cross-site")
+		r.Header.Set("Authorization", "Bearer s3cret")
+	})
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Access-Control-Allow-Origin") != "https://app.example" {
+		t.Errorf("allowed origin POST: %d ACAO=%q", resp.StatusCode, resp.Header.Get("Access-Control-Allow-Origin"))
+	}
+	if !strings.Contains(resp.Header.Get("Access-Control-Expose-Headers"), "Mcp-Session-Id") {
+		t.Error("Mcp-Session-Id must be exposed to browser clients")
+	}
+}
+
+func TestMCPHTTPRemovedSessionConnectionErrors(t *testing.T) {
+	f := newMCPHTTPFixture(t, nil)
+	f.mockB.ExpectQuery("SELECT DATABASE\\(\\)").WillReturnRows(sqlmock.NewRows([]string{"DATABASE()"}).AddRow("db"))
+	s1 := f.connect(t, nil)
+	if out := callTool[UseConnectionOutput](t, s1, "use_connection", map[string]any{"name": "b"}); !out.Success {
+		t.Fatalf("use_connection: %+v", out)
+	}
+	if err := f.cm.RemoveConnection("b"); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s1.CallTool(context.Background(), &mcp.CallToolParams{Name: "list_databases", Arguments: map[string]any{}})
+	if err == nil && !res.IsError {
+		t.Fatal("expected an error after the session's connection was removed, not a silent fallback")
+	}
+	msg := fmt.Sprint(err)
+	if res != nil {
+		b, _ := json.Marshal(res.Content)
+		msg += string(b)
+	}
+	if !strings.Contains(msg, "no longer exists") {
+		t.Errorf("error should explain the removed connection, got %s", msg)
+	}
+	if err := f.mockA.ExpectationsWereMet(); err != nil {
+		t.Errorf("query must not run on the process-wide connection: %v", err)
+	}
+}
+
+func TestGetDBWithoutActiveConnectionReturnsError(t *testing.T) {
+	old := connManager
+	connManager = NewConnectionManager()
+	defer func() { connManager = old }()
+	err := getDB(context.Background()).PingContext(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "no active MySQL connection") {
+		t.Fatalf("expected no-active-connection error, got %v", err)
+	}
+	if getDB(context.Background()) != getDB(context.Background()) {
+		t.Error("missing-connection handle should be cached")
 	}
 }

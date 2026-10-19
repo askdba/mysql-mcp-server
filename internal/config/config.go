@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -95,7 +96,8 @@ type Config struct {
 	MCPHTTPTLSKey         string        // TLS key path
 	MCPHTTPStateless      bool          // stateless MCP sessions (no Mcp-Session-Id)
 	MCPHTTPSessionTimeout time.Duration // idle session timeout; unset/0 defaults to 30m (cannot be disabled)
-	MCPHTTPAllowedOrigins []string      // extra trusted origins for cross-origin protection
+	MCPHTTPAllowedOrigins []string      // browser origins allowed via CORS and cross-origin protection
+	MCPHTTPAllowedHosts   []string      // extra Host names accepted on loopback (reverse proxy in front)
 	MCPHTTPAllowInsecure  bool          // permit non-loopback bind without TLS (e.g. behind a TLS proxy)
 
 	// Rate limiting (HTTP mode only)
@@ -294,6 +296,9 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("MYSQL_MCP_HTTP_ALLOWED_ORIGINS"); v != "" {
 		cfg.MCPHTTPAllowedOrigins = parseCSVList(v)
 	}
+	if v := os.Getenv("MYSQL_MCP_HTTP_ALLOWED_HOSTS"); v != "" {
+		cfg.MCPHTTPAllowedHosts = parseCSVList(v)
+	}
 	if v := os.Getenv("MYSQL_MCP_HTTP_ALLOW_INSECURE"); v != "" {
 		cfg.MCPHTTPAllowInsecure = getEnvBool("MYSQL_MCP_HTTP_ALLOW_INSECURE")
 	}
@@ -353,6 +358,11 @@ func applyMCPHTTPDefaults(cfg *Config) {
 	if cfg.Transport == "" {
 		cfg.Transport = TransportStdio
 	}
+	// Accept IPv6 in brackets ("[::1]"); net.JoinHostPort adds them back when listening.
+	cfg.MCPHTTPBind = strings.TrimSpace(cfg.MCPHTTPBind)
+	if strings.HasPrefix(cfg.MCPHTTPBind, "[") && strings.HasSuffix(cfg.MCPHTTPBind, "]") {
+		cfg.MCPHTTPBind = cfg.MCPHTTPBind[1 : len(cfg.MCPHTTPBind)-1]
+	}
 	if cfg.MCPHTTPBind == "" {
 		cfg.MCPHTTPBind = DefaultMCPHTTPBind
 	}
@@ -402,8 +412,11 @@ func ValidateTransport(cfg *Config) error {
 	if cfg.HTTPMode {
 		return fmt.Errorf("MYSQL_MCP_TRANSPORT=http cannot be combined with the REST API (MYSQL_MCP_HTTP=1); run them as separate processes")
 	}
-	if !strings.HasPrefix(cfg.MCPHTTPPath, "/") || cfg.MCPHTTPPath == "/" {
-		return fmt.Errorf("MYSQL_MCP_HTTP_PATH must start with '/' and not be the root path (got %q)", cfg.MCPHTTPPath)
+	if err := validateMCPHTTPPath(cfg.MCPHTTPPath); err != nil {
+		return err
+	}
+	if _, _, err := net.SplitHostPort(cfg.MCPHTTPBind); err == nil || strings.ContainsAny(cfg.MCPHTTPBind, "[]/ ") {
+		return fmt.Errorf("MYSQL_MCP_HTTP_BIND must be a host name or IP address without a port (got %q); set the port with MYSQL_HTTP_PORT", cfg.MCPHTTPBind)
 	}
 	if (cfg.MCPHTTPTLSCert == "") != (cfg.MCPHTTPTLSKey == "") {
 		return fmt.Errorf("MYSQL_MCP_HTTP_TLS_CERT and MYSQL_MCP_HTTP_TLS_KEY must be set together")
@@ -414,6 +427,27 @@ func ValidateTransport(cfg *Config) error {
 		}
 		if cfg.MCPHTTPTLSCert == "" && !cfg.MCPHTTPAllowInsecure {
 			return fmt.Errorf("MCP HTTP bind %q is not loopback: TLS is required (MYSQL_MCP_HTTP_TLS_CERT/KEY), or set MYSQL_MCP_HTTP_ALLOW_INSECURE=1 when a TLS proxy terminates in front", cfg.MCPHTTPBind)
+		}
+	}
+	return nil
+}
+
+// reservedMCPHTTPPaths are served next to the MCP endpoint on the same listener.
+var reservedMCPHTTPPaths = []string{"/health", "/status", "/api/metrics/tokens"}
+
+// validateMCPHTTPPath requires a clean, literal path that does not collide with the
+// other routes. It is used as an exact http.ServeMux pattern, so wildcards ("{...}"),
+// subtree patterns (trailing "/") and duplicates would change routing or panic.
+func validateMCPHTTPPath(p string) error {
+	if !strings.HasPrefix(p, "/") || p == "/" {
+		return fmt.Errorf("MYSQL_MCP_HTTP_PATH must start with '/' and not be the root path (got %q)", p)
+	}
+	if path.Clean(p) != p || strings.ContainsAny(p, "{}?#% \t") {
+		return fmt.Errorf("MYSQL_MCP_HTTP_PATH must be a clean literal path without a trailing '/', wildcards or query characters (got %q)", p)
+	}
+	for _, r := range reservedMCPHTTPPaths {
+		if p == r {
+			return fmt.Errorf("MYSQL_MCP_HTTP_PATH %q is reserved for another endpoint", p)
 		}
 	}
 	return nil

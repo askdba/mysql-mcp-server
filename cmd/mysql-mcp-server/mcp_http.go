@@ -32,12 +32,15 @@ func sessionConnMiddleware() mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 			if ss, ok := req.GetSession().(*mcp.ServerSession); ok && ss != nil {
-				v, loaded := sessions.LoadOrStore(ss, &sessionConn{})
-				if !loaded {
-					go func() {
-						_ = ss.Wait()
-						sessions.Delete(ss)
-					}()
+				v, ok := sessions.Load(ss) // fast path: no allocation for known sessions
+				if !ok {
+					var loaded bool
+					if v, loaded = sessions.LoadOrStore(ss, &sessionConn{}); !loaded {
+						go func() {
+							_ = ss.Wait()
+							sessions.Delete(ss)
+						}()
+					}
 				}
 				ctx = withSessionConn(ctx, v.(*sessionConn))
 			}
@@ -65,6 +68,73 @@ func requireBearerToken(token string, next http.Handler) http.Handler {
 	})
 }
 
+// mcpCORSAllowHeaders are the request headers browser MCP clients send on the endpoint.
+const mcpCORSAllowHeaders = "Authorization, Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID"
+
+// withMCPCORS answers CORS for the configured browser origins. It runs before the token
+// check, because a preflight OPTIONS request never carries the Authorization header.
+// Requests from other origins get no CORS headers (cross-origin protection rejects them).
+func withMCPCORS(allowed []string, next http.Handler) http.Handler {
+	if len(allowed) == 0 {
+		return next
+	}
+	origins := make(map[string]struct{}, len(allowed))
+	for _, o := range allowed {
+		origins[strings.TrimRight(o, "/")] = struct{}{}
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if _, ok := origins[origin]; !ok || origin == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		h := w.Header()
+		h.Add("Vary", "Origin")
+		h.Set("Access-Control-Allow-Origin", origin)
+		h.Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
+		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+			h.Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			h.Set("Access-Control-Allow-Headers", mcpCORSAllowHeaders)
+			h.Set("Access-Control-Max-Age", "600")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// withAllowedHosts replaces the SDK's DNS-rebinding check when a reverse proxy forwards
+// public Host names to a loopback listener: a request arriving on a loopback address must
+// carry a localhost Host or one of the configured names.
+func withAllowedHosts(allowed []string, next http.Handler) http.Handler {
+	hosts := make(map[string]struct{}, len(allowed))
+	for _, h := range allowed {
+		hosts[strings.ToLower(strings.TrimSpace(h))] = struct{}{}
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if local, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr); ok && local != nil && isLoopbackHostPort(local.String()) {
+			host := strings.ToLower(r.Host)
+			if h, _, err := net.SplitHostPort(host); err == nil {
+				host = h
+			}
+			if _, ok := hosts[host]; !ok && !config.IsLoopbackBind(host) {
+				http.Error(w, fmt.Sprintf("Forbidden: invalid Host header %q", r.Host), http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isLoopbackHostPort reports whether an "ip:port" address is on a loopback interface.
+func isLoopbackHostPort(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	return config.IsLoopbackBind(host)
+}
+
 // newMCPHTTPHandler builds the handler for the MCP HTTP transport:
 //   - c.MCPHTTPPath: MCP Streamable HTTP (bearer token, cross-origin protection,
 //     and the SDK's DNS-rebinding protection for localhost)
@@ -75,13 +145,19 @@ func requireBearerToken(token string, next http.Handler) http.Handler {
 func newMCPHTTPHandler(server *mcp.Server, c *config.Config, rl *api.RateLimiter, tokenCardEnabled bool) (http.Handler, error) {
 	server.AddReceivingMiddleware(sessionConnMiddleware())
 
-	mcpHandler := mcp.NewStreamableHTTPHandler(
+	var mcpHandler http.Handler = mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return server },
 		&mcp.StreamableHTTPOptions{
 			Stateless:      c.MCPHTTPStateless,
 			SessionTimeout: c.MCPHTTPSessionTimeout,
+			// With allowed hosts configured, withAllowedHosts performs the same check
+			// but also accepts the proxy's public names.
+			DisableLocalhostProtection: len(c.MCPHTTPAllowedHosts) > 0,
 		},
 	)
+	if len(c.MCPHTTPAllowedHosts) > 0 {
+		mcpHandler = withAllowedHosts(c.MCPHTTPAllowedHosts, mcpHandler)
+	}
 
 	cop := http.NewCrossOriginProtection()
 	for _, origin := range c.MCPHTTPAllowedOrigins {
@@ -91,7 +167,7 @@ func newMCPHTTPHandler(server *mcp.Server, c *config.Config, rl *api.RateLimiter
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle(c.MCPHTTPPath, requireBearerToken(c.MCPHTTPToken, cop.Handler(mcpHandler)))
+	mux.Handle(c.MCPHTTPPath, withMCPCORS(c.MCPHTTPAllowedOrigins, requireBearerToken(c.MCPHTTPToken, cop.Handler(mcpHandler))))
 	mux.HandleFunc("/health", httpHealth)
 	mux.Handle("/api/metrics/tokens", requireBearerToken(c.MCPHTTPToken, http.HandlerFunc(httpMetricsTokens)))
 	if tokenCardEnabled && c.MCPHTTPToken == "" {

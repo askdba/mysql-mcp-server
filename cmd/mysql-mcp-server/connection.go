@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"strings"
@@ -430,9 +431,44 @@ func getDB(ctx context.Context) *sql.DB {
 	if connManager == nil {
 		panic("getDB called before connManager initialized")
 	}
-	db, _ := connManager.ActiveFor(ctx)
+	db, name := connManager.ActiveFor(ctx)
+	if db == nil {
+		// Never hand tools a nil *sql.DB: a nil dereference would crash the whole server.
+		// This handle fails every operation with a clear error instead.
+		return missingConnectionDB(name)
+	}
 	return db
 }
+
+// missingConnDBs caches one failing handle per name (sql.OpenDB starts a goroutine).
+var missingConnDBs sync.Map // name -> *sql.DB
+
+// missingConnectionDB returns a *sql.DB whose every operation fails because the named
+// connection no longer exists (or none is active).
+func missingConnectionDB(name string) *sql.DB {
+	if db, ok := missingConnDBs.Load(name); ok {
+		return db.(*sql.DB)
+	}
+	msg := "no active MySQL connection"
+	if name != "" {
+		msg = fmt.Sprintf("connection '%s' no longer exists; call use_connection to pick another", name)
+	}
+	fresh := sql.OpenDB(missingConnector{err: errors.New(msg)})
+	db, loaded := missingConnDBs.LoadOrStore(name, fresh)
+	if loaded {
+		_ = fresh.Close()
+	}
+	return db.(*sql.DB)
+}
+
+type missingConnector struct{ err error }
+
+func (m missingConnector) Connect(context.Context) (driver.Conn, error) { return nil, m.err }
+func (m missingConnector) Driver() driver.Driver                        { return missingDriver(m) }
+
+type missingDriver missingConnector
+
+func (m missingDriver) Open(string) (driver.Conn, error) { return nil, m.err }
 
 // ===== Per-session active connection (MCP HTTP transport) =====
 
@@ -470,13 +506,12 @@ func sessionConnFrom(ctx context.Context) *sessionConn {
 }
 
 // activeNameLocked resolves the active connection name for ctx. Caller holds cm.mu.
-// A session choice that no longer exists falls back to the process-wide active connection.
+// A session's choice is returned even if that connection has since been removed, so the
+// session gets an error (see getDB) instead of silently running on another server.
 func (cm *ConnectionManager) activeNameLocked(ctx context.Context) string {
 	if sc := sessionConnFrom(ctx); sc != nil {
 		if name := sc.get(); name != "" {
-			if _, ok := cm.connections[name]; ok {
-				return name
-			}
+			return name
 		}
 	}
 	return cm.activeConn
