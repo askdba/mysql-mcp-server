@@ -248,11 +248,15 @@ func ValidateConfigFile(path string) error {
 	}
 
 	// Transport settings: same checks as startup. The bearer token may also come from
-	// MYSQL_MCP_HTTP_TOKEN at runtime, so honor it here.
+	// MYSQL_MCP_HTTP_TOKEN or MYSQL_MCP_HTTP_TOKEN_FILE at runtime (same precedence as
+	// applyEnvOverrides), so honor them here.
 	rc := cfg.ToConfig()
 	applyMCPHTTPDefaults(rc)
 	if v := strings.TrimSpace(os.Getenv("MYSQL_MCP_HTTP_TOKEN")); v != "" {
 		rc.MCPHTTPToken = v
+	}
+	if v := strings.TrimSpace(os.Getenv("MYSQL_MCP_HTTP_TOKEN_FILE")); v != "" {
+		rc.MCPHTTPTokenFile = v
 	}
 	if err := resolveMCPHTTPToken(rc); err != nil {
 		return err

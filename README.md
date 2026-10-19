@@ -703,7 +703,7 @@ Output:
 
 ### add_connection
 
-**MCP only.** Available when the server runs in **MCP mode** (stdio) with **`MYSQL_MCP_EXTENDED=1`** and **`MYSQL_MCP_ENABLE_ADD_CONNECTION=1`**. It registers a new named MySQL connection at runtime and switches the **process-wide** active connection for **that MCP process**. There is **no** HTTP route to register a new DSN. **REST API mode** (`MYSQL_MCP_HTTP=1`) is a **separate** process: [`GET /api/connections`](#api-endpoints) and [`POST /api/connections/use`](#api-endpoints) only list and switch connections **loaded in that HTTP server instance**—they do **not** see names added via MCP in a stdio process, and MCP does not reach into a separate HTTP-only deployment.
+**MCP tool.** Available when the server runs in **MCP mode** (stdio or [Streamable HTTP](#remote-mcp-over-http-streamable-http)) with **`MYSQL_MCP_EXTENDED=1`** and **`MYSQL_MCP_ENABLE_ADD_CONNECTION=1`**. It registers a new named MySQL connection at runtime and switches to it: over stdio the **process-wide** active connection changes; over Streamable HTTP only **the calling MCP session** switches, while the registered connection itself stays process-wide and visible to other sessions. There is **no** REST API route to register a new DSN. **REST API mode** (`MYSQL_MCP_HTTP=1`) is a **separate** process: [`GET /api/connections`](#api-endpoints) and [`POST /api/connections/use`](#api-endpoints) only list and switch connections **loaded in that HTTP server instance**—they do **not** see names added via MCP in a stdio process, and MCP does not reach into a separate HTTP-only deployment.
 
 Enable:
 
@@ -728,7 +728,7 @@ Input:
 | `dsn` | Yes | Non-empty; must parse as a valid MySQL DSN. **`root`** as the MySQL user is **rejected** at registration time. |
 | `description` | No | Stored with the connection metadata. |
 
-Behavior: builds a `ConnectionConfig`, opens a pool, **`Ping()`** with the tool request context (timeouts/cancellation), then **`SetActive(name)`**. On activation failure after a successful add, the server removes the new pool (**rollback**). The active connection applies to **all** tools and clients on this process until switched again (`use_connection` or another `add_connection`).
+Behavior: builds a `ConnectionConfig`, opens a pool, **`Ping()`** with the tool request context (timeouts/cancellation), then activates it. On activation failure after a successful add, the server removes the new pool (**rollback**). Over stdio, the active connection applies to **all** tools on this process until switched again (`use_connection` or another `add_connection`). Over Streamable HTTP, it applies only to the requesting MCP session.
 
 Output (success):
 
@@ -1381,7 +1381,7 @@ Use `--silent` to suppress INFO/WARN logs when running under a service manager. 
 
 **Discovery (`GET /api`):** The JSON response includes an **`endpoints`** map that lists **only routes the server has registered** for the current configuration—same rules as the mux: core routes always; extended routes only if **`MYSQL_MCP_EXTENDED=1`**; **`/api/processlist`** and **`/api/kill`** only if extended **and** **`MYSQL_MCP_PROCESS_ADMIN=1`**; **`/api/audit-log`** only if extended **and** read-audit is enabled (**`MYSQL_MCP_READ_AUDIT_TOOL=1`** with **`MYSQL_MCP_AUDIT_LOG`**); **`/api/slow-log`** only if extended **and** **`MYSQL_MCP_SLOW_QUERY_TOOL=1`**; vector routes only if **`MYSQL_MCP_VECTOR=1`**; **`/status`** appears in the index only when the token card is enabled. **`modes`** in the JSON reflects **`extended`**, **`vector`**, and **`token_card`**.
 
-**Runtime DSN registration:** There is **no** HTTP route to register a new connection. The MCP tool **`add_connection`** (optional; **`MYSQL_MCP_EXTENDED=1`** and **`MYSQL_MCP_ENABLE_ADD_CONNECTION=1`**) is the only supported registration path and applies to the **MCP (stdio) process** only. In **REST API mode**, the process never registers tools; `GET /api/connections` lists only connections configured for **that HTTP server process** (not connections added by MCP elsewhere).
+**Runtime DSN registration:** There is **no** REST API route to register a new connection. The MCP tool **`add_connection`** (optional; **`MYSQL_MCP_EXTENDED=1`** and **`MYSQL_MCP_ENABLE_ADD_CONNECTION=1`**) is the only supported registration path and is available over MCP (stdio or Streamable HTTP) only. In **REST API mode**, the process never registers tools; `GET /api/connections` lists only connections configured for **that HTTP server process** (not connections added by MCP elsewhere).
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|

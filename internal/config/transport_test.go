@@ -270,8 +270,14 @@ func TestValidateConfigFileTransport(t *testing.T) {
 		t.Errorf("valid remote config rejected: %v", err)
 	}
 	// A token supplied by the environment at runtime satisfies the check.
+	remote := "transport: http\nhttp:\n  mcp:\n    bind: 0.0.0.0\n    allow_insecure: true\n"
+	os.Setenv("MYSQL_MCP_HTTP_TOKEN_FILE", tokenFile)
+	if err := ValidateConfigFile(write(remote)); err != nil {
+		t.Errorf("env token file not honored: %v", err)
+	}
+	os.Unsetenv("MYSQL_MCP_HTTP_TOKEN_FILE")
 	os.Setenv("MYSQL_MCP_HTTP_TOKEN", "env-token")
-	if err := ValidateConfigFile(write("transport: http\nhttp:\n  mcp:\n    bind: 0.0.0.0\n    allow_insecure: true\n")); err != nil {
+	if err := ValidateConfigFile(write(remote)); err != nil {
 		t.Errorf("env token not honored: %v", err)
 	}
 }
