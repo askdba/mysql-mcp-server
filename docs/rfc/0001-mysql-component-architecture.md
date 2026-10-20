@@ -216,14 +216,25 @@ The MyVector project already builds a GPLv2 component for 8.4, 9.7 and 26.7. Its
 ### 5.3 `component_mcp` (26.10+)
 
 - An MCP **Streamable HTTP** (JSON-RPC 2.0) endpoint inside `mysqld`.
-- **Request path:** authenticate the MCP caller (bearer token) → resolve the mapped account → check `account_locked` (26.10) → open a `"local"` `mysql_command_factory` session with `MYSQL_COMMAND_USER_NAME` / `HOST_NAME` (impersonation; no stored passwords) → `CALL mysql_mcp.<tool>(…)` → map result metadata (`mysql_type`, session state) to MCP JSON.
+- **Request path (all tools except `run_query`):** authenticate the MCP caller (bearer token) → resolve the mapped account → check `account_locked` (26.10) → open a `"local"` `mysql_command_factory` session with `MYSQL_COMMAND_USER_NAME` / `HOST_NAME` (impersonation; no stored passwords) → `CALL mysql_mcp.<tool>(…)` → map result metadata (`mysql_type`, session state) to MCP JSON.
+- **`run_query` path (separate; there is no `mysql_mcp` procedure for it, see §5.1).** It runs the caller's SQL directly on the impersonated session, after the same authentication and account steps:
+  1. **Session setup** before the statement:
+     - `SET SESSION transaction_read_only = ON`
+     - `max_execution_time` = `mcp.max_execution_time_ms`
+     - `sql_select_limit` = `mcp.max_rows + 1`. The server stops producing rows past the cap, and the extra row reveals truncation.
+  2. **Single statement only.** The session is opened without `CLIENT_MULTI_STATEMENTS` (`MYSQL_COMMAND_CLIENT_FLAGS`, 26.7+), so `;`-chained statements are a parse error.
+  3. **Validation by the server, not by string matching.** `component_mcp_guard` is required (the endpoint refuses to start without it). Its `event_tracking_query` hook rejects any `sql_command` other than `SELECT`, `SHOW`, `DESCRIBE`/`EXPLAIN` and `WITH … SELECT`. Its `event_tracking_table_access` hook rejects tables outside `mcp.allowed_schemas`, and system schemas unless allowed. This is the server-side equivalent of the Go server's validator (`cmd/mysql-mcp-server/tools.go`, `toolRunQuery`) and its referenced-schema allow-list (`access.go`). It also covers views, stored functions and subqueries, which string-level checks miss.
+  4. **Row limit on the consumer side as well.** The command-service row callback stops after `mcp.max_rows` and marks the result `truncated`, matching the Go output shape (`columns`, `rows`, `truncated`).
+  5. **Masking:** until column masking is ported, `run_query` is disabled whenever `mcp.mask_columns` is set (see §4). The endpoint never returns unmasked data.
+  6. **Audit:** every `run_query`, allowed or denied, is recorded through the guard's `performance_schema.mcp_tool_calls` and `audit_api_message_emit`.
+  7. **Tests:** the MTR suite gets a `run_query` matrix covering writes, multi-statements, `INTO OUTFILE`, locking reads, cross-schema views, stored functions that write, and row truncation. Each case must match the Go server's verdict for the same input.
 - `MYSQL_COMMAND_PASSWORD` is an **optional** mode for deployments that want the server to verify a password per request.
 - **Why 26.10, when impersonation works from 8.4:**
   - MRS proves out (and may provide) the in-server HTTPS stack.
   - The `account_locked` check closes the gap that impersonation skips the login checks.
   - The command-service metadata fixes.
   - 26.7 alone would need our own listener and could not honor account locks.
-- `run_query` reuses the guard component's policy: it hard-requires `component_mcp_guard`.
+- `run_query` reuses the guard component's policy, so `component_mcp` hard-requires `component_mcp_guard` (above).
 - Off by default (`mcp.http_enabled=OFF`). Binds to loopback by default; TLS is mandatory for anything else.
 - **Transport spike.** Two candidates, compared in a 2–3 week spike against the 26.10 source:
 
