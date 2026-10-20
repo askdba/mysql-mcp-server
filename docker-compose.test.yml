@@ -9,12 +9,12 @@
 #   Run tests against MySQL 8.4: MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3307)/testdb?parseTime=true" go test -tags=integration ./...
 #   Run tests against MySQL 9.0: MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3308)/testdb?parseTime=true" go test -tags=integration ./...
 #   Run tests against MySQL 9.7:  make test-integration-97   (host port 13309)
-#   Run tests against MySQL 26.7: make test-integration-267  (host port 13311)
+#   Run tests against MySQL 26.10: make test-integration-2610 (host port 13311)
 #   Run tests against MariaDB 12.3: make test-integration-mariadb-12 (host port 13312)
 #
 # Host ports: every published port can be overridden when it clashes with a local server,
 #   e.g. MYSQL84_PORT=13307 make test-integration-84
-#   (MYSQL80_PORT, MYSQL84_PORT, MYSQL90_PORT, MYSQL97_PORT, MYSQL267_PORT, MARIADB11_PORT, MARIADB12_PORT)
+#   (MYSQL80_PORT, MYSQL84_PORT, MYSQL90_PORT, MYSQL97_PORT, MYSQL2610_PORT, MARIADB11_PORT, MARIADB12_PORT)
 #
 # Sakila Database:
 #   The Sakila sample database is also loaded for realistic integration testing.
@@ -134,19 +134,19 @@ services:
     command: >
       --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
 
-  # MySQL 26.7 - Innovation release
-  mysql267:
-    image: mysql:26.7
-    container_name: mysql-mcp-test-267
+  # MySQL 26.10 - Innovation release
+  mysql2610:
+    image: mysql:26.10
+    container_name: mysql-mcp-test-2610
     environment:
       MYSQL_ROOT_PASSWORD: testpass
       MYSQL_DATABASE: testdb
       MYSQL_USER: testuser
       MYSQL_PASSWORD: testpass
     ports:
-      - "${MYSQL267_PORT:-13311}:3306"
+      - "${MYSQL2610_PORT:-13311}:3306"
     volumes:
-      - mysql267_data:/var/lib/mysql
+      - mysql2610_data:/var/lib/mysql
       - ./tests/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
       - ./tests/sql/sakila-schema.sql:/docker-entrypoint-initdb.d/02-sakila-schema.sql:ro
       - ./tests/sql/sakila-data.sql:/docker-entrypoint-initdb.d/03-sakila-data.sql:ro
@@ -239,7 +239,7 @@ volumes:
   mysql84_data:
   mysql90_data:
   mysql97_data:
-  mysql267_data:
+  mysql2610_data:
   mariadb11_data:
   mariadb12_data:
 

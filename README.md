@@ -24,7 +24,7 @@ This project exposes safe MySQL introspection tools to Claude Desktop via MCP. C
   - ping, server_info
   - list_connections, use_connection (multi-DSN)
   - vector_search, vector_info (MySQL 9.0+)
-- Supports MySQL 8.0, 8.4, 9.x, 26.x and MariaDB 10.x, 11.x, 12.x (CI-tested on MySQL 8.0, 8.4, 9.7, 26.7 and MariaDB 11.4, 12.3)
+- Supports MySQL 8.0, 8.4, 9.x, 26.x and MariaDB 10.x, 11.x, 12.x (CI-tested on MySQL 8.0, 8.4, 9.7, 26.10 and MariaDB 11.4, 12.3)
 - Query timeouts, structured logging, audit logs; optional **live token metrics** and **`/status`** dashboard in HTTP mode
 - **Performance**: configurable pool/query timeouts, server-side row caps, `explain_query` plan warnings
 - Single Go binary
@@ -1109,12 +1109,19 @@ make test-integration-80
 make test-integration-84
 ```
 
-**Test against MySQL 9.0 / 9.7 / 26.7:**
+**Test against MySQL 9.0 / 9.7 / 26.10:**
 
 ```bash
 make test-integration-90
 make test-integration-97
-make test-integration-267
+make test-integration-2610
+```
+
+**Smoke-test the built binary end to end** (REST API, stdio MCP, and MCP Streamable HTTP with auth, TLS, CORS, unsafe-config refusals and session scoping; about 1.5 minutes, Docker required):
+
+```bash
+make smoke-http                            # MySQL 8.0
+make smoke-http SMOKE_MYSQL_VERSION=26.10  # or scripts/smoke-mcp-http.sh 26.10
 ```
 
 **Test against all supported versions (MySQL & MariaDB):**
@@ -1130,7 +1137,7 @@ make test-integration-mariadb-11
 make test-integration-mariadb-12
 ```
 
-If a host port clashes with a server already running locally, override it, e.g. `make test-integration-84 MYSQL84_PORT=13307`. The variables are `MYSQL80_PORT`, `MYSQL84_PORT`, `MYSQL90_PORT`, `MYSQL97_PORT`, `MYSQL267_PORT`, `MARIADB11_PORT` and `MARIADB12_PORT`.
+If a host port clashes with a server already running locally, override it, e.g. `make test-integration-84 MYSQL84_PORT=13307`. The variables are `MYSQL80_PORT`, `MYSQL84_PORT`, `MYSQL90_PORT`, `MYSQL97_PORT`, `MYSQL2610_PORT`, `MARIADB11_PORT` and `MARIADB12_PORT`.
 
 The testcontainers-based client test in `internal/mysql` defaults to `mysql:8.4`; set `MYSQL_TC_IMAGE` (e.g. `mariadb:12.3`) to run it against another image. It is skipped when no Docker daemon is reachable.
 
@@ -1205,7 +1212,7 @@ export MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3307)/testdb?parseTime=tr
 # MySQL 9.0 (port 3308)
 export MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3308)/testdb?parseTime=true"
 
-# MySQL 9.7 (13309), MySQL 26.7 (13311), MariaDB 11.4 (3310), MariaDB 12.3 (13312)
+# MySQL 9.7 (13309), MySQL 26.10 (13311), MariaDB 11.4 (3310), MariaDB 12.3 (13312)
 export MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:13309)/testdb?parseTime=true"
 
 # Sakila tests read MYSQL_SAKILA_DSN (falls back to MYSQL_TEST_DSN)

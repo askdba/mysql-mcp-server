@@ -137,7 +137,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mysql-version: ['8.0', '8.4', '9.7', '26.7']
+        mysql-version: ['8.0', '8.4', '9.7', '26.10']
     
     services:
       mysql:
@@ -413,12 +413,41 @@ jobs:
           echo "All API tests passed!"
 
   # ============================================
+  # Stage 8: MCP HTTP smoke tests (real binary, REST/stdio/Streamable HTTP)
+  # ============================================
+  smoke-mcp-http:
+    name: MCP HTTP Smoke (MySQL ${{ matrix.mysql-version }})
+    runs-on: ubuntu-latest
+    needs: [unit-tests]
+    strategy:
+      fail-fast: false
+      matrix:
+        mysql-version: ['8.0', '26.10']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true  # pick up the newest patch (security fixes), not a cached one
+          cache: true
+
+      - name: Run smoke tests
+        # Builds the binary, starts mysql:<version> in Docker, and checks REST, stdio and
+        # MCP Streamable HTTP (auth, TLS, CORS, unsafe-config refusals, session scoping,
+        # slow-body cutoff, graceful shutdown).
+        run: ./scripts/smoke-mcp-http.sh ${{ matrix.mysql-version }}
+
+  # ============================================
   # Final Summary
   # ============================================
   qa-summary:
     name: QA Summary
     runs-on: ubuntu-latest
-    needs: [lint, security, unit-tests, integration-tests, integration-tests-mariadb, build, docker, api-tests]
+    needs: [lint, security, unit-tests, integration-tests, integration-tests-mariadb, build, docker, api-tests, smoke-mcp-http]
     if: always()
     steps:
       - name: Check all jobs
@@ -432,14 +461,16 @@ jobs:
           echo "Build: ${{ needs.build.result }}"
           echo "Docker: ${{ needs.docker.result }}"
           echo "API Tests: ${{ needs.api-tests.result }}"
+          echo "MCP HTTP Smoke: ${{ needs.smoke-mcp-http.result }}"
           
-          # Fail on unit tests, build, integration tests, and the security job
+          # Fail on unit tests, build, integration tests, MCP HTTP smoke tests, and the security job
           # (govulncheck is blocking; gosec and lint are informational)
           if [ "${{ needs.unit-tests.result }}" != "success" ] || \
              [ "${{ needs.security.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ] || \
              [ "${{ needs.integration-tests.result }}" != "success" ] || \
-             [ "${{ needs.integration-tests-mariadb.result }}" != "success" ]; then
+             [ "${{ needs.integration-tests-mariadb.result }}" != "success" ] || \
+             [ "${{ needs.smoke-mcp-http.result }}" != "success" ]; then
             echo "❌ Critical jobs failed"
             exit 1
           fi

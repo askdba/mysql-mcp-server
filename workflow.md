@@ -41,7 +41,7 @@ go test ./...
 go test -race -coverprofile=coverage.out -covermode=atomic ./...
 ```
 
-The full **QA** workflow on GitHub also runs golangci-lint (informational in CI), gosec (informational), govulncheck (**blocking**: also runs in the release gate), integration tests (including Sakila) against MySQL 8.0/8.4/9.7/26.7 and MariaDB 11.4/12.3, multi-OS builds, Docker build, and REST API smoke tests. Locally, use `make test-integration` (or Compose per `README.md`) when you touch database, MCP tool, HTTP, or SSH paths.
+The full **QA** workflow on GitHub also runs golangci-lint (informational in CI), gosec (informational), govulncheck (**blocking**: also runs in the release gate), integration tests (including Sakila) against MySQL 8.0/8.4/9.7/26.10 and MariaDB 11.4/12.3, MCP HTTP smoke tests (`scripts/smoke-mcp-http.sh`, MySQL 8.0 and 26.10), multi-OS builds, Docker build, and REST API smoke tests. Locally, use `make test-integration` (or Compose per `README.md`) when you touch database, MCP tool, HTTP, or SSH paths.
 
 Optional locally: `golangci-lint run --timeout=5m` if you have it installed (same tool family as QA).
 
