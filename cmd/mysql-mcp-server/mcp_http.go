@@ -221,9 +221,13 @@ func withBodyReadDeadline(timeout time.Duration, next http.Handler) http.Handler
 	})
 }
 
-// deadlineBody clears the connection read deadline once the body is fully read (or fails).
+// deadlineBody clears the connection read deadline once the body has been read to EOF.
 // Clearing also applies to the server's background read that watches for client
 // disconnects, so long-running responses are not cut off.
+//
+// The deadline is deliberately kept on any other outcome (timeout, error, early Close):
+// net/http then discards the unread rest of the body before replying, and without the
+// deadline that discard would wait forever on a stalled client.
 type deadlineBody struct {
 	io.ReadCloser
 	rc   *http.ResponseController
@@ -232,15 +236,10 @@ type deadlineBody struct {
 
 func (b *deadlineBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
-	if err != nil {
+	if err == io.EOF {
 		b.clear()
 	}
 	return n, err
-}
-
-func (b *deadlineBody) Close() error {
-	b.clear()
-	return b.ReadCloser.Close()
 }
 
 func (b *deadlineBody) clear() {

@@ -105,6 +105,37 @@ func TestBodyReadDeadlineStopsSlowBodies(t *testing.T) {
 	}
 }
 
+// TestBodyReadDeadlineClosesStalledConnection checks the client side: a stalled client
+// must get a response and a closed connection, not a connection held open forever.
+func TestBodyReadDeadlineClosesStalledConnection(t *testing.T) {
+	srv := httptest.NewServer(withBodyReadDeadline(200*time.Millisecond, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.ReadAll(r.Body); err != nil {
+			http.Error(w, "body read timeout", http.StatusBadRequest)
+			return
+		}
+	})))
+	defer srv.Close()
+
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	fmt.Fprintf(conn, "POST /mcp HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{")
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	start := time.Now()
+	resp, err := io.ReadAll(conn) // returns when the server closes the connection
+	if err != nil {
+		t.Fatalf("connection not closed by the server within 5s (read: %v, got %q)", err, resp)
+	}
+	if !strings.HasPrefix(string(resp), "HTTP/1.1 400") {
+		t.Errorf("stalled client should get 400, got %q", resp)
+	}
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("connection closed after %v", took)
+	}
+}
+
 func TestBodyReadDeadlineClearedAfterBody(t *testing.T) {
 	const timeout = 150 * time.Millisecond
 	srv := httptest.NewServer(withBodyReadDeadline(timeout, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
