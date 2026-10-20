@@ -178,6 +178,9 @@ func TestMCPHTTPServerShutdownEndsOpenStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer stream.Body.Close()
+	if stream.StatusCode != http.StatusOK || !strings.HasPrefix(stream.Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("standalone SSE stream not opened: %d %q", stream.StatusCode, stream.Header.Get("Content-Type"))
+	}
 	streamEnded := make(chan time.Duration, 1)
 	start := time.Now()
 	go func() {
@@ -188,6 +191,9 @@ func TestMCPHTTPServerShutdownEndsOpenStreams(t *testing.T) {
 	stop <- os.Interrupt
 	select {
 	case took := <-streamEnded:
+		if took < mcpHTTPShutdownGrace {
+			t.Errorf("open stream ended after %v, before the %v grace period", took, mcpHTTPShutdownGrace)
+		}
 		if took > 2*time.Second {
 			t.Errorf("open stream ended %v after shutdown began, want about the %v grace period", took, mcpHTTPShutdownGrace)
 		}
