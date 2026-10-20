@@ -10,10 +10,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/askdba/mysql-mcp-server/internal/api"
@@ -793,49 +791,26 @@ func startHTTPServer(port int, vectorMode bool, tokenCardEnabled bool) {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	// Channel to listen for shutdown signals
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-
-	// Start server in goroutine
-	go func() {
-		logInfo("HTTP REST API server starting", map[string]interface{}{
-			"port":         port,
-			"address":      "http://localhost" + addr,
-			"extendedMode": extendedMode,
-			"vectorMode":   vectorMode,
-			"version":      Version,
+	logInfo("HTTP REST API server starting", map[string]interface{}{
+		"port":         port,
+		"address":      "http://localhost" + addr,
+		"extendedMode": extendedMode,
+		"vectorMode":   vectorMode,
+		"version":      Version,
+	})
+	logInfo("REST API endpoints", map[string]interface{}{
+		"api":           "http://localhost:" + strconv.Itoa(port) + "/api",
+		"health":        "http://localhost:" + strconv.Itoa(port) + "/health",
+		"token_metrics": "http://localhost:" + strconv.Itoa(port) + "/api/metrics/tokens",
+	})
+	if tokenCardEnabled {
+		logInfo("token card dashboard", map[string]interface{}{
+			"url": "http://localhost:" + strconv.Itoa(port) + "/status",
 		})
+	}
 
-		logInfo("REST API endpoints", map[string]interface{}{
-			"api":           "http://localhost:" + strconv.Itoa(port) + "/api",
-			"health":        "http://localhost:" + strconv.Itoa(port) + "/health",
-			"token_metrics": "http://localhost:" + strconv.Itoa(port) + "/api/metrics/tokens",
-		})
-		if tokenCardEnabled {
-			logInfo("token card dashboard", map[string]interface{}{
-				"url": "http://localhost:" + strconv.Itoa(port) + "/status",
-			})
-		}
-
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("HTTP server error: %v", err)
-		}
-	}()
-
-	// Wait for shutdown signal
-	<-stop
-	logInfo("Shutdown signal received, stopping server...", nil)
-
-	// Create context with timeout for graceful shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// Attempt graceful shutdown
-	if err := server.Shutdown(ctx); err != nil {
-		logError("Server shutdown error", map[string]interface{}{"error": err.Error()})
-	} else {
-		logInfo("Server stopped gracefully", nil)
+	if err := serveUntilSignal(server, "", ""); err != nil {
+		log.Fatal(err)
 	}
 
 	// Stop rate limiter cleanup goroutine

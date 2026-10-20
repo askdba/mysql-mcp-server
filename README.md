@@ -571,7 +571,7 @@ Behavior and safety:
   - It is refused in stateless mode, where the connection would close as soon as the request ends.
   - It still lets any token holder make the server connect to any host the server can reach, so enable it for remote deployments only when every token holder is trusted.
 - **Other endpoints on the same port:** `GET /health` (no auth) and `GET /api/metrics/tokens` (same token). `/status` is served only when no token is configured, because a browser cannot send the bearer token.
-- `MYSQL_HTTP_RATE_LIMIT` applies to this transport too.
+- `MYSQL_HTTP_RATE_LIMIT` applies to this transport too. Request headers must arrive within 10s and bodies within 30s, so slow clients cannot hold connections open. Long tool calls and event streams are not affected.
 - It cannot run in the same process as the REST API (`MYSQL_MCP_HTTP=1`); run two processes if you need both.
 
 Config file equivalent:

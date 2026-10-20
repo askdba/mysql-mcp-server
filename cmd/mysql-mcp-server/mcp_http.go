@@ -5,15 +5,13 @@ import (
 	"context"
 	"crypto/subtle"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
-	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -174,6 +172,8 @@ func newMCPHTTPHandler(server *mcp.Server, c *config.Config, rl *api.RateLimiter
 		mcpHandler = withAllowedHosts(c.MCPHTTPAllowedHosts, mcpHandler)
 	}
 
+	// Cross-origin protection wraps the handler, as the SDK recommends; its
+	// StreamableHTTPOptions.CrossOriginProtection field is deprecated.
 	cop := http.NewCrossOriginProtection()
 	for _, origin := range c.MCPHTTPAllowedOrigins {
 		if err := cop.AddTrustedOrigin(origin); err != nil {
@@ -191,12 +191,85 @@ func newMCPHTTPHandler(server *mcp.Server, c *config.Config, rl *api.RateLimiter
 
 	handler := api.WithLogging(httpLogger)(mux.ServeHTTP)
 	handler = api.WithRateLimit(rl)(handler)
-	return handler, nil
+	return withBodyReadDeadline(mcpHTTPBodyReadTimeout, handler), nil
 }
 
 // mcpHTTPShutdownGrace is how long in-flight requests may finish after SIGINT/SIGTERM
 // before open MCP streams are cancelled.
-const mcpHTTPShutdownGrace = 5 * time.Second
+var mcpHTTPShutdownGrace = 5 * time.Second
+
+// mcpHTTPBodyReadTimeout bounds how long a client may take to send a request body.
+var mcpHTTPBodyReadTimeout = 30 * time.Second
+
+// withBodyReadDeadline limits the time to read a request body, so a client cannot hold a
+// connection open by trickling bytes. http.Server.ReadTimeout cannot be used: it would also
+// apply while long tool calls run and to server-sent event streams. The deadline is set when
+// the request starts and cleared as soon as the body has been read.
+func withBodyReadDeadline(timeout time.Duration, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body == nil || r.Body == http.NoBody {
+			next.ServeHTTP(w, r)
+			return
+		}
+		rc := http.NewResponseController(w)
+		if err := rc.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+			next.ServeHTTP(w, r) // writer without deadline support (e.g. recorders in tests)
+			return
+		}
+		r.Body = &deadlineBody{ReadCloser: r.Body, rc: rc}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// deadlineBody clears the connection read deadline once the body is fully read (or fails).
+// Clearing also applies to the server's background read that watches for client
+// disconnects, so long-running responses are not cut off.
+type deadlineBody struct {
+	io.ReadCloser
+	rc   *http.ResponseController
+	once sync.Once
+}
+
+func (b *deadlineBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err != nil {
+		b.clear()
+	}
+	return n, err
+}
+
+func (b *deadlineBody) Close() error {
+	b.clear()
+	return b.ReadCloser.Close()
+}
+
+func (b *deadlineBody) clear() {
+	b.once.Do(func() { _ = b.rc.SetReadDeadline(time.Time{}) })
+}
+
+// newMCPHTTPServer builds the http.Server for the MCP HTTP transport. Request contexts
+// derive from a base context: Shutdown never ends open server-sent event streams by itself,
+// so mcpHTTPShutdownGrace after shutdown starts, the base context is cancelled. The
+// returned func releases the base context.
+func newMCPHTTPServer(server *mcp.Server, c *config.Config, rl *api.RateLimiter, tokenCardEnabled bool) (*http.Server, func(), error) {
+	handler, err := newMCPHTTPHandler(server, c, rl, tokenCardEnabled)
+	if err != nil {
+		return nil, nil, err
+	}
+	baseCtx, cancelBase := context.WithCancel(context.Background())
+	srv := &http.Server{
+		Addr:              net.JoinHostPort(c.MCPHTTPBind, strconv.Itoa(c.HTTPPort)),
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		// No ReadTimeout/WriteTimeout: Streamable HTTP keeps server-sent event streams open
+		// and tool calls may run long (bounded by the query timeout). Request bodies are
+		// bounded by withBodyReadDeadline and the SDK's MaxRequestBodyBytes.
+		IdleTimeout: 120 * time.Second,
+		BaseContext: func(net.Listener) context.Context { return baseCtx },
+	}
+	srv.RegisterOnShutdown(func() { time.AfterFunc(mcpHTTPShutdownGrace, cancelBase) })
+	return srv, cancelBase, nil
+}
 
 // startMCPHTTPServer serves MCP over Streamable HTTP until SIGINT/SIGTERM.
 func startMCPHTTPServer(server *mcp.Server, c *config.Config, tokenCardEnabled bool) {
@@ -206,28 +279,13 @@ func startMCPHTTPServer(server *mcp.Server, c *config.Config, tokenCardEnabled b
 		defer rateLimiter.Stop()
 	}
 
-	handler, err := newMCPHTTPHandler(server, c, rateLimiter, tokenCardEnabled)
+	srv, release, err := newMCPHTTPServer(server, c, rateLimiter, tokenCardEnabled)
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
+	defer release()
 
-	addr := net.JoinHostPort(c.MCPHTTPBind, strconv.Itoa(c.HTTPPort))
 	useTLS := c.MCPHTTPTLSCert != ""
-	// Request contexts derive from baseCtx. Shutdown never ends open server-sent event
-	// streams by itself, so after a grace period for in-flight tool calls it cancels them.
-	baseCtx, cancelBase := context.WithCancel(context.Background())
-	defer cancelBase()
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-		// No WriteTimeout: Streamable HTTP keeps server-sent event streams open.
-		// Tool calls are bounded by the query timeout instead.
-		IdleTimeout: 120 * time.Second,
-		BaseContext: func(net.Listener) context.Context { return baseCtx },
-	}
-	srv.RegisterOnShutdown(func() { time.AfterFunc(mcpHTTPShutdownGrace, cancelBase) })
-
 	scheme := "http"
 	if useTLS {
 		scheme = "https"
@@ -237,36 +295,15 @@ func startMCPHTTPServer(server *mcp.Server, c *config.Config, tokenCardEnabled b
 			"bind": c.MCPHTTPBind,
 		})
 	}
+	logInfo("MCP Streamable HTTP server starting", map[string]interface{}{
+		"url":       fmt.Sprintf("%s://%s%s", scheme, srv.Addr, c.MCPHTTPPath),
+		"auth":      c.MCPHTTPToken != "",
+		"tls":       useTLS,
+		"stateless": c.MCPHTTPStateless,
+		"version":   Version,
+	})
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-
-	go func() {
-		logInfo("MCP Streamable HTTP server starting", map[string]interface{}{
-			"url":       fmt.Sprintf("%s://%s%s", scheme, addr, c.MCPHTTPPath),
-			"auth":      c.MCPHTTPToken != "",
-			"tls":       useTLS,
-			"stateless": c.MCPHTTPStateless,
-			"version":   Version,
-		})
-		var err error
-		if useTLS {
-			err = srv.ListenAndServeTLS(c.MCPHTTPTLSCert, c.MCPHTTPTLSKey)
-		} else {
-			err = srv.ListenAndServe()
-		}
-		if err != nil && err != http.ErrServerClosed {
-			log.Fatalf("MCP HTTP server error: %v", err)
-		}
-	}()
-
-	<-stop
-	logInfo("Shutdown signal received, stopping MCP HTTP server...", nil)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		logError("MCP HTTP server shutdown error", map[string]interface{}{"error": err.Error()})
-	} else {
-		logInfo("MCP HTTP server stopped gracefully", nil)
+	if err := serveUntilSignal(srv, c.MCPHTTPTLSCert, c.MCPHTTPTLSKey); err != nil {
+		log.Fatalf("MCP %v", err)
 	}
 }

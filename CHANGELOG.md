@@ -16,6 +16,12 @@ Semantic Versioning.
   - `--validate-config` checks the transport settings; invalid bind addresses (with a port) and endpoint paths (reserved, wildcard or non-literal) are rejected at startup.
   - Stateless mode (`MYSQL_MCP_HTTP_STATELESS=1`), idle session timeout, rate limiting, `/health` and token metrics on the same port, `--daemon` support, and `transport:` / `http.mcp:` config-file keys.
   - It cannot be combined with the REST API (`MYSQL_MCP_HTTP=1`) in one process.
+  - Slow clients cannot hold connections open: request bodies must arrive within 30s (headers within 10s). The deadline is lifted once the body is read, so long tool calls and event streams are unaffected.
+  - On SIGTERM, in-flight requests get 5s, then open event streams are closed.
+
+### Changed
+
+- The REST API and the MCP HTTP transport share one graceful-shutdown path.
 
 ### Fixed
 
