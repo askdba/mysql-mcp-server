@@ -138,17 +138,12 @@ jobs:
       fail-fast: false
       matrix:
         mysql-version: ['8.0', '8.4', '9.7', '26.10']
-        include:
-          # Docker Hub has no mysql:26.10 yet; use Oracle's official image until it does.
-          - mysql-version: '26.10'
-            image: container-registry.oracle.com/mysql/community-server:26.10
     
     services:
       mysql:
-        image: ${{ matrix.image || format('mysql:{0}', matrix.mysql-version) }}
+        image: mysql:${{ matrix.mysql-version }}
         env:
           MYSQL_ROOT_PASSWORD: testpass
-          MYSQL_ROOT_HOST: '%'  # Oracle's image defaults to root@localhost only
           MYSQL_DATABASE: testdb
         ports:
           - 3306:3306
@@ -184,7 +179,7 @@ jobs:
           MYSQL_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/testdb?parseTime=true"
           MYSQL_TEST_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/testdb?parseTime=true"
           MYSQL_SAKILA_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/sakila?parseTime=true"
-          MYSQL_TC_IMAGE: ${{ matrix.image || format('mysql:{0}', matrix.mysql-version) }}
+          MYSQL_TC_IMAGE: "mysql:${{ matrix.mysql-version }}"
         run: |
           # Run MCP server tests with real MySQL
           go test -v -tags=integration ./...
@@ -428,10 +423,6 @@ jobs:
       fail-fast: false
       matrix:
         mysql-version: ['8.0', '26.10']
-        include:
-          # Docker Hub has no mysql:26.10 yet; use Oracle's official image until it does.
-          - mysql-version: '26.10'
-            image: container-registry.oracle.com/mysql/community-server:26.10
 
     steps:
       - name: Checkout code
@@ -448,8 +439,6 @@ jobs:
         # Builds the binary, starts mysql:<version> in Docker, and checks REST, stdio and
         # MCP Streamable HTTP (auth, TLS, CORS, unsafe-config refusals, session scoping,
         # slow-body cutoff, graceful shutdown).
-        env:
-          MYSQL_IMAGE: ${{ matrix.image || format('mysql:{0}', matrix.mysql-version) }}
         run: ./scripts/smoke-mcp-http.sh ${{ matrix.mysql-version }}
 
   # ============================================

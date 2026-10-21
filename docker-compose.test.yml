@@ -134,15 +134,12 @@ services:
     command: >
       --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
 
-  # MySQL 26.10 - Innovation release. Docker Hub has no mysql:26.10 yet, so this uses
-  # Oracle's official image (amd64). On ARM hosts (Apple Silicon) set
-  # MYSQL2610_IMAGE=container-registry.oracle.com/mysql/community-server:26.10-aarch64
+  # MySQL 26.10 - Innovation release
   mysql2610:
-    image: ${MYSQL2610_IMAGE:-container-registry.oracle.com/mysql/community-server:26.10}
+    image: mysql:26.10
     container_name: mysql-mcp-test-2610
     environment:
       MYSQL_ROOT_PASSWORD: testpass
-      MYSQL_ROOT_HOST: '%'
       MYSQL_DATABASE: testdb
       MYSQL_USER: testuser
       MYSQL_PASSWORD: testpass
