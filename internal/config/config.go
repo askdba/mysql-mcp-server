@@ -372,11 +372,15 @@ func applyMCPHTTPDefaults(cfg *Config) {
 	if cfg.MCPHTTPSessionTimeout == 0 {
 		cfg.MCPHTTPSessionTimeout = time.Duration(DefaultMCPHTTPSessionTimeoutMinutes) * time.Minute
 	}
+	// Browsers send Origin with a lowercase scheme and host and no trailing slash.
+	for i, o := range cfg.MCPHTTPAllowedOrigins {
+		cfg.MCPHTTPAllowedOrigins[i] = strings.TrimRight(strings.ToLower(strings.TrimSpace(o)), "/")
+	}
 }
 
 // resolveMCPHTTPToken reads the bearer token from MCPHTTPTokenFile when no token is set directly.
 func resolveMCPHTTPToken(cfg *Config) error {
-	if cfg.MCPHTTPToken != "" || cfg.MCPHTTPTokenFile == "" {
+	if cfg.Transport != TransportHTTP || cfg.MCPHTTPToken != "" || cfg.MCPHTTPTokenFile == "" {
 		return nil
 	}
 	b, err := os.ReadFile(cfg.MCPHTTPTokenFile)
@@ -420,6 +424,11 @@ func ValidateTransport(cfg *Config) error {
 	}
 	if (cfg.MCPHTTPTLSCert == "") != (cfg.MCPHTTPTLSKey == "") {
 		return fmt.Errorf("MYSQL_MCP_HTTP_TLS_CERT and MYSQL_MCP_HTTP_TLS_KEY must be set together")
+	}
+	if len(cfg.MCPHTTPAllowedHosts) > 0 && cfg.MCPHTTPToken == "" {
+		// Allowed hosts exist for a reverse proxy that publishes the loopback listener, so the
+		// server is reachable from outside even though it binds to loopback.
+		return fmt.Errorf("MYSQL_MCP_HTTP_ALLOWED_HOSTS means a reverse proxy exposes the server: a bearer token is required (MYSQL_MCP_HTTP_TOKEN or MYSQL_MCP_HTTP_TOKEN_FILE)")
 	}
 	if !IsLoopbackBind(cfg.MCPHTTPBind) {
 		if cfg.MCPHTTPToken == "" {

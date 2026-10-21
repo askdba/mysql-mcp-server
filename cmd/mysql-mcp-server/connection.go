@@ -322,8 +322,9 @@ func (cm *ConnectionManager) addConnectionWithPoolConfig(ctx context.Context, co
 		cm.tunnelClosers[connCfg.Name] = tunnelCloser
 	}
 
-	// Set as active if it's the first connection
-	if cm.activeConn == "" {
+	// Set as active if it's the first connection. A session-owned connection (MCP HTTP
+	// add_connection) never becomes the process-wide default.
+	if cm.activeConn == "" && !isSessionConnKey(connCfg.Name) {
 		cm.activeConn = connCfg.Name
 	}
 

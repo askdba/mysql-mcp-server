@@ -93,7 +93,7 @@ func withMCPCORS(allowed []string, next http.Handler) http.Handler {
 	}
 	origins := make(map[string]struct{}, len(allowed))
 	for _, o := range allowed {
-		origins[strings.TrimRight(o, "/")] = struct{}{}
+		origins[strings.TrimRight(strings.ToLower(o), "/")] = struct{}{}
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
@@ -149,8 +149,9 @@ func isLoopbackHostPort(addr string) bool {
 }
 
 // newMCPHTTPHandler builds the handler for the MCP HTTP transport:
-//   - c.MCPHTTPPath: MCP Streamable HTTP (bearer token, cross-origin protection,
-//     and the SDK's DNS-rebinding protection for localhost)
+//   - c.MCPHTTPPath: MCP Streamable HTTP, wrapped (outermost first) in CORS for allowed
+//     browser origins, the bearer token check, cross-origin protection, and DNS-rebinding
+//     protection for loopback listeners (the SDK's, or withAllowedHosts behind a proxy)
 //   - /health: unauthenticated health check
 //   - /api/metrics/tokens: token metrics (same bearer token as MCP)
 //   - /status: Token Card page, only when tokenCardEnabled and no token is configured

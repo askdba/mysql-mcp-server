@@ -361,14 +361,18 @@ func TestMCPHTTPAllowedHostsForReverseProxy(t *testing.T) {
 		t.Fatalf("proxy Host without allowlist: %d, want 403", code)
 	}
 
-	f = newMCPHTTPFixture(t, func(c *config.Config) { c.MCPHTTPAllowedHosts = []string{"MCP.example.com"} })
-	if code := postInitialize(t, f.srv.URL+"/mcp", func(r *http.Request) { r.Host = "mcp.example.com:443" }).StatusCode; code != http.StatusOK {
+	f = newMCPHTTPFixture(t, func(c *config.Config) {
+		c.MCPHTTPAllowedHosts = []string{"MCP.example.com"}
+		c.MCPHTTPToken = "s3cret"
+	})
+	auth := func(r *http.Request) { r.Header.Set("Authorization", "Bearer s3cret") }
+	if code := postInitialize(t, f.srv.URL+"/mcp", func(r *http.Request) { auth(r); r.Host = "mcp.example.com:443" }).StatusCode; code != http.StatusOK {
 		t.Errorf("allowed proxy Host: %d, want 200", code)
 	}
-	if code := postInitialize(t, f.srv.URL+"/mcp", func(r *http.Request) { r.Host = "evil.example" }).StatusCode; code != http.StatusForbidden {
+	if code := postInitialize(t, f.srv.URL+"/mcp", func(r *http.Request) { auth(r); r.Host = "evil.example" }).StatusCode; code != http.StatusForbidden {
 		t.Errorf("unlisted Host: %d, want 403", code)
 	}
-	if code := postInitialize(t, f.srv.URL+"/mcp", nil).StatusCode; code != http.StatusOK {
+	if code := postInitialize(t, f.srv.URL+"/mcp", auth).StatusCode; code != http.StatusOK {
 		t.Errorf("localhost Host: %d, want 200", code)
 	}
 }

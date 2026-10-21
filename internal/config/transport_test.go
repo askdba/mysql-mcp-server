@@ -281,3 +281,37 @@ func TestValidateConfigFileTransport(t *testing.T) {
 		t.Errorf("env token not honored: %v", err)
 	}
 }
+
+func TestValidateTransportAllowedHostsRequireToken(t *testing.T) {
+	c := &Config{Transport: TransportHTTP, MCPHTTPAllowedHosts: []string{"mcp.example.com"}}
+	applyMCPHTTPDefaults(c)
+	if err := ValidateTransport(c); err == nil || !strings.Contains(err.Error(), "reverse proxy exposes the server") {
+		t.Fatalf("allowed hosts without token: %v", err)
+	}
+	c.MCPHTTPToken = "t"
+	if err := ValidateTransport(c); err != nil {
+		t.Fatalf("allowed hosts with token: %v", err)
+	}
+}
+
+func TestTokenFileIgnoredForStdio(t *testing.T) {
+	clearEnv()
+	defer clearEnv()
+	os.Setenv("MYSQL_DSN", "user:pass@tcp(localhost:3306)/testdb")
+	os.Setenv("MYSQL_MCP_HTTP_TOKEN_FILE", filepath.Join(t.TempDir(), "missing"))
+	if _, err := Load(); err != nil {
+		t.Fatalf("stdio must not read the MCP HTTP token file: %v", err)
+	}
+	os.Setenv("MYSQL_MCP_TRANSPORT", "http")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "token file") {
+		t.Fatalf("http transport must read the token file: %v", err)
+	}
+}
+
+func TestAllowedOriginsNormalized(t *testing.T) {
+	c := &Config{MCPHTTPAllowedOrigins: []string{" HTTPS://App.Example/ "}}
+	applyMCPHTTPDefaults(c)
+	if c.MCPHTTPAllowedOrigins[0] != "https://app.example" {
+		t.Errorf("origin normalized to %q", c.MCPHTTPAllowedOrigins[0])
+	}
+}

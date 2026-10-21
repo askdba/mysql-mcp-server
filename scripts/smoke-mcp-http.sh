@@ -213,6 +213,7 @@ refuse "remote bind without TLS" "TLS is required" MYSQL_MCP_TRANSPORT=http MYSQ
 refuse "REST + HTTP transport" "cannot be combined" MYSQL_MCP_TRANSPORT=http MYSQL_MCP_HTTP=1
 refuse "path /health" "reserved" MYSQL_MCP_TRANSPORT=http MYSQL_MCP_HTTP_PATH=/health
 refuse "bind with port" "without a port" MYSQL_MCP_TRANSPORT=http MYSQL_MCP_HTTP_BIND=0.0.0.0:9306
+refuse "proxy allowed hosts without token" "reverse proxy exposes the server" MYSQL_MCP_TRANSPORT=http MYSQL_MCP_HTTP_ALLOWED_HOSTS=mcp.example.com
 refuse "unknown transport" "invalid MYSQL_MCP_TRANSPORT" MYSQL_MCP_TRANSPORT=sse
 printf 'connections:\n  default:\n    dsn: "%s"\ntransport: http\nhttp:\n  mcp:\n    bind: 0.0.0.0\n' "$MYSQL_DSN" >"$W/bad.yaml"
 has "--validate-config catches remote bind without token" "$(env -u MYSQL_DSN "$BIN" --validate-config "$W/bad.yaml" 2>&1)" "bearer token is required"

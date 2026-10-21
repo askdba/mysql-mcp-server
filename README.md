@@ -149,7 +149,7 @@ Environment variables:
 | MYSQL_MCP_HTTP_STATELESS | No | 0 | Set `1` for stateless sessions (no `Mcp-Session-Id`); `use_connection` then only lasts one request |
 | MYSQL_MCP_HTTP_SESSION_TIMEOUT_MINUTES | No | 30 | Close idle MCP HTTP sessions after this many minutes |
 | MYSQL_MCP_HTTP_ALLOWED_ORIGINS | No | – | Comma-separated browser origins (e.g. `https://app.example.com`) allowed to call the endpoint: they get CORS headers and pass cross-origin protection. Other origins are rejected |
-| MYSQL_MCP_HTTP_ALLOWED_HOSTS | No | – | Comma-separated public host names a **reverse proxy on the same machine** forwards to the loopback listener (e.g. `mcp.example.com`). Without it, such requests fail the DNS-rebinding check with 403 |
+| MYSQL_MCP_HTTP_ALLOWED_HOSTS | No | – | Comma-separated public host names a **reverse proxy on the same machine** forwards to the loopback listener (e.g. `mcp.example.com`). Without it, such requests fail the DNS-rebinding check with 403. Setting it requires a token, because the proxy makes the server reachable from outside |
 | MYSQL_HTTP_RATE_LIMIT | No | 0 | Enable rate limiting for HTTP mode (set to 1) |
 | MYSQL_HTTP_RATE_LIMIT_RPS | No | 100 | Rate limit: requests per second |
 | MYSQL_HTTP_RATE_LIMIT_BURST | No | 200 | Rate limit: burst size |
@@ -559,7 +559,7 @@ Behavior and safety:
 
 - **Refuses to start unsafely:** a non-loopback bind without a token, or without TLS, is a startup error. `--validate-config` runs the same checks.
 - **Behind a reverse proxy** (nginx, Caddy, …) that terminates TLS:
-  - If the proxy forwards to the loopback listener (default bind), list its public names in `MYSQL_MCP_HTTP_ALLOWED_HOSTS`. Otherwise the DNS-rebinding check rejects its `Host` header.
+  - If the proxy forwards to the loopback listener (default bind), list its public names in `MYSQL_MCP_HTTP_ALLOWED_HOSTS`. Otherwise the DNS-rebinding check rejects its `Host` header. A token is then required, as for any non-loopback bind.
   - If it forwards to a non-loopback bind, also set `MYSQL_MCP_HTTP_ALLOW_INSECURE=1`; the token is still required.
 - **Browser protections:** requests from other origins are rejected. Origins listed in `MYSQL_MCP_HTTP_ALLOWED_ORIGINS` get CORS headers, including answers to preflight requests, so browser-based clients work. On localhost, requests whose `Host` header is not a localhost name (or an allowed host) are rejected (DNS-rebinding protection).
 - **Per-session connections:** `use_connection` and `add_connection` switch the active connection for **that MCP session only**; other HTTP clients keep theirs. If a session's connection is removed, its tools fail with "connection '…' no longer exists" instead of silently running on another server. In stateless mode (`MYSQL_MCP_HTTP_STATELESS=1`) a switch lasts only for the request that made it.
