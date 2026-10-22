@@ -16,7 +16,7 @@ set -u
 
 TAG=${1:-8.0}
 case $TAG in
-*:*) IMAGE=${MYSQL_IMAGE:-$TAG} ;; # full image, e.g. mariadb:11.4
+*:* | */*) IMAGE=${MYSQL_IMAGE:-$TAG} ;; # full image, e.g. mariadb:11.4 or ghcr.io/org/db
 *) IMAGE=${MYSQL_IMAGE:-mysql:$TAG} ;;
 esac
 DBPORT=${2:-13350}
