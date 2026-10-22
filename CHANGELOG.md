@@ -7,6 +7,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### CI
+
+- **The `MCP HTTP Smoke` job now covers every supported server:** MySQL 8.0, 8.4, 9.7 and 26.10, and MariaDB 11.4 and 12.3. Before, it ran only on MySQL 8.0 and 26.10. `scripts/smoke-mcp-http.sh` accepts a full image such as `mariadb:11.4` and uses the `mariadb` client when the image has no `mysql` client.
+
 ## [1.9.0-rc.1] - 2026-10-22
 
 First release candidate for v1.9.0 (#142): MCP over Streamable HTTP, MySQL 26.10 in CI, and end-to-end smoke tests. Tested on MySQL 8.0, 8.4, 9.7, 26.10 and MariaDB 11.4, 12.3.

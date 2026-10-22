@@ -1122,6 +1122,7 @@ make test-integration-2610
 ```bash
 make smoke-http                            # MySQL 8.0
 make smoke-http SMOKE_MYSQL_VERSION=26.10  # or scripts/smoke-mcp-http.sh 26.10
+make smoke-http SMOKE_MYSQL_VERSION=mariadb:11.4
 ```
 
 **Test against all supported versions (MySQL & MariaDB):**
