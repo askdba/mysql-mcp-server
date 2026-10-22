@@ -34,6 +34,9 @@ type FileConfig struct {
 	// Logging settings
 	Logging FileLoggingConfig `yaml:"logging" json:"logging"`
 
+	// MCP transport: "stdio" (default) or "http" (MCP Streamable HTTP; settings under http.mcp)
+	Transport string `yaml:"transport,omitempty" json:"transport,omitempty"`
+
 	// HTTP/REST API settings
 	HTTP FileHTTPConfig `yaml:"http" json:"http"`
 }
@@ -105,6 +108,22 @@ type FileHTTPConfig struct {
 	Port                  int                  `yaml:"port" json:"port"`
 	RequestTimeoutSeconds int                  `yaml:"request_timeout_seconds" json:"request_timeout_seconds"`
 	RateLimit             *FileRateLimitConfig `yaml:"rate_limit" json:"rate_limit"`
+	MCP                   *FileMCPHTTPConfig   `yaml:"mcp,omitempty" json:"mcp,omitempty"`
+}
+
+// FileMCPHTTPConfig represents MCP Streamable HTTP transport settings (transport: http).
+// The bearer token is read from token_file; it is never stored inline in the config file.
+type FileMCPHTTPConfig struct {
+	Bind                  string   `yaml:"bind,omitempty" json:"bind,omitempty"`
+	Path                  string   `yaml:"path,omitempty" json:"path,omitempty"`
+	TokenFile             string   `yaml:"token_file,omitempty" json:"token_file,omitempty"`
+	TLSCert               string   `yaml:"tls_cert,omitempty" json:"tls_cert,omitempty"`
+	TLSKey                string   `yaml:"tls_key,omitempty" json:"tls_key,omitempty"`
+	Stateless             bool     `yaml:"stateless,omitempty" json:"stateless,omitempty"`
+	SessionTimeoutMinutes int      `yaml:"session_timeout_minutes,omitempty" json:"session_timeout_minutes,omitempty"`
+	AllowedOrigins        []string `yaml:"allowed_origins,omitempty" json:"allowed_origins,omitempty"`
+	AllowedHosts          []string `yaml:"allowed_hosts,omitempty" json:"allowed_hosts,omitempty"`
+	AllowInsecure         bool     `yaml:"allow_insecure,omitempty" json:"allow_insecure,omitempty"`
 }
 
 // FileRateLimitConfig represents rate limiting settings in the config file.
@@ -228,7 +247,21 @@ func ValidateConfigFile(path string) error {
 		}
 	}
 
-	return nil
+	// Transport settings: same checks as startup. The bearer token may also come from
+	// MYSQL_MCP_HTTP_TOKEN or MYSQL_MCP_HTTP_TOKEN_FILE at runtime (same precedence as
+	// applyEnvOverrides), so honor them here.
+	rc := cfg.ToConfig()
+	applyMCPHTTPDefaults(rc)
+	if v := strings.TrimSpace(os.Getenv("MYSQL_MCP_HTTP_TOKEN")); v != "" {
+		rc.MCPHTTPToken = v
+	}
+	if v := strings.TrimSpace(os.Getenv("MYSQL_MCP_HTTP_TOKEN_FILE")); v != "" {
+		rc.MCPHTTPTokenFile = v
+	}
+	if err := resolveMCPHTTPToken(rc); err != nil {
+		return err
+	}
+	return ValidateTransport(rc)
 }
 
 // ToConfig converts a FileConfig to the runtime Config struct.
@@ -338,6 +371,22 @@ func (fc *FileConfig) ToConfig() *Config {
 		}
 	}
 
+	cfg.Transport = strings.ToLower(strings.TrimSpace(fc.Transport))
+	if m := fc.HTTP.MCP; m != nil {
+		cfg.MCPHTTPBind = strings.TrimSpace(m.Bind)
+		cfg.MCPHTTPPath = strings.TrimSpace(m.Path)
+		cfg.MCPHTTPTokenFile = strings.TrimSpace(m.TokenFile)
+		cfg.MCPHTTPTLSCert = strings.TrimSpace(m.TLSCert)
+		cfg.MCPHTTPTLSKey = strings.TrimSpace(m.TLSKey)
+		cfg.MCPHTTPStateless = m.Stateless
+		if m.SessionTimeoutMinutes > 0 {
+			cfg.MCPHTTPSessionTimeout = time.Duration(m.SessionTimeoutMinutes) * time.Minute
+		}
+		cfg.MCPHTTPAllowedOrigins = m.AllowedOrigins
+		cfg.MCPHTTPAllowedHosts = m.AllowedHosts
+		cfg.MCPHTTPAllowInsecure = m.AllowInsecure
+	}
+
 	// Convert connections - sort keys for deterministic ordering
 	// "default" connection is placed first if it exists, then alphabetically
 	names := make([]string, 0, len(fc.Connections))
@@ -425,6 +474,21 @@ func PrintConfig(cfg *Config) string {
 				Burst:   &cfg.RateLimitBurst,
 			},
 		},
+	}
+	if cfg.Transport == TransportHTTP {
+		fc.Transport = cfg.Transport
+		fc.HTTP.MCP = &FileMCPHTTPConfig{
+			Bind:                  cfg.MCPHTTPBind,
+			Path:                  cfg.MCPHTTPPath,
+			TokenFile:             cfg.MCPHTTPTokenFile,
+			TLSCert:               cfg.MCPHTTPTLSCert,
+			TLSKey:                cfg.MCPHTTPTLSKey,
+			Stateless:             cfg.MCPHTTPStateless,
+			SessionTimeoutMinutes: int(cfg.MCPHTTPSessionTimeout.Minutes()),
+			AllowedOrigins:        cfg.MCPHTTPAllowedOrigins,
+			AllowedHosts:          cfg.MCPHTTPAllowedHosts,
+			AllowInsecure:         cfg.MCPHTTPAllowInsecure,
+		}
 	}
 
 	for _, conn := range cfg.Connections {

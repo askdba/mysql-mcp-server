@@ -24,7 +24,7 @@ export MYSQL80_PORT ?= 13306
 export MYSQL84_PORT ?= 3307
 export MYSQL90_PORT ?= 3308
 export MYSQL97_PORT ?= 13309
-export MYSQL267_PORT ?= 13311
+export MYSQL2610_PORT ?= 13311
 export MARIADB11_PORT ?= 3310
 export MARIADB12_PORT ?= 13312
 
@@ -75,6 +75,13 @@ test-security:
 	@echo "$(BLUE)🔐 Running security tests...$(RESET)"
 	go test -v ./tests/security/...
 
+# End-to-end smoke tests of the built binary (REST, stdio, MCP Streamable HTTP) against a
+# throwaway MySQL container. Override the version: make smoke-http SMOKE_MYSQL_VERSION=26.10
+SMOKE_MYSQL_VERSION ?= 8.0
+smoke-http:
+	@echo "$(BLUE)💨 Running MCP HTTP smoke tests against MySQL $(SMOKE_MYSQL_VERSION) (Docker required)...$(RESET)"
+	@./scripts/smoke-mcp-http.sh $(SMOKE_MYSQL_VERSION)
+
 integration:
 	@echo "$(BLUE)🐋 Running integration tests (Docker required)...$(RESET)"
 	go test -tags=integration ./internal/mysql -v
@@ -124,14 +131,14 @@ test-integration-97:
 		docker compose -f docker-compose.test.yml stop mysql97; \
 		exit $$TEST_EXIT
 
-test-integration-267:
-	@echo "$(BLUE)🐋 Running integration tests against MySQL 26.7...$(RESET)"
-	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 90 mysql267
-	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL267_PORT))/testdb?parseTime=true" \
-		MYSQL_SAKILA_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL267_PORT))/sakila?parseTime=true" \
+test-integration-2610:
+	@echo "$(BLUE)🐋 Running integration tests against MySQL 26.10...$(RESET)"
+	@docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 90 mysql2610
+	@MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL2610_PORT))/testdb?parseTime=true" \
+		MYSQL_SAKILA_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$(MYSQL2610_PORT))/sakila?parseTime=true" \
 		go test -tags=integration -v ./tests/integration/...; \
 		TEST_EXIT=$$?; \
-		docker compose -f docker-compose.test.yml stop mysql267; \
+		docker compose -f docker-compose.test.yml stop mysql2610; \
 		exit $$TEST_EXIT
 
 test-integration-all:
@@ -140,7 +147,7 @@ test-integration-all:
 	@$(MAKE) test-integration-84
 	@$(MAKE) test-integration-90
 	@$(MAKE) test-integration-97
-	@$(MAKE) test-integration-267
+	@$(MAKE) test-integration-2610
 	@$(MAKE) test-integration-mariadb-11
 	@$(MAKE) test-integration-mariadb-12
 	@echo "$(GREEN)✔ All integration tests complete$(RESET)"
@@ -392,6 +399,7 @@ help:
 	@echo "$(CYAN)Testing:$(RESET)"
 	@echo "  make test              - Run unit tests"
 	@echo "  make test-security     - Run security/validator tests"
+	@echo "  make smoke-http        - Smoke-test the binary (REST, stdio, MCP HTTP) vs MySQL (SMOKE_MYSQL_VERSION=8.0)"
 	@echo "  make integration       - Run basic integration tests"
 	@echo "  make test-integration  - Run full integration suite (Docker Compose)"
 	@echo "  make test-integration-80   - Test against MySQL 8.0"
@@ -399,7 +407,7 @@ help:
 	@echo "  make test-integration-84  - Test against MySQL 8.4"
 	@echo "  make test-integration-90  - Test against MySQL 9.0"
 	@echo "  make test-integration-97  - Test against MySQL 9.7"
-	@echo "  make test-integration-267 - Test against MySQL 26.7"
+	@echo "  make test-integration-2610 - Test against MySQL 26.10"
 	@echo "  make test-integration-mariadb-11 - Test against MariaDB 11.4"
 	@echo "  make test-integration-mariadb-12 - Test against MariaDB 12.3"
 	@echo "  make test-integration-all - Test against all MySQL and MariaDB versions"

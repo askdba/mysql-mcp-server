@@ -268,3 +268,17 @@ func TestResponseWriterCapture(t *testing.T) {
 		t.Errorf("expected status 404, got %d", capturedStatus)
 	}
 }
+
+func TestWithLoggingSupportsFlush(t *testing.T) {
+	handler := WithLogging(func(string, string, int, time.Duration) {})(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("event: message\n\n"))
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Errorf("Flush through logging middleware: %v", err)
+		}
+	})
+	rec := httptest.NewRecorder()
+	handler(rec, httptest.NewRequest(http.MethodGet, "/mcp", nil))
+	if !rec.Flushed {
+		t.Error("expected the underlying writer to be flushed")
+	}
+}

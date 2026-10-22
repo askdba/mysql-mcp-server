@@ -7,7 +7,30 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **MCP Streamable HTTP transport** (`MYSQL_MCP_TRANSPORT=http`, #140). Remote MCP clients connect at `http://127.0.0.1:9306/mcp` (path, bind address and port configurable) and get the same tools, prompts and resources as stdio.
+  - Binds to loopback by default. Any other address requires a bearer token (`MYSQL_MCP_HTTP_TOKEN` / `MYSQL_MCP_HTTP_TOKEN_FILE`) and TLS (`MYSQL_MCP_HTTP_TLS_CERT` / `_KEY`); `MYSQL_MCP_HTTP_ALLOW_INSECURE=1` allows plain HTTP behind a TLS-terminating proxy.
+  - Cross-origin requests and DNS-rebinding `Host` headers are rejected. Browser clients from `MYSQL_MCP_HTTP_ALLOWED_ORIGINS` get full CORS support (preflight answered before the token check). `MYSQL_MCP_HTTP_ALLOWED_HOSTS` lets a same-host reverse proxy forward its public names to the loopback listener. It requires a token, since the proxy exposes the server.
+  - `use_connection` / `add_connection` switch the active connection per MCP session, not for the whole process. A session whose connection was removed gets a clear error instead of silently using another connection. Connections registered by `add_connection` over HTTP belong to that session: they are invisible to other sessions, names are per session, they close when the session ends (disconnect or idle timeout), at most 5 per session, and the tool is refused in stateless mode.
+  - `--validate-config` checks the transport settings; invalid bind addresses (with a port) and endpoint paths (reserved, wildcard or non-literal) are rejected at startup.
+  - Stateless mode (`MYSQL_MCP_HTTP_STATELESS=1`), idle session timeout, rate limiting, `/health` and token metrics on the same port, `--daemon` support, and `transport:` / `http.mcp:` config-file keys.
+  - It cannot be combined with the REST API (`MYSQL_MCP_HTTP=1`) in one process.
+  - Slow clients cannot hold connections open: request bodies must arrive within 30s (headers within 10s). The deadline is lifted once the body is read, so long tool calls and event streams are unaffected.
+  - On SIGTERM, in-flight requests get 5s, then open event streams are closed.
+
+### Changed
+
+- The REST API and the MCP HTTP transport share one graceful-shutdown path.
+
+### Fixed
+
+- HTTP request logging middleware now exposes the underlying writer (`Unwrap`), so streaming responses can be flushed through it.
+
 ### CI
+
+- **MySQL 26.10 replaces 26.7** in the integration matrix (26.10 GA, 2026-10-20; Innovation releases are supported only until the next one). The Docker Compose service, `make test-integration-2610` and `MYSQL2610_PORT` follow.
+- **New `MCP HTTP Smoke` job** runs `scripts/smoke-mcp-http.sh` (also `make smoke-http`) against MySQL 8.0 and 26.10: the built binary in REST, stdio and Streamable HTTP mode, including auth, TLS, CORS, unsafe-config refusals, session scoping, the slow-body cutoff and graceful shutdown. It is required by QA Summary.
 
 - **`govulncheck` is now blocking.** It fails the QA pipeline (the QA Summary job now checks the Security Scan job) and the pre-release gate in `release.yml`, so a release cannot publish binaries with known-reachable vulnerabilities. It scans every release target (linux/darwin/windows × amd64/arm64, `CGO_ENABLED=0`), because govulncheck only analyzes the active `GOOS`/`GOARCH`. gosec (including its install step) and golangci-lint stay informational.
 

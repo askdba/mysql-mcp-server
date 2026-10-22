@@ -24,7 +24,7 @@ This project exposes safe MySQL introspection tools to Claude Desktop via MCP. C
   - ping, server_info
   - list_connections, use_connection (multi-DSN)
   - vector_search, vector_info (MySQL 9.0+)
-- Supports MySQL 8.0, 8.4, 9.x, 26.x and MariaDB 10.x, 11.x, 12.x (CI-tested on MySQL 8.0, 8.4, 9.7, 26.7 and MariaDB 11.4, 12.3)
+- Supports MySQL 8.0, 8.4, 9.x, 26.x and MariaDB 10.x, 11.x, 12.x (CI-tested on MySQL 8.0, 8.4, 9.7, 26.10 and MariaDB 11.4, 12.3)
 - Query timeouts, structured logging, audit logs; optional **live token metrics** and **`/status`** dashboard in HTTP mode
 - **Performance**: configurable pool/query timeouts, server-side row caps, `explain_query` plan warnings
 - Single Go binary
@@ -138,7 +138,18 @@ Environment variables:
 | MYSQL_MCP_VECTOR | No | 0 | Enable vector tools for MySQL 9.0+ (set to 1) |
 | MYSQL_MCP_HTTP | No | 0 | Enable REST API mode (set to 1); **mutually exclusive** with stdio MCP |
 | MYSQL_MCP_METRICS_HTTP | No | 0 | With **stdio MCP only**: expose **`/status`** + **`/api/metrics/tokens`** on **`MYSQL_HTTP_PORT`** (same process as Claude/Cursor) |
-| MYSQL_HTTP_PORT | No | 9306 | Port for REST API **or** metrics sidecar |
+| MYSQL_HTTP_PORT | No | 9306 | Port for REST API, MCP HTTP transport, **or** metrics sidecar |
+| MYSQL_MCP_TRANSPORT | No | stdio | MCP transport: `stdio` or `http` ([MCP Streamable HTTP](#remote-mcp-over-http-streamable-http)). `http` cannot be combined with `MYSQL_MCP_HTTP=1` |
+| MYSQL_MCP_HTTP_BIND | No | 127.0.0.1 | Listen address (host or IP, no port; `[::1]` is accepted) for the MCP HTTP transport. Any non-loopback address requires a token **and** TLS |
+| MYSQL_MCP_HTTP_PATH | No | /mcp | MCP endpoint path: a literal path without trailing `/` or wildcards, not `/health`, `/status` or `/api/metrics/tokens` |
+| MYSQL_MCP_HTTP_TOKEN | No | – | Bearer token clients must send (`Authorization: Bearer …`). Required for non-loopback binds |
+| MYSQL_MCP_HTTP_TOKEN_FILE | No | – | File containing the bearer token (keeps it out of the environment) |
+| MYSQL_MCP_HTTP_TLS_CERT / MYSQL_MCP_HTTP_TLS_KEY | No | – | Serve HTTPS. Required for non-loopback binds |
+| MYSQL_MCP_HTTP_ALLOW_INSECURE | No | 0 | Set `1` to allow a non-loopback bind **without** TLS when a reverse proxy terminates TLS in front. The token is still required |
+| MYSQL_MCP_HTTP_STATELESS | No | 0 | Set `1` for stateless sessions (no `Mcp-Session-Id`); `use_connection` then only lasts one request |
+| MYSQL_MCP_HTTP_SESSION_TIMEOUT_MINUTES | No | 30 | Close idle MCP HTTP sessions after this many minutes |
+| MYSQL_MCP_HTTP_ALLOWED_ORIGINS | No | – | Comma-separated browser origins (e.g. `https://app.example.com`) allowed to call the endpoint: they get CORS headers and pass cross-origin protection. Other origins are rejected |
+| MYSQL_MCP_HTTP_ALLOWED_HOSTS | No | – | Comma-separated public host names a **reverse proxy on the same machine** forwards to the loopback listener (e.g. `mcp.example.com`). Without it, such requests fail the DNS-rebinding check with 403. Setting it requires a token, because the proxy makes the server reachable from outside |
 | MYSQL_HTTP_RATE_LIMIT | No | 0 | Enable rate limiting for HTTP mode (set to 1) |
 | MYSQL_HTTP_RATE_LIMIT_RPS | No | 100 | Rate limit: requests per second |
 | MYSQL_HTTP_RATE_LIMIT_BURST | No | 200 | Rate limit: burst size |
@@ -511,6 +522,77 @@ To use the same config in your own project, copy `.mcp.json` to your project roo
 
 **Verify the integration** by asking Claude Code: *"List all databases on this MySQL server."*
 
+## Remote MCP over HTTP (Streamable HTTP)
+
+Besides stdio, the server can speak MCP over the [Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http), so MCP clients connect over the network without launching a local process. It serves the **same tools, prompts and resources** as stdio, and the same safety rules apply (read-only validation, allow-lists, column masking, audit log).
+
+**Local (loopback only, no token needed):**
+
+```bash
+export MYSQL_DSN="user:password@tcp(127.0.0.1:3306)/mydb?parseTime=true"
+export MYSQL_MCP_TRANSPORT=http          # MCP at http://127.0.0.1:9306/mcp
+mysql-mcp-server
+```
+
+```bash
+claude mcp add --transport http mysql http://127.0.0.1:9306/mcp
+```
+
+**Remote (HTTPS + bearer token):**
+
+```bash
+openssl rand -hex 32 > /etc/mysql-mcp/token && chmod 600 /etc/mysql-mcp/token
+export MYSQL_MCP_TRANSPORT=http
+export MYSQL_MCP_HTTP_BIND=0.0.0.0
+export MYSQL_MCP_HTTP_TOKEN_FILE=/etc/mysql-mcp/token
+export MYSQL_MCP_HTTP_TLS_CERT=/etc/mysql-mcp/cert.pem
+export MYSQL_MCP_HTTP_TLS_KEY=/etc/mysql-mcp/key.pem
+mysql-mcp-server --daemon   # optional: run in background (Unix)
+```
+
+```bash
+claude mcp add --transport http mysql https://db-tools.example.com:9306/mcp \
+  --header "Authorization: Bearer $(cat /etc/mysql-mcp/token)"
+```
+
+Behavior and safety:
+
+- **Refuses to start unsafely:** a non-loopback bind without a token, or without TLS, is a startup error. `--validate-config` runs the same checks.
+- **Behind a reverse proxy** (nginx, Caddy, …) that terminates TLS:
+  - If the proxy forwards to the loopback listener (default bind), list its public names in `MYSQL_MCP_HTTP_ALLOWED_HOSTS`. Otherwise the DNS-rebinding check rejects its `Host` header. A token is then required, as for any non-loopback bind.
+  - If it forwards to a non-loopback bind, also set `MYSQL_MCP_HTTP_ALLOW_INSECURE=1`; the token is still required.
+- **Browser protections:** requests from other origins are rejected. Origins listed in `MYSQL_MCP_HTTP_ALLOWED_ORIGINS` get CORS headers, including answers to preflight requests, so browser-based clients work. On localhost, requests whose `Host` header is not a localhost name (or an allowed host) are rejected (DNS-rebinding protection).
+- **Per-session connections:** `use_connection` and `add_connection` switch the active connection for **that MCP session only**; other HTTP clients keep theirs. If a session's connection is removed, its tools fail with "connection '…' no longer exists" instead of silently running on another server. In stateless mode (`MYSQL_MCP_HTTP_STATELESS=1`) a switch lasts only for the request that made it.
+- **`add_connection` over HTTP belongs to the session** (`MYSQL_MCP_ENABLE_ADD_CONNECTION=1`; off by default):
+  - The new connection is visible only to the session that added it, in `list_connections` and `use_connection`. Other sessions cannot see or use it, or its credentials.
+  - Names are per session: two sessions can each add `staging`. A name that is already a configured, process-wide connection is refused.
+  - It is closed (pool and SSH tunnel) when the session ends, either by the client disconnecting or after `MYSQL_MCP_HTTP_SESSION_TIMEOUT_MINUTES` idle.
+  - Each session can register at most 5 connections.
+  - It is refused in stateless mode, where the connection would close as soon as the request ends.
+  - It still lets any token holder make the server connect to any host the server can reach, so enable it for remote deployments only when every token holder is trusted.
+- **Other endpoints on the same port:** `GET /health` (no auth) and `GET /api/metrics/tokens` (same token). `/status` is served only when no token is configured, because a browser cannot send the bearer token.
+- `MYSQL_HTTP_RATE_LIMIT` applies to this transport too. Request headers must arrive within 10s and bodies within 30s, so slow clients cannot hold connections open. Long tool calls and event streams are not affected.
+- It cannot run in the same process as the REST API (`MYSQL_MCP_HTTP=1`); run two processes if you need both.
+
+Config file equivalent:
+
+```yaml
+transport: http
+http:
+  port: 9306
+  mcp:
+    bind: 0.0.0.0
+    path: /mcp
+    token_file: /etc/mysql-mcp/token   # the token itself is never stored in the config file
+    tls_cert: /etc/mysql-mcp/cert.pem
+    tls_key: /etc/mysql-mcp/key.pem
+    session_timeout_minutes: 30
+    # stateless: false
+    # allowed_origins: ["https://app.example.com"]   # browser clients (CORS)
+    # allowed_hosts: ["mcp.example.com"]             # reverse proxy forwarding to loopback
+    # allow_insecure: false
+```
+
 ## MCP Tools
 
 ### list_databases
@@ -623,7 +705,7 @@ Output:
 
 ### add_connection
 
-**MCP only.** Available when the server runs in **MCP mode** (stdio) with **`MYSQL_MCP_EXTENDED=1`** and **`MYSQL_MCP_ENABLE_ADD_CONNECTION=1`**. It registers a new named MySQL connection at runtime and switches the **process-wide** active connection for **that MCP process**. There is **no** HTTP route to register a new DSN. **REST API mode** (`MYSQL_MCP_HTTP=1`) is a **separate** process: [`GET /api/connections`](#api-endpoints) and [`POST /api/connections/use`](#api-endpoints) only list and switch connections **loaded in that HTTP server instance**—they do **not** see names added via MCP in a stdio process, and MCP does not reach into a separate HTTP-only deployment.
+**MCP tool.** Available when the server runs in **MCP mode** (stdio or [Streamable HTTP](#remote-mcp-over-http-streamable-http)) with **`MYSQL_MCP_EXTENDED=1`** and **`MYSQL_MCP_ENABLE_ADD_CONNECTION=1`**. It registers a new named MySQL connection at runtime and switches to it: over stdio the **process-wide** active connection changes; over Streamable HTTP the connection belongs to **the calling MCP session**: only that session sees and uses it, and it is closed when the session ends ([details](#remote-mcp-over-http-streamable-http)). There is **no** REST API route to register a new DSN. **REST API mode** (`MYSQL_MCP_HTTP=1`) is a **separate** process: [`GET /api/connections`](#api-endpoints) and [`POST /api/connections/use`](#api-endpoints) only list and switch connections **loaded in that HTTP server instance**—they do **not** see names added via MCP in a stdio process, and MCP does not reach into a separate HTTP-only deployment.
 
 Enable:
 
@@ -648,7 +730,7 @@ Input:
 | `dsn` | Yes | Non-empty; must parse as a valid MySQL DSN. **`root`** as the MySQL user is **rejected** at registration time. |
 | `description` | No | Stored with the connection metadata. |
 
-Behavior: builds a `ConnectionConfig`, opens a pool, **`Ping()`** with the tool request context (timeouts/cancellation), then **`SetActive(name)`**. On activation failure after a successful add, the server removes the new pool (**rollback**). The active connection applies to **all** tools and clients on this process until switched again (`use_connection` or another `add_connection`).
+Behavior: builds a `ConnectionConfig`, opens a pool, **`Ping()`** with the tool request context (timeouts/cancellation), then activates it. On activation failure after a successful add, the server removes the new pool (**rollback**). Over stdio, the active connection applies to **all** tools on this process until switched again (`use_connection` or another `add_connection`). Over Streamable HTTP, it applies only to the requesting MCP session.
 
 Output (success):
 
@@ -1027,12 +1109,19 @@ make test-integration-80
 make test-integration-84
 ```
 
-**Test against MySQL 9.0 / 9.7 / 26.7:**
+**Test against MySQL 9.0 / 9.7 / 26.10:**
 
 ```bash
 make test-integration-90
 make test-integration-97
-make test-integration-267
+make test-integration-2610
+```
+
+**Smoke-test the built binary end to end** (REST API, stdio MCP, and MCP Streamable HTTP with auth, TLS, CORS, unsafe-config refusals and session scoping; about 1.5 minutes, Docker required):
+
+```bash
+make smoke-http                            # MySQL 8.0
+make smoke-http SMOKE_MYSQL_VERSION=26.10  # or scripts/smoke-mcp-http.sh 26.10
 ```
 
 **Test against all supported versions (MySQL & MariaDB):**
@@ -1048,7 +1137,7 @@ make test-integration-mariadb-11
 make test-integration-mariadb-12
 ```
 
-If a host port clashes with a server already running locally, override it, e.g. `make test-integration-84 MYSQL84_PORT=13307`. The variables are `MYSQL80_PORT`, `MYSQL84_PORT`, `MYSQL90_PORT`, `MYSQL97_PORT`, `MYSQL267_PORT`, `MARIADB11_PORT` and `MARIADB12_PORT`.
+If a host port clashes with a server already running locally, override it, e.g. `make test-integration-84 MYSQL84_PORT=13307`. The variables are `MYSQL80_PORT`, `MYSQL84_PORT`, `MYSQL90_PORT`, `MYSQL97_PORT`, `MYSQL2610_PORT`, `MARIADB11_PORT` and `MARIADB12_PORT`.
 
 The testcontainers-based client test in `internal/mysql` defaults to `mysql:8.4`; set `MYSQL_TC_IMAGE` (e.g. `mariadb:12.3`) to run it against another image. It is skipped when no Docker daemon is reachable.
 
@@ -1123,7 +1212,7 @@ export MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3307)/testdb?parseTime=tr
 # MySQL 9.0 (port 3308)
 export MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:3308)/testdb?parseTime=true"
 
-# MySQL 9.7 (13309), MySQL 26.7 (13311), MariaDB 11.4 (3310), MariaDB 12.3 (13312)
+# MySQL 9.7 (13309), MySQL 26.10 (13311), MariaDB 11.4 (3310), MariaDB 12.3 (13312)
 export MYSQL_TEST_DSN="mcpuser:mcppass00@tcp(127.0.0.1:13309)/testdb?parseTime=true"
 
 # Sakila tests read MYSQL_SAKILA_DSN (falls back to MYSQL_TEST_DSN)
@@ -1301,7 +1390,7 @@ Use `--silent` to suppress INFO/WARN logs when running under a service manager. 
 
 **Discovery (`GET /api`):** The JSON response includes an **`endpoints`** map that lists **only routes the server has registered** for the current configuration—same rules as the mux: core routes always; extended routes only if **`MYSQL_MCP_EXTENDED=1`**; **`/api/processlist`** and **`/api/kill`** only if extended **and** **`MYSQL_MCP_PROCESS_ADMIN=1`**; **`/api/audit-log`** only if extended **and** read-audit is enabled (**`MYSQL_MCP_READ_AUDIT_TOOL=1`** with **`MYSQL_MCP_AUDIT_LOG`**); **`/api/slow-log`** only if extended **and** **`MYSQL_MCP_SLOW_QUERY_TOOL=1`**; vector routes only if **`MYSQL_MCP_VECTOR=1`**; **`/status`** appears in the index only when the token card is enabled. **`modes`** in the JSON reflects **`extended`**, **`vector`**, and **`token_card`**.
 
-**Runtime DSN registration:** There is **no** HTTP route to register a new connection. The MCP tool **`add_connection`** (optional; **`MYSQL_MCP_EXTENDED=1`** and **`MYSQL_MCP_ENABLE_ADD_CONNECTION=1`**) is the only supported registration path and applies to the **MCP (stdio) process** only. In **REST API mode**, the process never registers tools; `GET /api/connections` lists only connections configured for **that HTTP server process** (not connections added by MCP elsewhere).
+**Runtime DSN registration:** There is **no** REST API route to register a new connection. The MCP tool **`add_connection`** (optional; **`MYSQL_MCP_EXTENDED=1`** and **`MYSQL_MCP_ENABLE_ADD_CONNECTION=1`**) is the only supported registration path and is available over MCP (stdio or Streamable HTTP) only. In **REST API mode**, the process never registers tools; `GET /api/connections` lists only connections configured for **that HTTP server process** (not connections added by MCP elsewhere).
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|

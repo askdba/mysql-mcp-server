@@ -3,7 +3,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"database/sql/driver"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -319,8 +322,9 @@ func (cm *ConnectionManager) addConnectionWithPoolConfig(ctx context.Context, co
 		cm.tunnelClosers[connCfg.Name] = tunnelCloser
 	}
 
-	// Set as active if it's the first connection
-	if cm.activeConn == "" {
+	// Set as active if it's the first connection. A session-owned connection (MCP HTTP
+	// add_connection) never becomes the process-wide default.
+	if cm.activeConn == "" && !isSessionConnKey(connCfg.Name) {
 		cm.activeConn = connCfg.Name
 	}
 
@@ -422,21 +426,246 @@ func (cm *ConnectionManager) Close() {
 	cm.pendingAdds = nil
 }
 
-// getDB returns the active database connection in a thread-safe manner.
+// getDB returns the active database connection for ctx in a thread-safe manner.
 // All database access should go through this function to ensure proper
 // connection management and avoid data races when connections are switched.
-func getDB() *sql.DB {
+// Over the MCP HTTP transport, ctx carries the MCP session's own active connection.
+func getDB(ctx context.Context) *sql.DB {
 	if connManager == nil {
 		panic("getDB called before connManager initialized")
 	}
-	return connManager.GetActiveDB()
+	db, name := connManager.ActiveFor(ctx)
+	if db == nil {
+		// Never hand tools a nil *sql.DB: a nil dereference would crash the whole server.
+		// This handle fails every operation with a clear error instead.
+		return missingConnectionDB(name)
+	}
+	return db
 }
 
-// GetServerType returns the server type of the active connection.
-func (cm *ConnectionManager) GetServerType() ServerType {
+// missingConnDBs caches one failing handle per name (sql.OpenDB starts a goroutine).
+var missingConnDBs sync.Map // name -> *sql.DB
+
+// missingConnectionDB returns a *sql.DB whose every operation fails because the named
+// connection no longer exists (or none is active).
+func missingConnectionDB(name string) *sql.DB {
+	if db, ok := missingConnDBs.Load(name); ok {
+		return db.(*sql.DB)
+	}
+	msg := "no active MySQL connection"
+	if name != "" {
+		msg = fmt.Sprintf("connection '%s' no longer exists; call use_connection to pick another", name)
+	}
+	fresh := sql.OpenDB(missingConnector{err: errors.New(msg)})
+	db, loaded := missingConnDBs.LoadOrStore(name, fresh)
+	if loaded {
+		_ = fresh.Close()
+	}
+	return db.(*sql.DB)
+}
+
+type missingConnector struct{ err error }
+
+func (m missingConnector) Connect(context.Context) (driver.Conn, error) { return nil, m.err }
+func (m missingConnector) Driver() driver.Driver                        { return missingDriver(m) }
+
+type missingDriver missingConnector
+
+func (m missingDriver) Open(string) (driver.Conn, error) { return nil, m.err }
+
+// ===== Per-session active connection (MCP HTTP transport) =====
+
+// sessionConnPrefix namespaces connections registered by add_connection over the MCP
+// HTTP transport: "mcp-session/<session id>/<name>". Users cannot pick such names.
+const sessionConnPrefix = "mcp-session/"
+
+// maxSessionConnections caps how many connections one MCP HTTP session may register.
+const maxSessionConnections = 5
+
+// sessionConn holds one MCP session's connection state over the HTTP transport. Stdio has
+// a single client and never attaches one, so it keeps the process-wide behavior.
+//
+// name is the connection manager key of the session's active connection ("" = use the
+// process-wide active connection). owned maps the names this session registered with
+// add_connection to their manager keys; they are visible only to this session and are
+// removed when it ends.
+type sessionConn struct {
+	mu     sync.Mutex
+	id     string
+	name   string
+	owned  map[string]string
+	closed bool
+}
+
+func newSessionConn() *sessionConn {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return &sessionConn{id: hex.EncodeToString(b), owned: make(map[string]string)}
+}
+
+func (sc *sessionConn) get() string {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	return sc.name
+}
+
+func (sc *sessionConn) set(key string) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	sc.name = key
+}
+
+// resolve maps a user-facing connection name to its manager key: a connection this
+// session registered wins over a process-wide one with the same name.
+func (sc *sessionConn) resolve(name string) string {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if key, ok := sc.owned[name]; ok {
+		return key
+	}
+	return name
+}
+
+// displayName maps a manager key back to the name the session used.
+func (sc *sessionConn) displayName(key string) string {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	for name, k := range sc.owned {
+		if k == key {
+			return name
+		}
+	}
+	return key
+}
+
+// ownedNames returns the session's registered connections as name -> manager key.
+func (sc *sessionConn) ownedNames() map[string]string {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	out := make(map[string]string, len(sc.owned))
+	for n, k := range sc.owned {
+		out[n] = k
+	}
+	return out
+}
+
+// reserve claims name for a new session-owned connection and returns its manager key.
+func (sc *sessionConn) reserve(name string) (string, error) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if sc.closed {
+		return "", fmt.Errorf("MCP session has ended")
+	}
+	if _, ok := sc.owned[name]; ok {
+		return "", ErrConnectionAlreadyExists
+	}
+	if len(sc.owned) >= maxSessionConnections {
+		return "", fmt.Errorf("this MCP session already registered %d connections (limit %d)", len(sc.owned), maxSessionConnections)
+	}
+	key := sessionConnPrefix + sc.id + "/" + name
+	sc.owned[name] = key
+	return key, nil
+}
+
+// release forgets a reservation after a failed add.
+func (sc *sessionConn) release(name string) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	delete(sc.owned, name)
+}
+
+// isClosed reports whether the session has ended.
+func (sc *sessionConn) isClosed() bool {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	return sc.closed
+}
+
+// close marks the session ended and returns the manager keys of its connections.
+func (sc *sessionConn) close() []string {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	sc.closed = true
+	keys := make([]string, 0, len(sc.owned))
+	for _, k := range sc.owned {
+		keys = append(keys, k)
+	}
+	sc.owned = map[string]string{}
+	return keys
+}
+
+// isSessionConnKey reports whether name is a session-owned manager key.
+func isSessionConnKey(name string) bool {
+	return strings.HasPrefix(name, sessionConnPrefix)
+}
+
+type sessionConnKey struct{}
+
+// withSessionConn returns a context whose connection lookups use sc.
+func withSessionConn(ctx context.Context, sc *sessionConn) context.Context {
+	return context.WithValue(ctx, sessionConnKey{}, sc)
+}
+
+// sessionConnFrom returns the session connection state attached to ctx, or nil.
+func sessionConnFrom(ctx context.Context) *sessionConn {
+	sc, _ := ctx.Value(sessionConnKey{}).(*sessionConn)
+	return sc
+}
+
+// activeNameLocked resolves the active connection name for ctx. Caller holds cm.mu.
+// A session's choice is returned even if that connection has since been removed, so the
+// session gets an error (see getDB) instead of silently running on another server.
+func (cm *ConnectionManager) activeNameLocked(ctx context.Context) string {
+	if sc := sessionConnFrom(ctx); sc != nil {
+		if name := sc.get(); name != "" {
+			return name
+		}
+	}
+	return cm.activeConn
+}
+
+// ActiveFor returns the active database connection and its name for ctx.
+func (cm *ConnectionManager) ActiveFor(ctx context.Context) (*sql.DB, string) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	if st, exists := cm.serverTypes[cm.activeConn]; exists {
+	name := cm.activeNameLocked(ctx)
+	return cm.connections[name], name
+}
+
+// Has reports whether a connection with the given name is registered.
+func (cm *ConnectionManager) Has(name string) bool {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	_, ok := cm.connections[name]
+	return ok
+}
+
+// SetActiveFor switches the active connection for ctx: the MCP session's choice when ctx
+// carries session state, otherwise the process-wide active connection.
+func (cm *ConnectionManager) SetActiveFor(ctx context.Context, name string) error {
+	sc := sessionConnFrom(ctx)
+	if sc == nil {
+		return cm.SetActive(name)
+	}
+	key := sc.resolve(name)
+	if (isSessionConnKey(name) && key == name) || !cm.Has(key) {
+		// Another session's connections are never addressable by their internal key.
+		return fmt.Errorf("connection '%s' not found", name)
+	}
+	sc.set(key)
+	return nil
+}
+
+// GetServerType returns the server type of the process-wide active connection.
+func (cm *ConnectionManager) GetServerType() ServerType {
+	return cm.ServerTypeFor(context.Background())
+}
+
+// ServerTypeFor returns the server type of the active connection for ctx.
+func (cm *ConnectionManager) ServerTypeFor(ctx context.Context) ServerType {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if st, exists := cm.serverTypes[cm.activeNameLocked(ctx)]; exists {
 		return st
 	}
 	return ServerTypeUnknown
@@ -470,10 +699,10 @@ func (cm *ConnectionManager) detectServerType(ctx context.Context, db *sql.DB) S
 	return ServerTypeMySQL
 }
 
-// getServerType is a helper to get the active server type.
-func getServerType() ServerType {
+// getServerType is a helper to get the active server type for ctx.
+func getServerType(ctx context.Context) ServerType {
 	if connManager == nil {
 		return ServerTypeUnknown
 	}
-	return connManager.GetServerType()
+	return connManager.ServerTypeFor(ctx)
 }
