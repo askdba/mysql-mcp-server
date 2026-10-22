@@ -7,6 +7,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [1.9.0-rc.1] - 2026-10-22
+
+First release candidate for v1.9.0 (#142): MCP over Streamable HTTP, MySQL 26.10 in CI, and end-to-end smoke tests. Tested on MySQL 8.0, 8.4, 9.7, 26.10 and MariaDB 11.4, 12.3.
+
 ### Added
 
 - **MCP Streamable HTTP transport** (`MYSQL_MCP_TRANSPORT=http`, #140). Remote MCP clients connect at `http://127.0.0.1:9306/mcp` (path, bind address and port configurable) and get the same tools, prompts and resources as stdio.
@@ -31,8 +35,12 @@ Semantic Versioning.
 
 - **MySQL 26.10 replaces 26.7** in the integration matrix (26.10 GA, 2026-10-20; Innovation releases are supported only until the next one). The Docker Compose service, `make test-integration-2610` and `MYSQL2610_PORT` follow.
 - **New `MCP HTTP Smoke` job** runs `scripts/smoke-mcp-http.sh` (also `make smoke-http`) against MySQL 8.0 and 26.10: the built binary in REST, stdio and Streamable HTTP mode, including auth, TLS, CORS, unsafe-config refusals, session scoping, the slow-body cutoff and graceful shutdown. It is required by QA Summary.
-
 - **`govulncheck` is now blocking.** It fails the QA pipeline (the QA Summary job now checks the Security Scan job) and the pre-release gate in `release.yml`, so a release cannot publish binaries with known-reachable vulnerabilities. It scans every release target (linux/darwin/windows × amd64/arm64, `CGO_ENABLED=0`), because govulncheck only analyzes the active `GOOS`/`GOARCH`. gosec (including its install step) and golangci-lint stay informational.
+- **Releases no longer push to `main`** (#135). The README version badge now reads the latest GitHub release, so the release workflow no longer commits a version bump. `main` requires the QA Summary check, which a bot push could not satisfy.
+
+### Docs
+
+- **RFC 0001** (`docs/rfc/0001-mysql-component-architecture.md`, #139): MySQL-native MCP through a shared SQL tool pack, a server-side guard component (MySQL 8.4+) and an in-server MCP endpoint component (26.10+).
 
 ## [1.8.0] - 2026-10-17
 
