@@ -76,7 +76,8 @@ test-security:
 	go test -v ./tests/security/...
 
 # End-to-end smoke tests of the built binary (REST, stdio, MCP Streamable HTTP) against a
-# throwaway MySQL container. Override the version: make smoke-http SMOKE_MYSQL_VERSION=26.10
+# throwaway MySQL/MariaDB container. Override: make smoke-http SMOKE_MYSQL_VERSION=26.10
+# (a MySQL tag) or SMOKE_MYSQL_VERSION=mariadb:11.4 (a full image).
 SMOKE_MYSQL_VERSION ?= 8.0
 smoke-http:
 	@echo "$(BLUE)💨 Running MCP HTTP smoke tests against MySQL $(SMOKE_MYSQL_VERSION) (Docker required)...$(RESET)"

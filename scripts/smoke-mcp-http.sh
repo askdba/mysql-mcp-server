@@ -2,8 +2,9 @@
 # End-to-end smoke tests for the MCP Streamable HTTP transport (and REST/stdio regressions),
 # run against the real binary and a throwaway MySQL container.
 #
-# Usage: scripts/smoke-mcp-http.sh [mysql-image-tag] [host-port]
-#   mysql-image-tag  official mysql image tag (default: 8.0)
+# Usage: scripts/smoke-mcp-http.sh [version-or-image] [host-port]
+#   version-or-image official mysql image tag (default: 8.0), or a full image such as
+#                    mariadb:11.4
 #   host-port        host port for MySQL (default: 13350); the server uses host-port+1000..+1004
 # Env:
 #   BIN              server binary to test (default: build from this checkout)
@@ -14,12 +15,15 @@
 set -u
 
 TAG=${1:-8.0}
-IMAGE=${MYSQL_IMAGE:-mysql:$TAG}
+case $TAG in
+*:* | */*) IMAGE=${MYSQL_IMAGE:-$TAG} ;; # full image, e.g. mariadb:11.4 or ghcr.io/org/db
+*) IMAGE=${MYSQL_IMAGE:-mysql:$TAG} ;;
+esac
 DBPORT=${2:-13350}
 APORT=$((DBPORT + 1000))
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 W=$(mktemp -d)
-CNAME=mcp-smoke-$TAG-$$
+CNAME=mcp-smoke-$(printf '%s' "$TAG" | tr -c 'a-zA-Z0-9.-' '-')-$$
 PIDS=()
 
 cleanup() {
@@ -46,17 +50,20 @@ since() { awk -v s="$1" -v e="$(now)" 'BEGIN { printf "%.1f", e - s }'; }
 
 export MYSQL_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$DBPORT)/testdb?parseTime=true"
 
-echo "== MySQL $TAG: starting $IMAGE"
+echo "== $TAG: starting $IMAGE"
 docker run -d --name "$CNAME" -p "127.0.0.1:$DBPORT:3306" -e MYSQL_ROOT_PASSWORD=testpass "$IMAGE" >/dev/null || { echo "docker run failed"; exit 1; }
+# MySQL images ship the `mysql` client; MariaDB images only `mariadb`.
+CLIENT=
 ready=0
 for _ in $(seq 1 120); do
-	docker exec "$CNAME" mysql -uroot -ptestpass -e 'select 1' >/dev/null 2>&1 && { ready=1; break; }
+	[ -n "$CLIENT" ] || CLIENT=$(docker exec "$CNAME" sh -c 'command -v mysql || command -v mariadb' 2>/dev/null)
+	[ -n "$CLIENT" ] && docker exec "$CNAME" "$CLIENT" -uroot -ptestpass -e 'select 1' >/dev/null 2>&1 && { ready=1; break; }
 	sleep 2
 done
-[ "$ready" = 1 ] || { echo "MySQL $TAG did not become ready"; exit 1; }
-docker exec -i "$CNAME" mysql -uroot -ptestpass <"$REPO/tests/sql/init.sql" 2>/dev/null
-docker exec -i "$CNAME" mysql -uroot -ptestpass <"$REPO/tests/sql/mcp_test_user.sql" 2>/dev/null
-VER=$(docker exec "$CNAME" mysql -uroot -ptestpass -N -e 'select version()' 2>/dev/null)
+[ "$ready" = 1 ] || { echo "$IMAGE did not become ready"; exit 1; }
+docker exec -i "$CNAME" "$CLIENT" -uroot -ptestpass <"$REPO/tests/sql/init.sql" 2>/dev/null
+docker exec -i "$CNAME" "$CLIENT" -uroot -ptestpass <"$REPO/tests/sql/mcp_test_user.sql" 2>/dev/null
+VER=$(docker exec "$CNAME" "$CLIENT" -uroot -ptestpass -N -e 'select version()' 2>/dev/null)
 echo "   server version: $VER"
 
 start_srv() { # name env...
@@ -249,5 +256,5 @@ if wait_health "http://127.0.0.1:$AP/health"; then
 	stop_srv addconn >/dev/null
 else bad "addconn server start" "$(tail -3 "$W/addconn.log")"; fi
 
-echo "== MySQL $TAG ($VER): $PASS passed, $FAIL failed"
+echo "== $TAG ($VER): $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

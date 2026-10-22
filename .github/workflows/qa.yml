@@ -416,13 +416,14 @@ jobs:
   # Stage 8: MCP HTTP smoke tests (real binary, REST/stdio/Streamable HTTP)
   # ============================================
   smoke-mcp-http:
-    name: MCP HTTP Smoke (MySQL ${{ matrix.mysql-version }})
+    name: MCP HTTP Smoke (${{ matrix.db }})
     runs-on: ubuntu-latest
     needs: [unit-tests]
     strategy:
       fail-fast: false
       matrix:
-        mysql-version: ['8.0', '26.10']
+        # Every supported server: MySQL tags, or full images for MariaDB.
+        db: ['8.0', '8.4', '9.7', '26.10', 'mariadb:11.4', 'mariadb:12.3']
 
     steps:
       - name: Checkout code
@@ -439,7 +440,7 @@ jobs:
         # Builds the binary, starts mysql:<version> in Docker, and checks REST, stdio and
         # MCP Streamable HTTP (auth, TLS, CORS, unsafe-config refusals, session scoping,
         # slow-body cutoff, graceful shutdown).
-        run: ./scripts/smoke-mcp-http.sh ${{ matrix.mysql-version }}
+        run: ./scripts/smoke-mcp-http.sh ${{ matrix.db }}
 
   # ============================================
   # Final Summary
