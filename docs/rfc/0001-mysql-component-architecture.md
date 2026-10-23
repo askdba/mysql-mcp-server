@@ -376,7 +376,7 @@ Innovation releases are supported only until the next one ships. Each new Innova
 
 | Phase | Deliverable | Depends on | Estimate |
 |---|---|---|---|
-| 0 | Refresh source trees (8.4.11, 9.7.2, 26.10.0); hello-world `component_mcp_guard` building on 8.4, 9.7, 26.10 via the MyVector scripts; add `sql/mcp/LICENSE` (Apache-2.0) and the `NOTICE` entry | — | 1 week |
+| 0 | **In review:** [askdba/myvector#227](https://github.com/askdba/myvector/pull/227). Refresh source trees (8.4.11, 9.7.2, 26.10.0); hello-world `component_mcp_guard` building on 8.4, 9.7, 26.10 via the MyVector scripts (lifecycle test 7/7 on each); add `sql/mcp/LICENSE` (Apache-2.0) and the `NOTICE` entry | — | 1 week |
 | 0b | **Done.** Streamable HTTP MCP transport in the Go server (§6.1a): [#140](https://github.com/askdba/mysql-mcp-server/issues/140), [PR #141](https://github.com/askdba/mysql-mcp-server/pull/141), shipped in [v1.9.0-rc.1](https://github.com/askdba/mysql-mcp-server/releases/tag/v1.9.0-rc.1) | — | done |
 | 1 | SQL tool pack v1 + Go `install-schema` + parity tests | 0 (license) | 2–3 weeks |
 | 2 | `component_mcp_guard`: privileges, sysvars, read-only + schema enforcement, status vars, MTR | 0 | 3–4 weeks |
