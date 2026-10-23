@@ -17,7 +17,7 @@
 
 1. **SQL tool pack:** a `mysql_mcp` schema of stored procedures and views that implement the tool logic once. It runs on everything from 8.0 to 26.10, managed cloud included. The Go server and both components call it.
 2. **`component_mcp_guard` (8.4+):** a native component that enforces MCP policy **inside the server** (statement abort through event tracking). It also records MCP activity in `performance_schema`, status variables and the audit stream.
-3. **`component_mcp` (26.10+):** an MCP endpoint served by `mysqld` itself, with **no sidecar**. It runs every tool call under the caller's MySQL account, by impersonating it through command services. A spike decides whether it builds on Oracle's new `component_mysql_rest_service` (MRS) HTTP stack or uses its own listener.
+3. **`component_mcp` (26.10+):** an MCP endpoint served by `mysqld` itself, with **no sidecar**. It runs every tool call under the caller's MySQL account, by impersonating it through command services. It runs its own listener built on the MySQL Router HTTP libraries that Oracle's `component_mysql_rest_service` (MRS) also uses (§3a).
 
 **Privileges are the first line of defense.** A `GRANT SELECT`-only account is already enforced by the server today. The guard component adds the controls that grants cannot express (§5.2); it is not a replacement for least-privilege accounts.
 
@@ -113,7 +113,7 @@ The MyVector project already builds a GPLv2 component for 8.4, 9.7 and 26.7. Its
 | Primary goals | **All of:** zero-sidecar MCP in `mysqld`; server-side guardrails; native observability; positioning against Oracle's MCP |
 | 26.10 | **Baseline for in-server MCP.** The guard component still covers 8.4, 9.7 and 26.7 |
 | In-server transport | **Explore both** (built on MRS vs. our own listener); a spike decides. *Superseded in §3a: reuse the Router HTTP libraries* |
-| SQL tool pack | **Yes, as the shared foundation** for the Go server, the components and MRS |
+| SQL tool pack | **Yes, as the shared foundation** for the Go server, the components and MRS. *MRS is no longer a consumer (§3a): it has no extension point, and publishing `mysql_mcp.*` through MRS REST was rejected* |
 | Component code home | **Inside the myvector repo** (reuses its GPLv2 component build, CI and Docker infrastructure) |
 | SQL tool pack home | **myvector repo** too; the Go server vendors it; `sql/mcp/` is Apache-2.0 (§7.2) |
 
@@ -302,7 +302,7 @@ MyVector already proves the build model on this host:
 - **Exception: `component_mcp` builds in-tree** (§3a). It links Router object libraries that exist only inside a configured and partially built server tree (`ROUTER_BUILD_MRS_DEPENDENCIES_ONLY`), so its CI job builds those targets per 26.x release. Expect a longer build than the guard's; measure it in Phase 4.
 - **Build environment:** an `oraclelinux:9` container, `gcc-toolset-14`, `-static-libstdc++ -static-libgcc`, and the MySQL devel RPMs from the CDN (main path, falling back to the archive).
   - Reuse `scripts/build-component-{8.4,9.7,26.7}-docker.sh`.
-  - Add `build-component-26.10-docker.sh` once the source tag exists.
+  - Add `build-component-26.10-docker.sh` in Phase 0 (the `mysql-26.10.0` tag exists since GA).
 - **Multi-arch** via `DOCKER_PLATFORM` (`linux/amd64`, `linux/arm64`), with a per-architecture `bld-<arch>` dir (already handled).
 - **Packaging:** `Dockerfile.component` pattern (`FROM mysql:<ver>`; `.so` + JSON manifest into the plugin dir; install SQL in `docker-entrypoint-initdb.d`).
 - **Release gate:** extend `scripts/pre-release-test.sh` and `.github/workflows/pre-release-gate.yml`.
@@ -326,7 +326,7 @@ MyVector already proves the build model on this host:
   - This works because the SQL scripts are separate files, are not linked into the component, and are authored fresh for this project.
   - **No external sign-off is needed.** askdba holds the copyright, so it can license new files in its own repo as it chooses. The only requirement: the tool pack is new code, so no third-party GPL contributions may be copied into `sql/mcp/`.
   - Housekeeping: add a per-directory note to myvector's `NOTICE` and `LICENSE` section ("`sql/mcp/` is licensed under Apache-2.0"). Also check that `NOTICE`'s copyright line ("p3io.in") matches current ownership.
-- No code is shared between the Go server and the components. They interact only through the wire (connection attributes, statement comment labels, error codes, `CALL mysql_mcp.*`).
+- No Go or C++ implementation code is shared between the Go server and the components. The one shared artifact is the Apache-2.0 SQL tool pack (`sql/mcp/`), which the Go server vendors and `component_mcp` calls through command services. Otherwise they interact only through the wire (connection attributes, statement comment labels, error codes, `CALL mysql_mcp.*`).
 
 ### 7.3 Testing
 
@@ -381,7 +381,7 @@ Innovation releases are supported only until the next one ships. Each new Innova
 | 1 | SQL tool pack v1 + Go `install-schema` + parity tests | 0 (license) | 2–3 weeks |
 | 2 | `component_mcp_guard`: privileges, sysvars, read-only + schema enforcement, status vars, MTR | 0 | 3–4 weeks |
 | 3 | `P_S.mcp_tool_calls`, audit emission; Go connection attributes + statement comment labels, `server_info` detection, error mapping; Docker images | 2 | 2–3 weeks |
-| 4 | `component_mcp` build spike on 26.10: in-tree build with the Router HTTP libraries, one tool served, build time / size / thread budget, token auth (§5.3) | 0 (26.10.0 source tag: available) | 2–3 weeks |
+| 4 | `component_mcp` build spike on 26.10: in-tree build with the Router HTTP libraries, one tool served, build time / size / thread budget, token auth (§5.3). **Exit requires** a deny-path test that the guard's policy reaches `run_query` in impersonated `"local"` sessions: an account without `MCP_USER` is not treated as MCP, and an MCP account's write is rejected. This answers open question 4 | 0 (26.10.0 source tag: available) | 2–3 weeks |
 | 5 | `component_mcp` MVP (5 core tools, loopback), fuzzing, go/no-go | 1, 2, 4 | 4–6 weeks |
 
 Phases 1 and 2 can run in parallel: they touch different code (SQL/Go vs. C++) and share only the policy names.
@@ -401,7 +401,7 @@ All of the following must hold:
 1. ~~Does MRS (26.10) expose an extension point for custom handlers?~~ Resolved: no, it provides no services. `component_mcp` reuses its Router HTTP libraries instead (§3a).
 2. ~~Does `go-sql-driver/mysql` v1.10 send query attributes?~~ Resolved: no (upstream [PR #1784](https://github.com/go-sql-driver/mysql/pull/1784) closed unmerged). Use connection attributes plus statement comments (§3a).
 3. ~~`table_access` events or digest parsing for `mcp.allowed_schemas`?~~ Resolved: `table_access` events, which carry the database and table per access (§3a). Phase 2 tests must confirm that views and stored functions raise events for their underlying tables.
-4. Do impersonated `"local"` command-service sessions count against `max_connections`, `max_user_connections` and the thread pool (Community since 26.7)? Do they fire `event_tracking_connection` with the impersonated account, so that the guard's per-connection `MCP_USER` cache works for them? Verify in the 26.10 source; `component_mysql_rest_service` uses the same impersonated-session pattern and is the reference to study.
+4. Do impersonated `"local"` command-service sessions count against `max_connections`, `max_user_connections` and the thread pool (Community since 26.7)? Do they fire `event_tracking_connection` with the impersonated account, so that the guard's per-connection `MCP_USER` cache works for them? Verify in the 26.10 source; `component_mysql_rest_service` uses the same impersonated-session pattern and is the reference to study. Phase 4 cannot close until a deny-path test proves the guard sees these sessions (§9).
 5. ~~Licensing sign-off for `sql/mcp/`~~ Resolved: askdba owns the myvector copyright and licenses `sql/mcp/` as Apache-2.0 (§7.2).
 6. Branding and images: ship in `ghcr.io/askdba/myvector` with tags, or as a separate `mysql-mcp` image family?
 7. Will Oracle ship MCP on MRS natively? The guard stays scoped to our server (§3a). If Oracle ships one, our differentiation is tool depth, the guard and support from 8.0 to 26.10 plus MariaDB.
