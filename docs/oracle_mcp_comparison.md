@@ -11,7 +11,7 @@ This report compares the Go-based `mysql-mcp-server` with the official Oracle ve
 | **Primary Target** | General use, performance, security. | MySQL AI, HeatWave, OCI users. |
 | **Database Tools** | Deep introspection (about 30 tools). | Basic SQL execution only. |
 | **AI / Vector** | Native MySQL 9.0+ vector support. | Native HeatWave GenAI and ML tools. |
-| **Connectivity** | Standard DSN, SSL/TLS, multiple DSNs, SSH tunnel through a bastion host (host-key verification on by default), runtime `add_connection`. | SSH tunneling via bastion host. |
+| **Connectivity** | Standard DSN, SSL/TLS, multiple DSNs, SSH tunnel through a bastion host (host-key verification on by default), and opt-in runtime `add_connection` (`MYSQL_MCP_EXTENDED=1` + `MYSQL_MCP_ENABLE_ADD_CONNECTION=1`). | SSH tunneling via bastion host. |
 | **MCP transports** | stdio, and Streamable HTTP with bearer token, TLS and per-session connections (since v1.9.0-rc.1). Separate REST API. | Not re-verified. |
 | **Server versions** | MySQL 8.0, 8.4, 9.7, 26.10 and MariaDB 11.4, 12.3, all tested in CI. | Not re-verified. |
 | **Natural Language** | LLM-driven (via MCP client). | `ask_nl_sql`: Built-in NL to SQL. |
@@ -25,7 +25,7 @@ This report compares the Go-based `mysql-mcp-server` with the official Oracle ve
 |---|---|---|
 | 1 | **SSH tunneling (bastion)** | **Done** in v1.7.0 ([#79](https://github.com/askdba/mysql-mcp-server/issues/79)); host keys are verified by default (`known_hosts` or a pinned fingerprint). |
 | 2 | **Natural language to SQL (`ask_nl_sql`)**: a server-side tool that grounds the prompt with exact table schemas | **Open:** [#80](https://github.com/askdba/mysql-mcp-server/issues/80). |
-| 3 | **Connection-specific execution**: let core tools target a named connection | **Partly done.** Tools still run on the active connection, but `use_connection` and runtime `add_connection` ([#106](https://github.com/askdba/mysql-mcp-server/issues/106), v1.7.0) switch it, and over Streamable HTTP each MCP session has its own active connection (v1.9.0-rc.1). A per-call `connection` parameter is not implemented. |
+| 3 | **Connection-specific execution**: let core tools target a named connection | **Partly done.** Tools still run on the active connection, but `use_connection` and the opt-in runtime `add_connection` ([#106](https://github.com/askdba/mysql-mcp-server/issues/106), v1.7.0) switch it, and over Streamable HTTP each MCP session has its own active connection (v1.9.0-rc.1). A per-call `connection` parameter is not implemented. |
 | 4 | **HeatWave / GenAI wrappers** (e.g. `ml_generate`), behind a flag | **Not started.** |
 | 5 | **Data ingestion** for vector stores (local/cloud) | **Not started.** |
 
