@@ -29,7 +29,7 @@ Embedding the Go binary in `mysqld` is **rejected** (§6.3).
 
 ## 2. Background
 
-### 2.1 Current state (v1.8.0)
+### 2.1 Current state (v1.8.0, when this RFC was written)
 
 - A Go 1.26 binary using `modelcontextprotocol/go-sdk` v1.8.0. MCP runs over stdio, with optional REST (`MYSQL_MCP_HTTP=1`) and a metrics sidecar.
 - About 30 tools:
@@ -42,6 +42,7 @@ Embedding the Go binary in `mysqld` is **rejected** (§6.3).
   - `MYSQL_MCP_ALLOWED_DATABASES`, `MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS`.
   - `MYSQL_MCP_MASK_COLUMNS`, `MYSQL_MCP_AUDIT_LOG`.
 - CI covers MySQL 8.0, 8.4, 9.7 and 26.7, and MariaDB 11.4 and 12.3.
+- **Since then** ([v1.9.0-rc.1](https://github.com/askdba/mysql-mcp-server/releases/tag/v1.9.0-rc.1)): MCP over Streamable HTTP (`MYSQL_MCP_TRANSPORT=http`, Phase 0b), CI on MySQL 26.10 instead of 26.7, and end-to-end smoke tests on every supported server.
 
 ### 2.2 Version landscape (updated 2026-10-23)
 
@@ -251,7 +252,7 @@ Facts established against the `mysql-26.10.0` source and the Go driver:
   - MRS proves the in-server HTTPS stack, and its Router HTTP libraries are the ones `component_mcp` links (§3a).
   - The `account_locked` check closes the gap that impersonation skips the login checks.
   - The command-service metadata fixes.
-  - 26.7 alone would need our own listener and could not honor account locks.
+  - 26.7 has neither `component_mysql_rest_service` nor Router's `ROUTER_BUILD_MRS_DEPENDENCIES_ONLY` build mode (both first appear in the 26.10 source), so it could not reuse the Router HTTP libraries, and it has no `account_locked` check.
 - `run_query` reuses the guard component's policy, so `component_mcp` hard-requires `component_mcp_guard` (above).
 - Off by default (`mcp.http_enabled=OFF`). Binds to loopback by default; TLS is mandatory for anything else.
 - **Transport (decided 2026-10-23, §3a).** `component_mcp` links the MySQL Router HTTP stack that `component_mysql_rest_service` uses: `http_server`, `router_openssl`, `http_auth_realm` and `http_auth_backend`. It runs its own listener (`mcp.http_port`), separate from MRS's, and handles MCP JSON-RPC itself with the MySQL-bundled rapidjson.
@@ -411,7 +412,7 @@ All of the following must hold:
 ## 12. References
 
 - MySQL 26.10.0 release notes (EA, 2026-09-18): `component_mysql_rest_service`, `MYSQL_COMMAND_PASSWORD`, `account_locked`, `psi_thread_v7`: <https://dev.mysql.com/doc/relnotes/mysql/26.10/en/news-26-10-0.html>
-- MySQL 26.10 release notes index (26.10.0 EA, 26.7.1, 26.7.0): <https://dev.mysql.com/doc/relnotes/mysql/26.10/en/>
+- MySQL 26.10 release notes index (26.10.0 GA 2026-10-20, EA 2026-09-18; 26.7.1, 26.7.0): <https://dev.mysql.com/doc/relnotes/mysql/26.10/en/>
 - MySQL 26.7.0 release notes: `mysql_command_session_state`, `field_info("mysql_type")`, CalVer: <https://dev.mysql.com/doc/relnotes/mysql/26.7/en/news-26-7-0.html>
 - MySQL releases (Innovation and LTS): <https://dev.mysql.com/doc/refman/26.7/en/mysql-releases.html>
 - Oracle blog, calendar versioning: <https://blogs.oracle.com/mysql/a-more-predictable-mysql-release-model-calendar-versions-lts-and-innovation>
