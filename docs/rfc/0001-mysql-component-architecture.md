@@ -411,7 +411,7 @@ All of the following must hold:
 
 ## 12. References
 
-- MySQL 26.10.0 release notes (EA, 2026-09-18): `component_mysql_rest_service`, `MYSQL_COMMAND_PASSWORD`, `account_locked`, `psi_thread_v7`: <https://dev.mysql.com/doc/relnotes/mysql/26.10/en/news-26-10-0.html>
+- MySQL 26.10.0 release notes (GA 2026-10-20; EA was 2026-09-18): `component_mysql_rest_service`, `MYSQL_COMMAND_PASSWORD`, `account_locked`, `psi_thread_v7`: <https://dev.mysql.com/doc/relnotes/mysql/26.10/en/news-26-10-0.html>
 - MySQL 26.10 release notes index (26.10.0 GA 2026-10-20, EA 2026-09-18; 26.7.1, 26.7.0): <https://dev.mysql.com/doc/relnotes/mysql/26.10/en/>
 - MySQL 26.7.0 release notes: `mysql_command_session_state`, `field_info("mysql_type")`, CalVer: <https://dev.mysql.com/doc/relnotes/mysql/26.7/en/news-26-7-0.html>
 - MySQL releases (Innovation and LTS): <https://dev.mysql.com/doc/refman/26.7/en/mysql-releases.html>
