@@ -138,19 +138,22 @@ func getClientIP(r *http.Request) string {
 		}
 	}
 
-	// Only trust proxy headers when the direct peer is loopback.
+	// Only trust proxy headers when the direct peer is loopback (a same-host proxy).
 	// Otherwise, clients can spoof X-Forwarded-For/X-Real-IP to bypass per-IP
 	// rate limits and cause unbounded bucket growth.
 	if remoteIP != nil && remoteIP.IsLoopback() {
-		// Check X-Forwarded-For header (may contain multiple IPs)
-		if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
-			first := xff
-			if idx := strings.IndexByte(xff, ','); idx >= 0 {
-				first = xff[:idx]
+		// Use the rightmost X-Forwarded-For entry: a proxy that appends the client
+		// address (nginx $proxy_add_x_forwarded_for) writes it last, and anything the
+		// client sent itself sits to its left. The leftmost entry is client-controlled.
+		// Multiple header lines are joined in order.
+		if xff := strings.Join(r.Header.Values("X-Forwarded-For"), ","); strings.TrimSpace(xff) != "" {
+			last := xff
+			if idx := strings.LastIndexByte(xff, ','); idx >= 0 {
+				last = xff[idx+1:]
 			}
-			first = strings.TrimSpace(first)
-			if ip := net.ParseIP(first); ip != nil {
-				return first
+			last = strings.TrimSpace(last)
+			if ip := net.ParseIP(last); ip != nil {
+				return last
 			}
 		}
 

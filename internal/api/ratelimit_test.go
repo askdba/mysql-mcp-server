@@ -109,19 +109,25 @@ func TestGetClientIP(t *testing.T) {
 			name:       "x-forwarded-for multiple",
 			remoteAddr: "127.0.0.1:12345",
 			xForwarded: "203.0.113.195, 70.41.3.18, 150.172.238.178",
-			expected:   "203.0.113.195",
+			expected:   "150.172.238.178",
 		},
 		{
 			name:       "x-forwarded-for trims whitespace",
 			remoteAddr: "127.0.0.1:12345",
-			xForwarded: " 203.0.113.195 , 70.41.3.18",
-			expected:   "203.0.113.195",
+			xForwarded: " 203.0.113.195 , 70.41.3.18 ",
+			expected:   "70.41.3.18",
 		},
 		{
 			name:       "x-forwarded-for invalid falls back to remote",
 			remoteAddr: "127.0.0.1:12345",
 			xForwarded: "not-an-ip",
 			expected:   "127.0.0.1",
+		},
+		{
+			name:       "spoofed leftmost x-forwarded-for is ignored",
+			remoteAddr: "127.0.0.1:12345",
+			xForwarded: "1.2.3.4, 198.51.100.7",
+			expected:   "198.51.100.7",
 		},
 		{
 			name:       "x-real-ip",

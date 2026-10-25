@@ -188,6 +188,13 @@ func TestMCPHTTPIntegrationAddConnectionIsSessionScoped(t *testing.T) {
 	if n := countSessionConns(); n != 2 {
 		t.Fatalf("session connections registered = %d, want 2", n)
 	}
+	cm.mu.RLock()
+	for name, db := range cm.connections {
+		if isSessionConnKey(name) && db.Stats().MaxOpenConnections != sessionConnMaxOpenConns {
+			t.Errorf("session connection %s pool max open = %d, want %d", name, db.Stats().MaxOpenConnections, sessionConnMaxOpenConns)
+		}
+	}
+	cm.mu.RUnlock()
 	_ = s1.Close()
 	deadline := time.Now().Add(5 * time.Second)
 	for countSessionConns() != 1 {
