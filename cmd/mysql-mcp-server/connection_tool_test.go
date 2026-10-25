@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/askdba/mysql-mcp-server/internal/config"
@@ -164,5 +167,42 @@ func TestRemoveConnectionDropsRetryClient(t *testing.T) {
 	cm.mu.RUnlock()
 	if left {
 		t.Fatal("RemoveConnection left the retry client (and its DSN credentials) in cm.clients")
+	}
+}
+
+func TestSessionConnectionsHaveProcessWideCap(t *testing.T) {
+	cm := NewConnectionManager()
+	cm.mu.Lock()
+	for i := 0; i < maxTotalSessionConnections-1; i++ {
+		cm.connections[fmt.Sprintf("%ss%d/c", sessionConnPrefix, i)] = nil
+	}
+	cm.pendingAdds = map[string]struct{}{sessionConnPrefix + "pending/c": {}} // counts too
+	cm.mu.Unlock()
+
+	err := cm.AddConnectionIfAbsentWithPoolConfig(context.Background(),
+		config.ConnectionConfig{Name: sessionConnPrefix + "new/c", DSN: "u:p@tcp(127.0.0.1:1)/d"}, &config.Config{})
+	if !errors.Is(err, ErrTooManySessionConnections) {
+		t.Fatalf("21st session connection: err = %v, want ErrTooManySessionConnections", err)
+	}
+
+	// A completed add is briefly both registered and pending; it must count once.
+	cm2 := NewConnectionManager()
+	cm2.mu.Lock()
+	for i := 0; i < maxTotalSessionConnections-1; i++ {
+		name := fmt.Sprintf("%ss%d/c", sessionConnPrefix, i)
+		cm2.connections[name] = nil
+		cm2.pendingAdds = map[string]struct{}{name: {}}
+	}
+	got := cm2.sessionConnCountLocked()
+	cm2.mu.Unlock()
+	if got != maxTotalSessionConnections-1 {
+		t.Errorf("count with an overlapping pending entry = %d, want %d", got, maxTotalSessionConnections-1)
+	}
+
+	// Ordinary (config/stdio) connections are not subject to the session cap.
+	err = cm.AddConnectionIfAbsentWithPoolConfig(context.Background(),
+		config.ConnectionConfig{Name: "ops", DSN: "u:p@tcp(127.0.0.1:1)/d"}, &config.Config{PingTimeout: 100 * time.Millisecond})
+	if errors.Is(err, ErrTooManySessionConnections) {
+		t.Fatal("cap must not apply to non-session connections")
 	}
 }

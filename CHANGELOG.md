@@ -10,6 +10,8 @@ Semantic Versioning.
 ### Security
 
 - **`add_connection` rejects `allowAllFiles` and `multiStatements` in runtime DSNs.** With the HTTP transport (v1.9.0-rc.1) and `add_connection` enabled (opt-in), a client could register a DSN with `allowAllFiles=true` pointing at a MySQL server it controls. That server could then read files this process can access, such as the bearer-token file, the TLS key or the process environment. `multiStatements=true` is rejected too, because it bypasses the driver's one-statement-per-query guarantee behind the read-only validator. DSNs from the config file or environment are unchanged.
+- **Connections added over HTTP are capped process-wide.** Each MCP session could register 5 connections, but sessions are free to open, so one client could open an unbounded number of MySQL connections. Session-owned connections are now capped at 20 across all sessions, with a pool of at most 2 each (at most 40 MySQL connections).
+- **The rate limiter uses the rightmost `X-Forwarded-For` entry** from a loopback (same-host) proxy. It used the leftmost entry, which the client controls, so clients behind the README's reverse-proxy setup could evade per-IP limits and create unbounded buckets. This also applies to the REST API.
 - **Closed connections no longer keep their retry client.** Removing a connection (for example when an HTTP session that used `add_connection` ends) now also drops its retry client, which kept the closed pool and its DSN credentials in memory.
 
 ### CI

@@ -172,6 +172,12 @@ func (cm *ConnectionManager) addConnectionWithPoolConfig(ctx context.Context, co
 			cm.mu.Unlock()
 			return fmt.Errorf("%w: %s", ErrConnectionAlreadyExists, connCfg.Name)
 		}
+		// Sessions are free to open, so the per-session limit alone does not bound
+		// session-owned connections; enforce a process-wide cap at reservation time.
+		if isSessionConnKey(connCfg.Name) && cm.sessionConnCountLocked() >= maxTotalSessionConnections {
+			cm.mu.Unlock()
+			return fmt.Errorf("%w (limit %d across all MCP sessions)", ErrTooManySessionConnections, maxTotalSessionConnections)
+		}
 		cm.pendingAdds[connCfg.Name] = struct{}{}
 		cm.mu.Unlock()
 
@@ -256,6 +262,12 @@ func (cm *ConnectionManager) addConnectionWithPoolConfig(ctx context.Context, co
 	maxIdle := cfg.MaxIdleConns
 	if maxIdle <= 0 {
 		maxIdle = config.DefaultMaxIdleConns
+	}
+	// Connections registered by MCP HTTP sessions get small pools, so the process-wide
+	// cap bounds the MySQL connections they can open (maxTotalSessionConnections x 2).
+	if isSessionConnKey(connCfg.Name) {
+		maxOpen = min(maxOpen, sessionConnMaxOpenConns)
+		maxIdle = min(maxIdle, sessionConnMaxOpenConns)
 	}
 	lifetime := cfg.ConnMaxLifetime
 	if lifetime <= 0 {
@@ -482,6 +494,34 @@ const sessionConnPrefix = "mcp-session/"
 
 // maxSessionConnections caps how many connections one MCP HTTP session may register.
 const maxSessionConnections = 5
+
+// maxTotalSessionConnections caps session-owned connections across all MCP HTTP sessions,
+// and sessionConnMaxOpenConns caps each one's pool, so at most 40 MySQL connections.
+const (
+	maxTotalSessionConnections = 20
+	sessionConnMaxOpenConns    = 2
+)
+
+// ErrTooManySessionConnections is returned when the process-wide cap is reached.
+var ErrTooManySessionConnections = errors.New("too many connections registered by MCP sessions")
+
+// sessionConnCountLocked counts session-owned connections, registered or being added.
+// A completed add is registered before its reservation is released, so a name can be in
+// both maps for a moment; it is counted once. Caller holds cm.mu.
+func (cm *ConnectionManager) sessionConnCountLocked() int {
+	n := 0
+	for name := range cm.connections {
+		if isSessionConnKey(name) {
+			n++
+		}
+	}
+	for name := range cm.pendingAdds {
+		if _, registered := cm.connections[name]; isSessionConnKey(name) && !registered {
+			n++
+		}
+	}
+	return n
+}
 
 // sessionConn holds one MCP session's connection state over the HTTP transport. Stdio has
 // a single client and never attaches one, so it keeps the process-wide behavior.

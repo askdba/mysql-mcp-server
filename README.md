@@ -567,11 +567,11 @@ Behavior and safety:
   - The new connection is visible only to the session that added it, in `list_connections` and `use_connection`. Other sessions cannot see or use it, or its credentials.
   - Names are per session: two sessions can each add `staging`. A name that is already a configured, process-wide connection is refused.
   - It is closed (pool and SSH tunnel) when the session ends, either by the client disconnecting or after `MYSQL_MCP_HTTP_SESSION_TIMEOUT_MINUTES` idle.
-  - Each session can register at most 5 connections.
+  - Each session can register at most 5 connections, and all sessions together at most 20. Each of these connections has a pool of at most 2, so `add_connection` over HTTP can open at most 40 MySQL connections.
   - It is refused in stateless mode, where the connection would close as soon as the request ends.
   - It still lets any token holder make the server connect to any host the server can reach, so enable it for remote deployments only when every token holder is trusted.
 - **Other endpoints on the same port:** `GET /health` (no auth) and `GET /api/metrics/tokens` (same token). `/status` is served only when no token is configured, because a browser cannot send the bearer token.
-- `MYSQL_HTTP_RATE_LIMIT` applies to this transport too. Request headers must arrive within 10s and bodies within 30s, so slow clients cannot hold connections open. Long tool calls and event streams are not affected.
+- `MYSQL_HTTP_RATE_LIMIT` applies to this transport too. Behind a reverse proxy on the same host, limits are per client only if the proxy sets or appends `X-Forwarded-For` (nginx: `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`): the server uses the rightmost entry, the one the proxy adds. A proxy that passes the client's header through unchanged lets clients choose their own bucket. Request headers must arrive within 10s and bodies within 30s, so slow clients cannot hold connections open. Long tool calls and event streams are not affected.
 - It cannot run in the same process as the REST API (`MYSQL_MCP_HTTP=1`); run two processes if you need both.
 
 Config file equivalent:
