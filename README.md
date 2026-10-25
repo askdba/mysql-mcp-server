@@ -960,6 +960,7 @@ When **`MYSQL_MCP_ENABLE_ADD_CONNECTION=1`** (and extended mode), any MCP client
 - **DSN parsing:** Invalid DSNs are rejected before opening a connection.
 - **User blocklist:** The literal MySQL user **`root`** is rejected for runtime registration to reduce accidental high-privilege pools.
 - **Duplicate names:** Registration is refused if the name already exists (`ConnectionManager`); adds are not silently merged with static config names.
+- **Unsafe driver options:** DSNs with `allowAllFiles=true` (would let the MySQL server read local files of this process) or `multiStatements=true` are rejected. DSNs from the config file or environment are not affected.
 - **Connectivity check:** A pool is opened and **`Ping()`** runs before the connection is considered registered; failures do not leave a half-open registration (failed adds are rolled back if activation fails after add).
 - **Read-only mode:** If **`MYSQL_MCP_STRICT_READ_ONLY=1`**, new pools still get `transaction_read_only=ON` on the driver path like other connections.
 

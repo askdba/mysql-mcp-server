@@ -7,6 +7,11 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Security
+
+- **`add_connection` rejects `allowAllFiles` and `multiStatements` in runtime DSNs.** With the HTTP transport (v1.9.0-rc.1) and `add_connection` enabled (opt-in), a client could register a DSN with `allowAllFiles=true` pointing at a MySQL server it controls. That server could then read files this process can access, such as the bearer-token file, the TLS key or the process environment. `multiStatements=true` is rejected too, because it bypasses the driver's one-statement-per-query guarantee behind the read-only validator. DSNs from the config file or environment are unchanged.
+- **Closed connections no longer keep their retry client.** Removing a connection (for example when an HTTP session that used `add_connection` ends) now also drops its retry client, which kept the closed pool and its DSN credentials in memory.
+
 ### CI
 
 - **The `MCP HTTP Smoke` job now covers every supported server:** MySQL 8.0, 8.4, 9.7 and 26.10, and MariaDB 11.4 and 12.3. Before, it ran only on MySQL 8.0 and 26.10. `scripts/smoke-mcp-http.sh` accepts a full image such as `mariadb:11.4` and uses the `mariadb` client when the image has no `mysql` client.
