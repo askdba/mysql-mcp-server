@@ -506,7 +506,8 @@ const (
 var ErrTooManySessionConnections = errors.New("too many connections registered by MCP sessions")
 
 // sessionConnCountLocked counts session-owned connections, registered or being added.
-// Caller holds cm.mu.
+// A completed add is registered before its reservation is released, so a name can be in
+// both maps for a moment; it is counted once. Caller holds cm.mu.
 func (cm *ConnectionManager) sessionConnCountLocked() int {
 	n := 0
 	for name := range cm.connections {
@@ -515,7 +516,7 @@ func (cm *ConnectionManager) sessionConnCountLocked() int {
 		}
 	}
 	for name := range cm.pendingAdds {
-		if isSessionConnKey(name) {
+		if _, registered := cm.connections[name]; isSessionConnKey(name) && !registered {
 			n++
 		}
 	}
