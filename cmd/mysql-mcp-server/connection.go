@@ -127,6 +127,7 @@ func (cm *ConnectionManager) tearDownNamedConnection(name string) {
 	if existing, ok := cm.connections[name]; ok {
 		existing.Close()
 		delete(cm.connections, name)
+		delete(cm.clients, name) // wraps the closed pool; holds the DSN credentials
 		delete(cm.configs, name)
 		delete(cm.serverTypes, name)
 		if closeTunnel := cm.tunnelClosers[name]; closeTunnel != nil {

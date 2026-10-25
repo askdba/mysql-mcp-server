@@ -885,6 +885,24 @@ func maskResults(cols []string, rows [][]interface{}, patterns []string) {
 	}
 }
 
+// checkRuntimeDSNOptions rejects driver options that are unsafe for DSNs supplied at runtime
+// through add_connection (possibly by a remote MCP client). DSNs from the config file or
+// environment come from the operator and are not checked.
+//   - allowAllFiles lets the MySQL server request any local file through LOAD DATA LOCAL
+//     INFILE, so a client pointing at a server it controls could read the token file, TLS
+//     key or process environment of this server.
+//   - multiStatements removes the driver's one-statement-per-query guarantee, which backs
+//     up the read-only SQL validator.
+func checkRuntimeDSNOptions(c *mysql.Config) error {
+	switch {
+	case c.AllowAllFiles:
+		return fmt.Errorf("security policy: allowAllFiles is not allowed for runtime connections (it lets the MySQL server read local files)")
+	case c.MultiStatements:
+		return fmt.Errorf("security policy: multiStatements is not allowed for runtime connections")
+	}
+	return nil
+}
+
 func toolAddConnection(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
@@ -909,6 +927,9 @@ func toolAddConnection(
 	}
 	if strings.EqualFold(strings.TrimSpace(mysqlCfg.User), "root") {
 		return nil, AddConnectionOutput{}, fmt.Errorf("security policy: runtime registration of 'root' user is not allowed")
+	}
+	if err := checkRuntimeDSNOptions(mysqlCfg); err != nil {
+		return nil, AddConnectionOutput{}, err
 	}
 
 	if isSessionConnKey(name) {

@@ -7,6 +7,8 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/askdba/mysql-mcp-server/internal/config"
+	mysqlclient "github.com/askdba/mysql-mcp-server/internal/mysql"
+	"github.com/go-sql-driver/mysql"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -100,5 +102,67 @@ func TestToolAddConnectionDuplicateName(t *testing.T) {
 	}
 	if !strings.Contains(addErr.Error(), "already exists") {
 		t.Errorf("unexpected error: %v", addErr)
+	}
+}
+
+func TestToolAddConnectionRejectsUnsafeDSNOptions(t *testing.T) {
+	tests := []struct {
+		name, dsn, wantErr string
+	}{
+		{"allowAllFiles", "app:pw@tcp(db.example:3306)/d?allowAllFiles=true", "allowAllFiles is not allowed"},
+		{"allowAllFiles numeric", "app:pw@tcp(db.example:3306)/d?allowAllFiles=1", "allowAllFiles is not allowed"},
+		{"multiStatements", "app:pw@tcp(db.example:3306)/d?multiStatements=true", "multiStatements is not allowed"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cm := NewConnectionManager()
+			_, _, err := toolAddConnection(context.Background(), &mcp.CallToolRequest{},
+				AddConnectionInput{Name: "x", DSN: tc.dsn}, cm, &config.Config{})
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error = %v, want containing %q", err, tc.wantErr)
+			}
+			if len(cm.List()) != 0 {
+				t.Errorf("rejected DSN must not be registered, got %v", cm.List())
+			}
+		})
+	}
+}
+
+func TestCheckRuntimeDSNOptionsAllowsOrdinaryOptions(t *testing.T) {
+	cfg, err := mysql.ParseDSN("app:pw@tcp(db.example:3306)/d?parseTime=true&charset=utf8mb4&tls=skip-verify&allowAllFiles=false")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkRuntimeDSNOptions(cfg); err != nil {
+		t.Fatalf("ordinary options rejected: %v", err)
+	}
+}
+
+func TestRemoveConnectionDropsRetryClient(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cm := NewConnectionManager()
+	cm.mu.Lock()
+	cm.connections["extra"] = db
+	cm.configs["extra"] = config.ConnectionConfig{Name: "extra"}
+	cm.mu.Unlock()
+	client, err := mysqlclient.NewWithDB(db, mysqlclient.Config{MaxRows: 10, QueryTimeoutS: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cm.mu.Lock()
+	cm.clients["extra"] = client
+	cm.mu.Unlock()
+
+	if err := cm.RemoveConnection("extra"); err != nil {
+		t.Fatal(err)
+	}
+	cm.mu.RLock()
+	_, left := cm.clients["extra"]
+	cm.mu.RUnlock()
+	if left {
+		t.Fatal("RemoveConnection left the retry client (and its DSN credentials) in cm.clients")
 	}
 }
