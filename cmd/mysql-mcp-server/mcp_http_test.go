@@ -552,7 +552,7 @@ func TestMCPHTTPSessionOwnedConnectionsAreIsolated(t *testing.T) {
 	}
 
 	// Ending session 1 closes its connection and leaves session 2's alone.
-	closeSessionConnections(s1)
+	closeSessionConnections(f.cm, s1)
 	if f.cm.Has(k1) || !f.cm.Has(k2) {
 		t.Errorf("after session 1 ends: has k1=%v (want false), has k2=%v (want true)", f.cm.Has(k1), f.cm.Has(k2))
 	}
