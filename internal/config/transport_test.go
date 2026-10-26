@@ -309,9 +309,11 @@ func TestTokenFileIgnoredForStdio(t *testing.T) {
 }
 
 func TestAllowedOriginsNormalized(t *testing.T) {
-	c := &Config{MCPHTTPAllowedOrigins: []string{" HTTPS://App.Example/ ", "https://app.example:443", "http://local.test:80", "https://app.example:8443", "http://[::1]:80"}}
+	c := &Config{MCPHTTPAllowedOrigins: []string{" HTTPS://App.Example/ ", "https://app.example:443", "http://local.test:80", "https://app.example:8443", "http://[::1]:80",
+		"https://[0:0:0:0:0:0:0:1]", "https://[2001:DB8:0:0:0:0:0:1]:8443"}}
 	applyMCPHTTPDefaults(c)
-	want := []string{"https://app.example", "https://app.example", "http://local.test", "https://app.example:8443", "http://[::1]"}
+	want := []string{"https://app.example", "https://app.example", "http://local.test", "https://app.example:8443", "http://[::1]",
+		"https://[::1]", "https://[2001:db8::1]:8443"}
 	for i, w := range want {
 		if c.MCPHTTPAllowedOrigins[i] != w {
 			t.Errorf("origin %d normalized to %q, want %q", i, c.MCPHTTPAllowedOrigins[i], w)

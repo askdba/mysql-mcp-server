@@ -482,7 +482,13 @@ func canonicalOrigin(o string) string {
 	}
 	scheme := strings.ToLower(u.Scheme)
 	host := strings.ToLower(u.Hostname())
-	if strings.Contains(host, ":") {
+	if ip := net.ParseIP(host); ip != nil {
+		// Browsers serialize IP hosts in canonical form ([::1], not [0:0:0:0:0:0:0:1]).
+		host = ip.String()
+		if ip.To4() == nil {
+			host = "[" + host + "]"
+		}
+	} else if strings.Contains(host, ":") {
 		host = "[" + host + "]"
 	}
 	port := u.Port()
