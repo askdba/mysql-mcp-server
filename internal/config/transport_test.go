@@ -358,7 +358,7 @@ func TestEnvMCPHTTPValuesAreNormalized(t *testing.T) {
 
 func TestInvalidOriginsRejectedAtLoad(t *testing.T) {
 	for _, o := range []string{"app.example.com", "https://app.example.com/ui", "ftp://app.example.com", "https://app.example.com?x=1",
-		"https://app.example.com?", "https://app.example.com#", "https://app.example.com:99999", "https://app.example.com:0", "https://:443", "https://app.example.com:"} {
+		"https://app.example.com?", "https://app.example.com#", "https://app.example.com:99999", "https://app.example.com:0", "https://:443", "https://app.example.com:", "https://app.example.com//", "https://app.example.com:443:443"} {
 		clearEnv()
 		os.Setenv("MYSQL_DSN", "user:pass@tcp(localhost:3306)/testdb")
 		os.Setenv("MYSQL_MCP_TRANSPORT", "http")

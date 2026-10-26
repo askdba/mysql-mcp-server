@@ -394,13 +394,12 @@ func applyMCPHTTPDefaults(cfg *Config) {
 	}
 	// Browsers send Origin with a lowercase scheme and host, no trailing slash, and no
 	// default port (https://host, not https://host:443), so store origins in that form.
+	// Only valid origins are rewritten; an invalid one is kept as written so that
+	// ValidateTransport reports it instead of normalization hiding the problem.
 	for i, o := range cfg.MCPHTTPAllowedOrigins {
-		o = strings.TrimRight(strings.ToLower(strings.TrimSpace(o)), "/")
-		switch {
-		case strings.HasPrefix(o, "https://") && strings.HasSuffix(o, ":443"):
-			o = strings.TrimSuffix(o, ":443")
-		case strings.HasPrefix(o, "http://") && strings.HasSuffix(o, ":80"):
-			o = strings.TrimSuffix(o, ":80")
+		o = strings.TrimSpace(o)
+		if validateOrigin(o) == nil {
+			o = canonicalOrigin(o)
 		}
 		cfg.MCPHTTPAllowedOrigins[i] = o
 	}
@@ -472,6 +471,28 @@ func ValidateTransport(cfg *Config) error {
 		}
 	}
 	return nil
+}
+
+// canonicalOrigin returns the form browsers send in the Origin header: lowercase scheme
+// and host, IPv6 in brackets, no default port, no trailing slash. o must be valid.
+func canonicalOrigin(o string) string {
+	u, err := url.Parse(o)
+	if err != nil {
+		return o
+	}
+	scheme := strings.ToLower(u.Scheme)
+	host := strings.ToLower(u.Hostname())
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	port := u.Port()
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		port = ""
+	}
+	if port != "" {
+		host += ":" + port
+	}
+	return scheme + "://" + host
 }
 
 // validateOrigin requires a browser origin: http or https, a host, an optional port, and no
