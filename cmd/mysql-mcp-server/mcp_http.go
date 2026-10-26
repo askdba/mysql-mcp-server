@@ -26,7 +26,9 @@ import (
 // use_connection / add_connection switch only the calling session's active connection.
 // When the session ends, its state is dropped and the connections it registered with
 // add_connection are closed.
-func sessionConnMiddleware() mcp.Middleware {
+// cm is captured here instead of read from the global when a session ends, because the
+// cleanup runs in a background goroutine after the request that created the session.
+func sessionConnMiddleware(cm *ConnectionManager) mcp.Middleware {
 	var sessions sync.Map // *mcp.ServerSession -> *sessionConn
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
@@ -39,7 +41,7 @@ func sessionConnMiddleware() mcp.Middleware {
 						go func() {
 							_ = ss.Wait()
 							sessions.Delete(ss)
-							closeSessionConnections(sc)
+							closeSessionConnections(cm, sc)
 						}()
 					}
 				}
@@ -51,12 +53,12 @@ func sessionConnMiddleware() mcp.Middleware {
 }
 
 // closeSessionConnections removes the connections a finished MCP session registered.
-func closeSessionConnections(sc *sessionConn) {
+func closeSessionConnections(cm *ConnectionManager, sc *sessionConn) {
 	for _, key := range sc.close() {
-		if connManager == nil {
+		if cm == nil {
 			return
 		}
-		if err := connManager.RemoveConnection(key); err == nil {
+		if err := cm.RemoveConnection(key); err == nil {
 			logInfo("closed session connection", map[string]interface{}{"connection": key})
 		}
 	}
@@ -157,7 +159,7 @@ func isLoopbackHostPort(addr string) bool {
 //   - /status: Token Card page, only when tokenCardEnabled and no token is configured
 //     (a browser cannot send the bearer token)
 func newMCPHTTPHandler(server *mcp.Server, c *config.Config, rl *api.RateLimiter, tokenCardEnabled bool) (http.Handler, error) {
-	server.AddReceivingMiddleware(sessionConnMiddleware())
+	server.AddReceivingMiddleware(sessionConnMiddleware(connManager))
 
 	var mcpHandler http.Handler = mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return server },

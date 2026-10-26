@@ -245,6 +245,9 @@ func ValidateConfigFile(path string) error {
 		if conn.DSN == "" {
 			return fmt.Errorf("connection '%s' has empty DSN", name)
 		}
+		if err := validateConnectionNames([]ConnectionConfig{{Name: name}}); err != nil {
+			return err
+		}
 	}
 
 	// Transport settings: same checks as startup. The bearer token may also come from

@@ -490,7 +490,7 @@ func (m missingDriver) Open(string) (driver.Conn, error) { return nil, m.err }
 
 // sessionConnPrefix namespaces connections registered by add_connection over the MCP
 // HTTP transport: "mcp-session/<session id>/<name>". Users cannot pick such names.
-const sessionConnPrefix = "mcp-session/"
+const sessionConnPrefix = config.ReservedConnectionPrefix
 
 // maxSessionConnections caps how many connections one MCP HTTP session may register.
 const maxSessionConnections = 5
@@ -657,6 +657,9 @@ func sessionConnFrom(ctx context.Context) *sessionConn {
 // A session's choice is returned even if that connection has since been removed, so the
 // session gets an error (see getDB) instead of silently running on another server.
 func (cm *ConnectionManager) activeNameLocked(ctx context.Context) string {
+	if cc := callConnFrom(ctx); cc != nil {
+		return cc.get()
+	}
 	if sc := sessionConnFrom(ctx); sc != nil {
 		if name := sc.get(); name != "" {
 			return name
@@ -682,11 +685,18 @@ func (cm *ConnectionManager) Has(name string) bool {
 }
 
 // SetActiveFor switches the active connection for ctx: the MCP session's choice when ctx
-// carries session state, otherwise the process-wide active connection.
+// carries session state, otherwise the process-wide active connection. The calling tool's
+// pinned connection follows the switch, so the rest of that call uses the new connection.
 func (cm *ConnectionManager) SetActiveFor(ctx context.Context, name string) error {
 	sc := sessionConnFrom(ctx)
 	if sc == nil {
-		return cm.SetActive(name)
+		if err := cm.SetActive(name); err != nil {
+			return err
+		}
+		if cc := callConnFrom(ctx); cc != nil {
+			cc.set(name)
+		}
+		return nil
 	}
 	key := sc.resolve(name)
 	if (isSessionConnKey(name) && key == name) || !cm.Has(key) {
@@ -694,7 +704,67 @@ func (cm *ConnectionManager) SetActiveFor(ctx context.Context, name string) erro
 		return fmt.Errorf("connection '%s' not found", name)
 	}
 	sc.set(key)
+	if cc := callConnFrom(ctx); cc != nil {
+		cc.set(key)
+	}
 	return nil
+}
+
+// visibleConnectionCount counts the connections a session can use: every process-wide
+// connection plus the ones this session registered.
+func (cm *ConnectionManager) visibleConnectionCount(sc *sessionConn) int {
+	owned := sc.ownedNames()
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	n := 0
+	for name := range cm.connections {
+		if !isSessionConnKey(name) {
+			n++
+		}
+	}
+	for _, key := range owned {
+		if _, ok := cm.connections[key]; ok {
+			n++
+		}
+	}
+	return n
+}
+
+// ===== Per-call connection pin =====
+
+// callConn pins the connection one tool call uses. A tool that runs several statements
+// resolves its database through getDB(ctx) each time; without the pin, a use_connection
+// running concurrently in the same session could switch the connection mid-call and mix
+// two servers in one result.
+type callConn struct {
+	mu   sync.Mutex
+	name string
+}
+
+func (cc *callConn) get() string {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	return cc.name
+}
+
+func (cc *callConn) set(name string) {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	cc.name = name
+}
+
+type callConnKey struct{}
+
+func callConnFrom(ctx context.Context) *callConn {
+	cc, _ := ctx.Value(callConnKey{}).(*callConn)
+	return cc
+}
+
+// PinFor returns a context whose connection lookups stay on the connection that is
+// active for ctx right now (session-aware), and the pinned connection name.
+func (cm *ConnectionManager) PinFor(ctx context.Context) (context.Context, string) {
+	_, name := cm.ActiveFor(ctx)
+	return context.WithValue(ctx, callConnKey{}, &callConn{name: name}), name
 }
 
 // GetServerType returns the server type of the process-wide active connection.

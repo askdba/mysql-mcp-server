@@ -310,6 +310,9 @@ func buildMCPServer() *mcp.Server {
 		registerExtendedTools(server)
 	}
 
+	// Pin each tool call to one connection (and, over HTTP, name it in the result).
+	server.AddReceivingMiddleware(toolCallMiddleware())
+
 	return server
 }
 

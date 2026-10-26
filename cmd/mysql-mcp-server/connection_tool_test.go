@@ -206,3 +206,48 @@ func TestSessionConnectionsHaveProcessWideCap(t *testing.T) {
 		t.Fatal("cap must not apply to non-session connections")
 	}
 }
+
+func TestCallPinKeepsConnectionWhenSessionSwitches(t *testing.T) {
+	dbA, _, _ := sqlmock.New()
+	dbB, _, _ := sqlmock.New()
+	defer dbA.Close()
+	defer dbB.Close()
+	cm := NewConnectionManager()
+	cm.mu.Lock()
+	cm.connections["a"], cm.connections["b"] = dbA, dbB
+	cm.activeConn = "a"
+	cm.mu.Unlock()
+	old := connManager
+	connManager = cm
+	defer func() { connManager = old }()
+
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+	}{
+		{"http session", withSessionConn(context.Background(), newSessionConn())},
+		{"stdio (process-wide)", context.Background()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_ = cm.SetActive("a")
+			pinned, name := cm.PinFor(tc.ctx)
+			if name != "a" {
+				t.Fatalf("pinned %q, want a", name)
+			}
+			// Another call in the same session switches connections mid-call.
+			if err := cm.SetActiveFor(tc.ctx, "b"); err != nil {
+				t.Fatal(err)
+			}
+			if getDB(pinned) != dbA {
+				t.Error("a pinned call must stay on its connection when another call switches")
+			}
+			// A switch made by the pinned call itself moves its own pin.
+			if err := cm.SetActiveFor(pinned, "b"); err != nil {
+				t.Fatal(err)
+			}
+			if getDB(pinned) != dbB {
+				t.Error("use_connection inside a call must move that call's pin")
+			}
+		})
+	}
+}
