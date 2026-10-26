@@ -392,9 +392,17 @@ func applyMCPHTTPDefaults(cfg *Config) {
 	if cfg.MCPHTTPSessionTimeout == 0 {
 		cfg.MCPHTTPSessionTimeout = time.Duration(DefaultMCPHTTPSessionTimeoutMinutes) * time.Minute
 	}
-	// Browsers send Origin with a lowercase scheme and host and no trailing slash.
+	// Browsers send Origin with a lowercase scheme and host, no trailing slash, and no
+	// default port (https://host, not https://host:443), so store origins in that form.
 	for i, o := range cfg.MCPHTTPAllowedOrigins {
-		cfg.MCPHTTPAllowedOrigins[i] = strings.TrimRight(strings.ToLower(strings.TrimSpace(o)), "/")
+		o = strings.TrimRight(strings.ToLower(strings.TrimSpace(o)), "/")
+		switch {
+		case strings.HasPrefix(o, "https://") && strings.HasSuffix(o, ":443"):
+			o = strings.TrimSuffix(o, ":443")
+		case strings.HasPrefix(o, "http://") && strings.HasSuffix(o, ":80"):
+			o = strings.TrimSuffix(o, ":80")
+		}
+		cfg.MCPHTTPAllowedOrigins[i] = o
 	}
 }
 
