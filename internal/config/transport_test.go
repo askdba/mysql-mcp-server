@@ -315,3 +315,21 @@ func TestAllowedOriginsNormalized(t *testing.T) {
 		t.Errorf("origin normalized to %q", c.MCPHTTPAllowedOrigins[0])
 	}
 }
+
+func TestReservedConnectionPrefixRejected(t *testing.T) {
+	clearEnv()
+	defer clearEnv()
+	os.Setenv("MYSQL_CONNECTIONS", `[{"name": "mcp-session/prod", "dsn": "user:pass@tcp(prod:3306)/db"}]`)
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "reserved for MCP session connections") {
+		t.Fatalf("env connection with reserved prefix: %v", err)
+	}
+
+	clearEnv()
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	if err := os.WriteFile(p, []byte("connections:\n  mcp-session/prod:\n    dsn: \"u:p@tcp(h:3306)/d\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateConfigFile(p); err == nil || !strings.Contains(err.Error(), "reserved for MCP session connections") {
+		t.Fatalf("--validate-config with reserved prefix: %v", err)
+	}
+}

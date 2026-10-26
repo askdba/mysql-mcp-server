@@ -581,3 +581,46 @@ func TestAddConnectionHTTPGuards(t *testing.T) {
 		t.Errorf("shadowing a process-wide name: %v", err)
 	}
 }
+
+func TestMCPHTTPResultsNameTheConnection(t *testing.T) {
+	f := newMCPHTTPFixture(t, nil)
+	f.mockB.ExpectQuery("SELECT DATABASE\\(\\)").WillReturnRows(sqlmock.NewRows([]string{"DATABASE()"}).AddRow("db"))
+	cs := f.connect(t, nil)
+
+	call := func(name string, args map[string]any) *mcp.CallToolResult {
+		t.Helper()
+		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	hasNote := func(res *mcp.CallToolResult, want string) bool {
+		for _, c := range res.Content {
+			if tc, ok := c.(*mcp.TextContent); ok && tc.Text == "connection: "+want {
+				return res.Meta[connectionMetaKey] == want
+			}
+		}
+		return false
+	}
+
+	if res := call("list_connections", map[string]any{}); !hasNote(res, "a") {
+		t.Errorf("result should name connection a: %+v meta=%v", res.Content, res.Meta)
+	}
+	if res := call("use_connection", map[string]any{"name": "b"}); !hasNote(res, "b") {
+		t.Errorf("use_connection result should name the new connection b: %+v", res.Content)
+	}
+
+	// With a single visible connection there is nothing to disambiguate: no note.
+	if err := f.cm.RemoveConnection("b"); err != nil {
+		t.Fatal(err)
+	}
+	cs2 := f.connect(t, nil)
+	res, err := cs2.CallTool(context.Background(), &mcp.CallToolParams{Name: "list_connections", Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := res.Meta[connectionMetaKey]; ok || len(res.Content) != 1 {
+		t.Errorf("single connection: expected no connection note, got %+v meta=%v", res.Content, res.Meta)
+	}
+}

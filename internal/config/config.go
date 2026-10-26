@@ -174,6 +174,9 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("no MySQL connections configured. Set MYSQL_DSN, MYSQL_CONNECTIONS, or use a config file")
 	}
 
+	if err := validateConnectionNames(cfg.Connections); err != nil {
+		return nil, err
+	}
 	if err := resolveMCPHTTPToken(cfg); err != nil {
 		return nil, err
 	}
@@ -338,6 +341,20 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("MYSQL_MCP_SLOW_QUERY_TOOL"); v != "" {
 		cfg.SlowQueryTool = getEnvBool("MYSQL_MCP_SLOW_QUERY_TOOL")
 	}
+}
+
+// ReservedConnectionPrefix starts the internal names of connections that MCP HTTP
+// sessions register with add_connection. Configured connections cannot use it.
+const ReservedConnectionPrefix = "mcp-session/"
+
+// validateConnectionNames rejects configured connection names that use the reserved prefix.
+func validateConnectionNames(conns []ConnectionConfig) error {
+	for _, c := range conns {
+		if strings.HasPrefix(c.Name, ReservedConnectionPrefix) {
+			return fmt.Errorf("connection name %q is invalid: names starting with %q are reserved for MCP session connections", c.Name, ReservedConnectionPrefix)
+		}
+	}
+	return nil
 }
 
 // Transport values for Config.Transport.

@@ -7,6 +7,12 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Each tool call stays on one connection.** Tools that run several statements (`server_info`, `schema_diff`, `search_schema`, `vector_info`, …) resolved the active connection per statement, so a concurrent `use_connection` in the same session, or a process-wide switch on stdio, could mix two servers in one result. The connection is now pinned for the whole call; a switch made by the call itself (`use_connection`, `add_connection`) moves its own pin.
+- **HTTP tool results name their connection** when the session can see more than one, as a final `connection: <name>` text line and in `_meta["mysql-mcp-server/connection"]`. A session's `use_connection` choice ends with the session, so a client that re-initializes after the idle timeout silently ran on the default connection.
+- **Configured connection names cannot start with `mcp-session/`.** The prefix is reserved for connections registered by MCP sessions; such a name used to make startup fail with "no valid MySQL connections available" or hide the connection. It is now a clear config error, also from `--validate-config`.
+
 ### Security
 
 - **`add_connection` rejects `allowAllFiles` and `multiStatements` in runtime DSNs.** With the HTTP transport (v1.9.0-rc.1) and `add_connection` enabled (opt-in), a client could register a DSN with `allowAllFiles=true` pointing at a MySQL server it controls. That server could then read files this process can access, such as the bearer-token file, the TLS key or the process environment. `multiStatements=true` is rejected too, because it bypasses the driver's one-statement-per-query guarantee behind the read-only validator. DSNs from the config file or environment are unchanged.
