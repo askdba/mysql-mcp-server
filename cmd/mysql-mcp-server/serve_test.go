@@ -242,3 +242,42 @@ func TestMCPHTTPServerShutdownEndsOpenStreams(t *testing.T) {
 		t.Fatal("shutdown did not finish")
 	}
 }
+
+func TestPreflightHTTPListener(t *testing.T) {
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+	_, busyPort, _ := net.SplitHostPort(busy.Addr().String())
+	port := func(s string) int { n := 0; fmt.Sscan(s, &n); return n }
+
+	mcpCfg := func(p int) *config.Config {
+		return &config.Config{Transport: config.TransportHTTP, MCPHTTPBind: "127.0.0.1", HTTPPort: p}
+	}
+	if err := preflightHTTPListener(mcpCfg(port(busyPort))); err == nil || !strings.Contains(err.Error(), "cannot listen") {
+		t.Errorf("busy port: %v", err)
+	}
+
+	_, freePort, _ := net.SplitHostPort(freeAddr(t))
+	if err := preflightHTTPListener(mcpCfg(port(freePort))); err != nil {
+		t.Errorf("free port: %v", err)
+	}
+
+	bad := mcpCfg(port(freePort))
+	bad.MCPHTTPTLSCert, bad.MCPHTTPTLSKey = "/nonexistent/cert.pem", "/nonexistent/key.pem"
+	if err := preflightHTTPListener(bad); err == nil || !strings.Contains(err.Error(), "TLS certificate/key") {
+		t.Errorf("missing TLS files: %v", err)
+	}
+
+	// REST mode listens on all interfaces (":port"): a port taken there is reported too.
+	wild, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wild.Close()
+	_, wildPort, _ := net.SplitHostPort(wild.Addr().String())
+	if err := preflightHTTPListener(&config.Config{HTTPMode: true, HTTPPort: port(wildPort)}); err == nil || !strings.Contains(err.Error(), "cannot listen") {
+		t.Errorf("REST busy port: %v", err)
+	}
+}

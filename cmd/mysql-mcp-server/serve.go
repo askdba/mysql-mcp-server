@@ -3,13 +3,18 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/askdba/mysql-mcp-server/internal/config"
 )
 
 // httpShutdownTimeout bounds graceful shutdown of the HTTP servers.
@@ -55,4 +60,25 @@ func serveUntil(srv *http.Server, certFile, keyFile string, stop <-chan os.Signa
 		logInfo("Server stopped gracefully", nil)
 	}
 	return nil
+}
+
+// preflightHTTPListener checks what would otherwise fail only after --daemon has forked, in
+// a child whose output is discarded: the MCP HTTP TLS key pair and the listen address.
+// Binding is checked by listening briefly; the port can still be taken before the child
+// starts, but a missing or invalid key and a busy port are now reported up front.
+func preflightHTTPListener(c *config.Config) error {
+	addr := ":" + strconv.Itoa(c.HTTPPort) // REST API (startHTTPServer)
+	if !c.HTTPMode && c.Transport == config.TransportHTTP {
+		addr = net.JoinHostPort(c.MCPHTTPBind, strconv.Itoa(c.HTTPPort))
+		if c.MCPHTTPTLSCert != "" {
+			if _, err := tls.LoadX509KeyPair(c.MCPHTTPTLSCert, c.MCPHTTPTLSKey); err != nil {
+				return fmt.Errorf("MCP HTTP TLS certificate/key: %w", err)
+			}
+		}
+	}
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("cannot listen on %s: %w", addr, err)
+	}
+	return l.Close()
 }

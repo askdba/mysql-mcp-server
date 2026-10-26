@@ -166,6 +166,12 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: daemon mode requires HTTP (set MYSQL_MCP_HTTP=1, MYSQL_MCP_TRANSPORT=http, or http.enabled: true in config)\n")
 			os.Exit(1)
 		}
+		// The detached child's output is discarded, so fail here, in the foreground, on
+		// what the child would otherwise hit silently (TLS key pair, busy port).
+		if err := preflightHTTPListener(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 		maybeDaemonize(parsed)
 	}
 

@@ -237,29 +237,30 @@ func ValidateConfigFile(path string) error {
 	}
 
 	// Validate connections
-	if len(cfg.Connections) == 0 {
+	// Transport settings: run the same steps as startup (Load), so the result matches what
+	// the server would do with this file and the current environment: environment
+	// overrides, MCP HTTP defaults and normalization, the token file, then the checks.
+	rc := cfg.ToConfig()
+	applyEnvOverrides(rc)
+	applyMCPHTTPDefaults(rc)
+	// Connections from the environment replace the file's, as at startup.
+	envConns, err := loadConnections()
+	if err != nil {
+		return err
+	}
+	if len(envConns) > 0 {
+		rc.Connections = envConns
+	}
+	if len(rc.Connections) == 0 {
 		return fmt.Errorf("no connections defined in config file")
 	}
-
-	for name, conn := range cfg.Connections {
+	if err := validateConnectionNames(rc.Connections); err != nil {
+		return err
+	}
+	for _, conn := range rc.Connections {
 		if conn.DSN == "" {
-			return fmt.Errorf("connection '%s' has empty DSN", name)
+			return fmt.Errorf("connection '%s' has empty DSN", conn.Name)
 		}
-		if err := validateConnectionNames([]ConnectionConfig{{Name: name}}); err != nil {
-			return err
-		}
-	}
-
-	// Transport settings: same checks as startup. The bearer token may also come from
-	// MYSQL_MCP_HTTP_TOKEN or MYSQL_MCP_HTTP_TOKEN_FILE at runtime (same precedence as
-	// applyEnvOverrides), so honor them here.
-	rc := cfg.ToConfig()
-	applyMCPHTTPDefaults(rc)
-	if v := strings.TrimSpace(os.Getenv("MYSQL_MCP_HTTP_TOKEN")); v != "" {
-		rc.MCPHTTPToken = v
-	}
-	if v := strings.TrimSpace(os.Getenv("MYSQL_MCP_HTTP_TOKEN_FILE")); v != "" {
-		rc.MCPHTTPTokenFile = v
 	}
 	if err := resolveMCPHTTPToken(rc); err != nil {
 		return err

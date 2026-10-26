@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path"
 	"strconv"
@@ -155,10 +156,12 @@ func Load() (*Config, error) {
 			DBRetryMaxInterval: 10 * time.Second,
 		}
 	}
-	applyMCPHTTPDefaults(cfg)
 
-	// Apply environment variable overrides (env vars take precedence)
+	// Apply environment variable overrides (env vars take precedence), then fill MCP HTTP
+	// defaults and normalize (bind brackets, origin case). Defaults run after the overrides
+	// so values from the environment are normalized like values from the config file.
 	applyEnvOverrides(cfg)
+	applyMCPHTTPDefaults(cfg)
 
 	// Load connections from environment (if any defined, they override file config)
 	envConns, err := loadConnections()
@@ -389,9 +392,16 @@ func applyMCPHTTPDefaults(cfg *Config) {
 	if cfg.MCPHTTPSessionTimeout == 0 {
 		cfg.MCPHTTPSessionTimeout = time.Duration(DefaultMCPHTTPSessionTimeoutMinutes) * time.Minute
 	}
-	// Browsers send Origin with a lowercase scheme and host and no trailing slash.
+	// Browsers send Origin with a lowercase scheme and host, no trailing slash, and no
+	// default port (https://host, not https://host:443), so store origins in that form.
+	// Only valid origins are rewritten; an invalid one is kept as written so that
+	// ValidateTransport reports it instead of normalization hiding the problem.
 	for i, o := range cfg.MCPHTTPAllowedOrigins {
-		cfg.MCPHTTPAllowedOrigins[i] = strings.TrimRight(strings.ToLower(strings.TrimSpace(o)), "/")
+		o = strings.TrimSpace(o)
+		if validateOrigin(o) == nil {
+			o = canonicalOrigin(o)
+		}
+		cfg.MCPHTTPAllowedOrigins[i] = o
 	}
 }
 
@@ -436,6 +446,11 @@ func ValidateTransport(cfg *Config) error {
 	if err := validateMCPHTTPPath(cfg.MCPHTTPPath); err != nil {
 		return err
 	}
+	for _, o := range cfg.MCPHTTPAllowedOrigins {
+		if err := validateOrigin(o); err != nil {
+			return err
+		}
+	}
 	if _, _, err := net.SplitHostPort(cfg.MCPHTTPBind); err == nil || strings.ContainsAny(cfg.MCPHTTPBind, "[]/ ") {
 		return fmt.Errorf("MYSQL_MCP_HTTP_BIND must be a host name or IP address without a port (got %q); set the port with MYSQL_HTTP_PORT", cfg.MCPHTTPBind)
 	}
@@ -453,6 +468,63 @@ func ValidateTransport(cfg *Config) error {
 		}
 		if cfg.MCPHTTPTLSCert == "" && !cfg.MCPHTTPAllowInsecure {
 			return fmt.Errorf("MCP HTTP bind %q is not loopback: TLS is required (MYSQL_MCP_HTTP_TLS_CERT/KEY), or set MYSQL_MCP_HTTP_ALLOW_INSECURE=1 when a TLS proxy terminates in front", cfg.MCPHTTPBind)
+		}
+	}
+	return nil
+}
+
+// canonicalOrigin returns the form browsers send in the Origin header: lowercase scheme
+// and host, IPv6 in brackets, no default port, no trailing slash. o must be valid.
+func canonicalOrigin(o string) string {
+	u, err := url.Parse(o)
+	if err != nil {
+		return o
+	}
+	scheme := strings.ToLower(u.Scheme)
+	host := strings.ToLower(u.Hostname())
+	if ip := net.ParseIP(host); ip != nil {
+		// Browsers serialize IP hosts in canonical form ([::1], not [0:0:0:0:0:0:0:1]).
+		host = ip.String()
+		if ip.To4() == nil {
+			host = "[" + host + "]"
+		}
+	} else if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	port := u.Port()
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		port = ""
+	}
+	if port != "" {
+		host += ":" + port
+	}
+	return scheme + "://" + host
+}
+
+// validateOrigin requires a browser origin: http or https, a host, an optional port, and no
+// path, query or fragment (for example https://app.example.com or http://localhost:3000).
+func validateOrigin(o string) error {
+	bad := fmt.Errorf("MYSQL_MCP_HTTP_ALLOWED_ORIGINS entry %q is not an origin: use scheme://host[:port], for example https://app.example.com", o)
+	// "?" and "#" are rejected outright: an empty query or fragment parses to empty fields.
+	if strings.ContainsAny(o, "?#") {
+		return bad
+	}
+	u, err := url.Parse(o)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
+		(u.Path != "" && u.Path != "/") || u.User != nil {
+		return bad
+	}
+	if strings.HasSuffix(u.Host, ":") { // explicit empty port, e.g. https://app.example:
+		return bad
+	}
+	// An IPv4-mapped IPv6 host ([::ffff:127.0.0.1]) has no unambiguous canonical form here:
+	// Go prints it as IPv4, browsers as [::ffff:7f00:1]. Require the plain IPv4 address.
+	if ip := net.ParseIP(u.Hostname()); ip != nil && strings.Contains(u.Hostname(), ":") && ip.To4() != nil {
+		return bad
+	}
+	if p := u.Port(); p != "" {
+		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+			return bad
 		}
 	}
 	return nil

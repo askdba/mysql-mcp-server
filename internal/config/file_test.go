@@ -376,6 +376,8 @@ func TestMinimalConfigDefaults(t *testing.T) {
 }
 
 func TestValidateConfigFile(t *testing.T) {
+	clearEnv()
+	defer clearEnv()
 	// Valid config
 	validContent := `
 connections:

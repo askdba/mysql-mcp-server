@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -45,6 +46,7 @@ func clearEnv() {
 		"MYSQL_MCP_HTTP_STATELESS",
 		"MYSQL_MCP_HTTP_SESSION_TIMEOUT_MINUTES",
 		"MYSQL_MCP_HTTP_ALLOWED_ORIGINS",
+		"MYSQL_MCP_HTTP_ALLOWED_HOSTS",
 		"MYSQL_MCP_HTTP_ALLOW_INSECURE",
 	}
 	for _, v := range envVars {
@@ -52,10 +54,10 @@ func clearEnv() {
 	}
 	// Clear numbered DSNs
 	for i := 1; i <= 10; i++ {
-		os.Unsetenv("MYSQL_DSN_" + string(rune('0'+i)))
-		os.Unsetenv("MYSQL_DSN_" + string(rune('0'+i)) + "_NAME")
-		os.Unsetenv("MYSQL_DSN_" + string(rune('0'+i)) + "_DESC")
-		os.Unsetenv("MYSQL_DSN_" + string(rune('0'+i)) + "_SSL")
+		os.Unsetenv("MYSQL_DSN_" + strconv.Itoa(i))
+		os.Unsetenv("MYSQL_DSN_" + strconv.Itoa(i) + "_NAME")
+		os.Unsetenv("MYSQL_DSN_" + strconv.Itoa(i) + "_DESC")
+		os.Unsetenv("MYSQL_DSN_" + strconv.Itoa(i) + "_SSL")
 	}
 }
 

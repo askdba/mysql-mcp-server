@@ -8,6 +8,9 @@ Semantic Versioning.
 ## [Unreleased]
 
 ### Fixed
+- **MCP HTTP settings from the environment are normalized like the config file.** Defaults and normalization ran before the environment overrides, so `MYSQL_MCP_HTTP_BIND=[::1]` failed at startup and a mixed-case or trailing-slash `MYSQL_MCP_HTTP_ALLOWED_ORIGINS` passed the CORS preflight but was then refused with 403. Allowed origins are now also validated up front (`scheme://host[:port]`, no path), instead of failing after the database connects.
+- **`--validate-config` runs the same steps as startup**, including every environment override (for example `MYSQL_MCP_HTTP_ALLOW_INSECURE`, `MYSQL_MCP_TRANSPORT`, `MYSQL_MCP_HTTP_BIND`) and the origin check, so it no longer disagrees with startup in either direction.
+- **`--daemon` reports TLS and port problems.** With the HTTP transport, a bad certificate or key, or a busy port, made the detached child exit silently while the command returned 0. The key pair and the listen address are now checked before detaching.
 
 - **Each tool call stays on one connection.** Tools that run several statements (`server_info`, `schema_diff`, `search_schema`, `vector_info`, …) resolved the active connection per statement, so a concurrent `use_connection` in the same session, or a process-wide switch on stdio, could mix two servers in one result. The connection is now pinned for the whole call; a switch made by the call itself (`use_connection`, `add_connection`) moves its own pin.
 - **HTTP tool results name their connection** when the session can see more than one, as a final `connection: <name>` text line and in `_meta["mysql-mcp-server/connection"]`. A session's `use_connection` choice ends with the session, so a client that re-initializes after the idle timeout silently ran on the default connection.
