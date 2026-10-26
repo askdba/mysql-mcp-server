@@ -487,6 +487,9 @@ func validateOrigin(o string) error {
 		(u.Path != "" && u.Path != "/") || u.User != nil {
 		return bad
 	}
+	if strings.HasSuffix(u.Host, ":") { // explicit empty port, e.g. https://app.example:
+		return bad
+	}
 	if p := u.Port(); p != "" {
 		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
 			return bad
