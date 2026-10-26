@@ -517,6 +517,11 @@ func validateOrigin(o string) error {
 	if strings.HasSuffix(u.Host, ":") { // explicit empty port, e.g. https://app.example:
 		return bad
 	}
+	// An IPv4-mapped IPv6 host ([::ffff:127.0.0.1]) has no unambiguous canonical form here:
+	// Go prints it as IPv4, browsers as [::ffff:7f00:1]. Require the plain IPv4 address.
+	if ip := net.ParseIP(u.Hostname()); ip != nil && strings.Contains(u.Hostname(), ":") && ip.To4() != nil {
+		return bad
+	}
 	if p := u.Port(); p != "" {
 		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
 			return bad
