@@ -333,3 +333,71 @@ func TestReservedConnectionPrefixRejected(t *testing.T) {
 		t.Fatalf("--validate-config with reserved prefix: %v", err)
 	}
 }
+
+func TestEnvMCPHTTPValuesAreNormalized(t *testing.T) {
+	clearEnv()
+	defer clearEnv()
+	os.Setenv("MYSQL_DSN", "user:pass@tcp(localhost:3306)/testdb")
+	os.Setenv("MYSQL_MCP_TRANSPORT", "http")
+	os.Setenv("MYSQL_MCP_HTTP_BIND", "[::1]")
+	os.Setenv("MYSQL_MCP_HTTP_ALLOWED_ORIGINS", "https://App.Example/, http://localhost:3000")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.MCPHTTPBind != "::1" {
+		t.Errorf("bind from env = %q, want ::1", cfg.MCPHTTPBind)
+	}
+	if got := strings.Join(cfg.MCPHTTPAllowedOrigins, ","); got != "https://app.example,http://localhost:3000" {
+		t.Errorf("origins from env = %q", got)
+	}
+}
+
+func TestInvalidOriginsRejectedAtLoad(t *testing.T) {
+	for _, o := range []string{"app.example.com", "https://app.example.com/ui", "ftp://app.example.com", "https://app.example.com?x=1"} {
+		clearEnv()
+		os.Setenv("MYSQL_DSN", "user:pass@tcp(localhost:3306)/testdb")
+		os.Setenv("MYSQL_MCP_TRANSPORT", "http")
+		os.Setenv("MYSQL_MCP_HTTP_ALLOWED_ORIGINS", o)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "is not an origin") {
+			t.Errorf("origin %q: err = %v, want 'is not an origin'", o, err)
+		}
+	}
+	clearEnv()
+}
+
+func TestValidateConfigFileMatchesStartup(t *testing.T) {
+	clearEnv()
+	defer clearEnv()
+	dir := t.TempDir()
+	tokenFile := filepath.Join(dir, "token")
+	if err := os.WriteFile(tokenFile, []byte("t"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	write := func(body string) string {
+		p := filepath.Join(dir, "c.yaml")
+		if err := os.WriteFile(p, []byte("connections:\n  default:\n    dsn: \"u:p@tcp(h:3306)/d\"\n"+body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	// ALLOW_INSECURE from the environment is honored, as at startup.
+	os.Setenv("MYSQL_MCP_HTTP_ALLOW_INSECURE", "1")
+	if err := ValidateConfigFile(write("transport: http\nhttp:\n  mcp:\n    bind: 0.0.0.0\n    token_file: " + tokenFile + "\n")); err != nil {
+		t.Errorf("file + env ALLOW_INSECURE should validate like startup: %v", err)
+	}
+	os.Unsetenv("MYSQL_MCP_HTTP_ALLOW_INSECURE")
+
+	// A bad origin in the file is reported by --validate-config, not only at startup.
+	if err := ValidateConfigFile(write("transport: http\nhttp:\n  mcp:\n    allowed_origins: [\"app.example.com\"]\n")); err == nil || !strings.Contains(err.Error(), "is not an origin") {
+		t.Errorf("bad origin in file: %v", err)
+	}
+
+	// Transport from the environment applies too.
+	os.Setenv("MYSQL_MCP_TRANSPORT", "http")
+	os.Setenv("MYSQL_MCP_HTTP_BIND", "0.0.0.0")
+	if err := ValidateConfigFile(write("")); err == nil || !strings.Contains(err.Error(), "bearer token is required") {
+		t.Errorf("env transport + remote bind without token: %v", err)
+	}
+}

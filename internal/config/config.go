@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path"
 	"strconv"
@@ -155,10 +156,12 @@ func Load() (*Config, error) {
 			DBRetryMaxInterval: 10 * time.Second,
 		}
 	}
-	applyMCPHTTPDefaults(cfg)
 
-	// Apply environment variable overrides (env vars take precedence)
+	// Apply environment variable overrides (env vars take precedence), then fill MCP HTTP
+	// defaults and normalize (bind brackets, origin case). Defaults run after the overrides
+	// so values from the environment are normalized like values from the config file.
 	applyEnvOverrides(cfg)
+	applyMCPHTTPDefaults(cfg)
 
 	// Load connections from environment (if any defined, they override file config)
 	envConns, err := loadConnections()
@@ -436,6 +439,11 @@ func ValidateTransport(cfg *Config) error {
 	if err := validateMCPHTTPPath(cfg.MCPHTTPPath); err != nil {
 		return err
 	}
+	for _, o := range cfg.MCPHTTPAllowedOrigins {
+		if err := validateOrigin(o); err != nil {
+			return err
+		}
+	}
 	if _, _, err := net.SplitHostPort(cfg.MCPHTTPBind); err == nil || strings.ContainsAny(cfg.MCPHTTPBind, "[]/ ") {
 		return fmt.Errorf("MYSQL_MCP_HTTP_BIND must be a host name or IP address without a port (got %q); set the port with MYSQL_HTTP_PORT", cfg.MCPHTTPBind)
 	}
@@ -454,6 +462,17 @@ func ValidateTransport(cfg *Config) error {
 		if cfg.MCPHTTPTLSCert == "" && !cfg.MCPHTTPAllowInsecure {
 			return fmt.Errorf("MCP HTTP bind %q is not loopback: TLS is required (MYSQL_MCP_HTTP_TLS_CERT/KEY), or set MYSQL_MCP_HTTP_ALLOW_INSECURE=1 when a TLS proxy terminates in front", cfg.MCPHTTPBind)
 		}
+	}
+	return nil
+}
+
+// validateOrigin requires a browser origin: http or https, a host, an optional port, and no
+// path, query or fragment (for example https://app.example.com or http://localhost:3000).
+func validateOrigin(o string) error {
+	u, err := url.Parse(o)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return fmt.Errorf("MYSQL_MCP_HTTP_ALLOWED_ORIGINS entry %q is not an origin: use scheme://host[:port], for example https://app.example.com", o)
 	}
 	return nil
 }
