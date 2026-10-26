@@ -354,7 +354,8 @@ func TestEnvMCPHTTPValuesAreNormalized(t *testing.T) {
 }
 
 func TestInvalidOriginsRejectedAtLoad(t *testing.T) {
-	for _, o := range []string{"app.example.com", "https://app.example.com/ui", "ftp://app.example.com", "https://app.example.com?x=1"} {
+	for _, o := range []string{"app.example.com", "https://app.example.com/ui", "ftp://app.example.com", "https://app.example.com?x=1",
+		"https://app.example.com?", "https://app.example.com#", "https://app.example.com:99999", "https://app.example.com:0", "https://:443"} {
 		clearEnv()
 		os.Setenv("MYSQL_DSN", "user:pass@tcp(localhost:3306)/testdb")
 		os.Setenv("MYSQL_MCP_TRANSPORT", "http")
@@ -399,5 +400,13 @@ func TestValidateConfigFileMatchesStartup(t *testing.T) {
 	os.Setenv("MYSQL_MCP_HTTP_BIND", "0.0.0.0")
 	if err := ValidateConfigFile(write("")); err == nil || !strings.Contains(err.Error(), "bearer token is required") {
 		t.Errorf("env transport + remote bind without token: %v", err)
+	}
+}
+
+func TestValidateOriginAcceptsOrigins(t *testing.T) {
+	for _, o := range []string{"https://app.example.com", "http://localhost:3000", "https://app.example.com:443", "https://app.example.com/", "http://[::1]:8080"} {
+		if err := validateOrigin(o); err != nil {
+			t.Errorf("%q rejected: %v", o, err)
+		}
 	}
 }

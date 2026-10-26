@@ -469,10 +469,20 @@ func ValidateTransport(cfg *Config) error {
 // validateOrigin requires a browser origin: http or https, a host, an optional port, and no
 // path, query or fragment (for example https://app.example.com or http://localhost:3000).
 func validateOrigin(o string) error {
+	bad := fmt.Errorf("MYSQL_MCP_HTTP_ALLOWED_ORIGINS entry %q is not an origin: use scheme://host[:port], for example https://app.example.com", o)
+	// "?" and "#" are rejected outright: an empty query or fragment parses to empty fields.
+	if strings.ContainsAny(o, "?#") {
+		return bad
+	}
 	u, err := url.Parse(o)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
-		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
-		return fmt.Errorf("MYSQL_MCP_HTTP_ALLOWED_ORIGINS entry %q is not an origin: use scheme://host[:port], for example https://app.example.com", o)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
+		(u.Path != "" && u.Path != "/") || u.User != nil {
+		return bad
+	}
+	if p := u.Port(); p != "" {
+		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+			return bad
+		}
 	}
 	return nil
 }
