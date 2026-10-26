@@ -406,6 +406,21 @@ func TestValidateConfigFileMatchesStartup(t *testing.T) {
 	if err := ValidateConfigFile(write("")); err == nil || !strings.Contains(err.Error(), "bearer token is required") {
 		t.Errorf("env transport + remote bind without token: %v", err)
 	}
+	os.Unsetenv("MYSQL_MCP_TRANSPORT")
+	os.Unsetenv("MYSQL_MCP_HTTP_BIND")
+
+	// Connections from the environment replace the file's, as at startup.
+	p := filepath.Join(dir, "noconn.yaml")
+	if err := os.WriteFile(p, []byte("query:\n  max_rows: 100\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateConfigFile(p); err == nil {
+		t.Error("file without connections and no env connections should fail")
+	}
+	os.Setenv("MYSQL_DSN", "u:p@tcp(h:3306)/d")
+	if err := ValidateConfigFile(p); err != nil {
+		t.Errorf("env MYSQL_DSN should satisfy connections, as at startup: %v", err)
+	}
 }
 
 func TestValidateOriginAcceptsOrigins(t *testing.T) {
