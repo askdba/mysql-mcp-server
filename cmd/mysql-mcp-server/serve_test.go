@@ -272,8 +272,19 @@ func TestMCPHTTPServerShutdownClosesStalledBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	fmt.Fprintf(conn, "POST /mcp HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nContent-Length: 100\r\n\r\n{")
-	time.Sleep(100 * time.Millisecond) // let the handler start reading the body
+	// Expect: 100-continue makes net/http answer "100 Continue" when the handler first
+	// reads the body, so shutdown starts only once the handler is in the body read.
+	fmt.Fprint(conn, "POST /mcp HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nExpect: 100-continue\r\nContent-Length: 100\r\n\r\n")
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	br := bufio.NewReader(conn)
+	if status, err := br.ReadString('\n'); err != nil || !strings.HasPrefix(status, "HTTP/1.1 100 Continue") {
+		t.Fatalf("body read did not start: status=%q err=%v", status, err)
+	}
+	if line, err := br.ReadString('\n'); err != nil || line != "\r\n" {
+		t.Fatalf("invalid 100-continue response: %q err=%v", line, err)
+	}
+	_ = conn.SetReadDeadline(time.Time{})
+	fmt.Fprint(conn, "{")
 
 	start := time.Now()
 	stop <- os.Interrupt
