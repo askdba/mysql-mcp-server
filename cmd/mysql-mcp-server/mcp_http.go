@@ -89,7 +89,8 @@ const mcpCORSAllowHeaders = "Authorization, Content-Type, Accept, Mcp-Session-Id
 
 // withMCPCORS answers CORS for the configured browser origins. It runs before the token
 // check, because a preflight OPTIONS request never carries the Authorization header.
-// Requests from other origins get no CORS headers (cross-origin protection rejects them).
+// Requests from other origins get no CORS headers; on the MCP endpoint, cross-origin
+// protection rejects their state-changing requests.
 func withMCPCORS(allowed []string, next http.Handler) http.Handler {
 	if len(allowed) == 0 {
 		return next
