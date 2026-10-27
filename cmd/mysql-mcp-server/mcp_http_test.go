@@ -403,8 +403,11 @@ func TestMCPHTTPCORSPreflightBeforeAuth(t *testing.T) {
 	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "https://app.example" {
 		t.Errorf("Access-Control-Allow-Origin = %q", got)
 	}
-	if !strings.Contains(resp.Header.Get("Access-Control-Allow-Headers"), "Authorization") {
-		t.Errorf("Access-Control-Allow-Headers = %q", resp.Header.Get("Access-Control-Allow-Headers"))
+	// Protocol 2026-07-28 clients send Mcp-Method and Mcp-Name on every request.
+	for _, h := range []string{"Authorization", "Mcp-Method", "Mcp-Name"} {
+		if !strings.Contains(resp.Header.Get("Access-Control-Allow-Headers"), h) {
+			t.Errorf("Access-Control-Allow-Headers = %q, missing %s", resp.Header.Get("Access-Control-Allow-Headers"), h)
+		}
 	}
 
 	resp = preflight("https://evil.example")
@@ -622,5 +625,43 @@ func TestMCPHTTPResultsNameTheConnection(t *testing.T) {
 	}
 	if _, ok := res.Meta[connectionMetaKey]; ok || len(res.Content) != 1 {
 		t.Errorf("single connection: expected no connection note, got %+v meta=%v", res.Content, res.Meta)
+	}
+}
+
+// /health and /api/metrics/tokens share the listener with /mcp, so they get the same
+// DNS-rebinding check, and CORS headers only for the allowed origins (never "*").
+func TestMCPHTTPOtherRoutesBrowserProtections(t *testing.T) {
+	f := newMCPHTTPFixture(t, func(c *config.Config) {
+		c.MCPHTTPAllowedOrigins = []string{"https://app.example"}
+	})
+	get := func(path, origin, host string) *http.Response {
+		req, _ := http.NewRequest(http.MethodGet, f.srv.URL+path, nil)
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		if host != "" {
+			req.Host = host
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	for _, path := range []string{"/health", "/api/metrics/tokens"} {
+		resp := get(path, "https://evil.example", "")
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("%s: %d, want 200", path, resp.StatusCode)
+		}
+		if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "" {
+			t.Errorf("%s from another origin: Access-Control-Allow-Origin = %q, want none", path, got)
+		}
+		if got := get(path, "https://app.example", "").Header.Get("Access-Control-Allow-Origin"); got != "https://app.example" {
+			t.Errorf("%s from allowed origin: Access-Control-Allow-Origin = %q", path, got)
+		}
+		if code := get(path, "", "evil.example:9306").StatusCode; code != http.StatusForbidden {
+			t.Errorf("%s with rebinding Host: %d, want 403", path, code)
+		}
 	}
 }

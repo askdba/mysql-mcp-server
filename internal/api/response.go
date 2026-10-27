@@ -13,12 +13,19 @@ type Response struct {
 	Error   string      `json:"error,omitempty"`
 }
 
-// WriteJSON writes a JSON response with the given status code.
+// WriteJSON writes a JSON response with the given status code. It allows any origin
+// (Access-Control-Allow-Origin: *), as the REST API always has.
 func WriteJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	WriteJSONNoCORS(w, status, data)
+}
+
+// WriteJSONNoCORS writes a JSON response without CORS headers, so browsers do not let
+// other origins read it (the caller may add CORS headers for specific origins).
+func WriteJSONNoCORS(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
 }

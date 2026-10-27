@@ -243,6 +243,53 @@ func TestMCPHTTPServerShutdownEndsOpenStreams(t *testing.T) {
 	}
 }
 
+// A client that stalls its request body must not hold shutdown for the body read timeout:
+// cancelling the base context does not unblock the read, so remaining connections are
+// closed shortly after the grace period.
+func TestMCPHTTPServerShutdownClosesStalledBody(t *testing.T) {
+	f := newMCPHTTPFixture(t, nil)
+	_ = f
+	oldGrace, oldForce := mcpHTTPShutdownGrace, mcpHTTPShutdownForce
+	mcpHTTPShutdownGrace, mcpHTTPShutdownForce = 200*time.Millisecond, 100*time.Millisecond
+	defer func() { mcpHTTPShutdownGrace, mcpHTTPShutdownForce = oldGrace, oldForce }()
+
+	host, port, _ := net.SplitHostPort(freeAddr(t))
+	c := *cfg
+	c.MCPHTTPBind = host
+	fmt.Sscan(port, &c.HTTPPort)
+	srv, release, err := newMCPHTTPServer(buildMCPServer(), &c, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	stop := make(chan os.Signal, 1)
+	done := make(chan error, 1)
+	go func() { done <- serveUntil(srv, "", "", stop) }()
+	waitForServer(t, "http://"+srv.Addr+"/health")
+
+	conn, err := net.Dial("tcp", srv.Addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	fmt.Fprintf(conn, "POST /mcp HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nContent-Length: 100\r\n\r\n{")
+	time.Sleep(100 * time.Millisecond) // let the handler start reading the body
+
+	start := time.Now()
+	stop <- os.Interrupt
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+		if took := time.Since(start); took > 3*time.Second {
+			t.Errorf("shutdown took %v with a stalled body, want about grace + force", took)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a stalled request body held shutdown")
+	}
+}
+
 func TestPreflightHTTPListener(t *testing.T) {
 	busy, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
