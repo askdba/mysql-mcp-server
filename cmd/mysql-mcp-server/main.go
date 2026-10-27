@@ -586,7 +586,7 @@ CONFIGURATION:
         MYSQL_MCP_HTTP_ALLOW_INSECURE  Allow a non-loopback bind without TLS, e.g. behind a TLS proxy (set to 1)
         MYSQL_MCP_HTTP_STATELESS     Stateless MCP sessions; use_connection then lasts one request (set to 1)
         MYSQL_MCP_HTTP_SESSION_TIMEOUT_MINUTES  Close idle MCP HTTP sessions after N minutes (default: 30)
-        MYSQL_MCP_HTTP_ALLOWED_ORIGINS  Comma-separated browser origins allowed via CORS (others are rejected)
+        MYSQL_MCP_HTTP_ALLOWED_ORIGINS  Comma-separated browser origins allowed via CORS (others: no CORS headers, state-changing MCP requests rejected)
         MYSQL_MCP_HTTP_ALLOWED_HOSTS    Comma-separated public Host names of a reverse proxy forwarding to the loopback listener
         MYSQL_HTTP_RATE_LIMIT        Enable rate limiting for HTTP mode (set to 1)
         MYSQL_HTTP_RATE_LIMIT_RPS    Rate limit: requests per second (default: 100)

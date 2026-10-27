@@ -236,10 +236,9 @@ func ValidateConfigFile(path string) error {
 		return err
 	}
 
-	// Validate connections
-	// Transport settings: run the same steps as startup (Load), so the result matches what
-	// the server would do with this file and the current environment: environment
-	// overrides, MCP HTTP defaults and normalization, the token file, then the checks.
+	// Run the same steps as startup (Load), so the result matches what the server would do
+	// with this file and the current environment: environment overrides, MCP HTTP defaults
+	// and normalization, environment connections, the token file, then the checks.
 	rc := cfg.ToConfig()
 	applyEnvOverrides(rc)
 	applyMCPHTTPDefaults(rc)

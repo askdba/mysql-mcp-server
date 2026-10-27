@@ -84,11 +84,13 @@ func requireBearerToken(token string, next http.Handler) http.Handler {
 }
 
 // mcpCORSAllowHeaders are the request headers browser MCP clients send on the endpoint.
-const mcpCORSAllowHeaders = "Authorization, Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID"
+// Protocol 2026-07-28 also requires Mcp-Method and Mcp-Name on every request.
+const mcpCORSAllowHeaders = "Authorization, Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Mcp-Method, Mcp-Name, Last-Event-ID"
 
 // withMCPCORS answers CORS for the configured browser origins. It runs before the token
 // check, because a preflight OPTIONS request never carries the Authorization header.
-// Requests from other origins get no CORS headers (cross-origin protection rejects them).
+// Requests from other origins get no CORS headers; on the MCP endpoint, cross-origin
+// protection rejects their state-changing requests.
 func withMCPCORS(allowed []string, next http.Handler) http.Handler {
 	if len(allowed) == 0 {
 		return next
@@ -118,9 +120,10 @@ func withMCPCORS(allowed []string, next http.Handler) http.Handler {
 	})
 }
 
-// withAllowedHosts replaces the SDK's DNS-rebinding check when a reverse proxy forwards
-// public Host names to a loopback listener: a request arriving on a loopback address must
-// carry a localhost Host or one of the configured names.
+// withAllowedHosts is the DNS-rebinding check for every route on the listener: a request
+// arriving on a loopback address must carry a localhost Host or one of the configured
+// names (a reverse proxy's public names). On the MCP path it replaces the SDK's own check
+// when names are configured.
 func withAllowedHosts(allowed []string, next http.Handler) http.Handler {
 	hosts := make(map[string]struct{}, len(allowed))
 	for _, h := range allowed {
@@ -158,6 +161,9 @@ func isLoopbackHostPort(addr string) bool {
 //   - /api/metrics/tokens: token metrics (same bearer token as MCP)
 //   - /status: Token Card page, only when tokenCardEnabled and no token is configured
 //     (a browser cannot send the bearer token)
+//
+// The DNS-rebinding check covers every route. /health and /api/metrics/tokens send CORS
+// headers only to the allowed origins, unlike the REST API's Access-Control-Allow-Origin: *.
 func newMCPHTTPHandler(server *mcp.Server, c *config.Config, rl *api.RateLimiter, tokenCardEnabled bool) (http.Handler, error) {
 	server.AddReceivingMiddleware(sessionConnMiddleware(connManager))
 
@@ -171,10 +177,6 @@ func newMCPHTTPHandler(server *mcp.Server, c *config.Config, rl *api.RateLimiter
 			DisableLocalhostProtection: len(c.MCPHTTPAllowedHosts) > 0,
 		},
 	)
-	if len(c.MCPHTTPAllowedHosts) > 0 {
-		mcpHandler = withAllowedHosts(c.MCPHTTPAllowedHosts, mcpHandler)
-	}
-
 	// Cross-origin protection wraps the handler, as the SDK recommends; its
 	// StreamableHTTPOptions.CrossOriginProtection field is deprecated.
 	cop := http.NewCrossOriginProtection()
@@ -186,20 +188,36 @@ func newMCPHTTPHandler(server *mcp.Server, c *config.Config, rl *api.RateLimiter
 
 	mux := http.NewServeMux()
 	mux.Handle(c.MCPHTTPPath, withMCPCORS(c.MCPHTTPAllowedOrigins, requireBearerToken(c.MCPHTTPToken, cop.Handler(mcpHandler))))
-	mux.HandleFunc("/health", httpHealth)
-	mux.Handle("/api/metrics/tokens", requireBearerToken(c.MCPHTTPToken, http.HandlerFunc(httpMetricsTokens)))
+	mux.Handle("/health", withMCPCORS(c.MCPHTTPAllowedOrigins, http.HandlerFunc(mcpHTTPHealth)))
+	mux.Handle("/api/metrics/tokens", withMCPCORS(c.MCPHTTPAllowedOrigins, requireBearerToken(c.MCPHTTPToken, http.HandlerFunc(mcpHTTPMetricsTokens))))
 	if tokenCardEnabled && c.MCPHTTPToken == "" {
 		mux.HandleFunc("/status", httpStatusPage)
 	}
 
-	handler := api.WithLogging(httpLogger)(mux.ServeHTTP)
+	handler := api.WithLogging(httpLogger)(withAllowedHosts(c.MCPHTTPAllowedHosts, mux).ServeHTTP)
 	handler = api.WithRateLimit(rl)(handler)
 	return withBodyReadDeadline(mcpHTTPBodyReadTimeout, handler), nil
+}
+
+// mcpHTTPHealth and mcpHTTPMetricsTokens serve /health and /api/metrics/tokens on the MCP
+// listener without the REST API's wildcard CORS headers.
+func mcpHTTPHealth(w http.ResponseWriter, r *http.Request) {
+	api.WriteJSONNoCORS(w, http.StatusOK, api.Response{Success: true, Data: healthStatus()})
+}
+
+func mcpHTTPMetricsTokens(w http.ResponseWriter, r *http.Request) {
+	api.WriteJSONNoCORS(w, http.StatusOK, api.Response{Success: true, Data: globalTokenMetrics.Snapshot()})
 }
 
 // mcpHTTPShutdownGrace is how long in-flight requests may finish after SIGINT/SIGTERM
 // before open MCP streams are cancelled.
 var mcpHTTPShutdownGrace = 5 * time.Second
+
+// mcpHTTPShutdownForce is how long after the grace period the server waits for handlers to
+// return before it closes every remaining connection. Cancelling the base context does not
+// unblock a stalled request-body read (or net/http draining an unread body), so without
+// this, one stalled client would hold shutdown for the full body read timeout.
+var mcpHTTPShutdownForce = time.Second
 
 // mcpHTTPBodyReadTimeout bounds how long a client may take to send a request body.
 var mcpHTTPBodyReadTimeout = 30 * time.Second
@@ -251,8 +269,9 @@ func (b *deadlineBody) clear() {
 
 // newMCPHTTPServer builds the http.Server for the MCP HTTP transport. Request contexts
 // derive from a base context: Shutdown never ends open server-sent event streams by itself,
-// so mcpHTTPShutdownGrace after shutdown starts, the base context is cancelled. The
-// returned func releases the base context.
+// so mcpHTTPShutdownGrace after shutdown starts, the base context is cancelled, and
+// mcpHTTPShutdownForce later any connection still open is closed. The returned func
+// releases the base context.
 func newMCPHTTPServer(server *mcp.Server, c *config.Config, rl *api.RateLimiter, tokenCardEnabled bool) (*http.Server, func(), error) {
 	handler, err := newMCPHTTPHandler(server, c, rl, tokenCardEnabled)
 	if err != nil {
@@ -269,7 +288,12 @@ func newMCPHTTPServer(server *mcp.Server, c *config.Config, rl *api.RateLimiter,
 		IdleTimeout: 120 * time.Second,
 		BaseContext: func(net.Listener) context.Context { return baseCtx },
 	}
-	srv.RegisterOnShutdown(func() { time.AfterFunc(mcpHTTPShutdownGrace, cancelBase) })
+	srv.RegisterOnShutdown(func() {
+		time.AfterFunc(mcpHTTPShutdownGrace, func() {
+			cancelBase()
+			time.AfterFunc(mcpHTTPShutdownForce, func() { _ = srv.Close() })
+		})
+	})
 	return srv, cancelBase, nil
 }
 

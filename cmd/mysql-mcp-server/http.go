@@ -493,10 +493,15 @@ func httpVectorInfo(w http.ResponseWriter, r *http.Request) {
 
 // httpHealth handles GET /health
 func httpHealth(w http.ResponseWriter, r *http.Request) {
-	api.WriteSuccess(w, map[string]interface{}{
+	api.WriteSuccess(w, healthStatus())
+}
+
+// healthStatus is the body of GET /health on the REST API and the MCP HTTP transport.
+func healthStatus() map[string]interface{} {
+	return map[string]interface{}{
 		"status":  "healthy",
 		"service": "mysql-mcp-server",
-	})
+	}
 }
 
 // httpAPIIndex handles GET /api
