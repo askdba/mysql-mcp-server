@@ -148,7 +148,7 @@ Environment variables:
 | MYSQL_MCP_HTTP_ALLOW_INSECURE | No | 0 | Set `1` to allow a non-loopback bind **without** TLS when a reverse proxy terminates TLS in front. The token is still required |
 | MYSQL_MCP_HTTP_STATELESS | No | 0 | Set `1` for stateless sessions (no `Mcp-Session-Id`); `use_connection` then only lasts one request |
 | MYSQL_MCP_HTTP_SESSION_TIMEOUT_MINUTES | No | 30 | Close idle MCP HTTP sessions after this many minutes |
-| MYSQL_MCP_HTTP_ALLOWED_ORIGINS | No | – | Comma-separated browser origins, each `scheme://host[:port]` with no path (e.g. `https://app.example.com`), allowed to call the endpoint: they get CORS headers and pass cross-origin protection. Other origins are rejected |
+| MYSQL_MCP_HTTP_ALLOWED_ORIGINS | No | – | Comma-separated browser origins, each `scheme://host[:port]` with no path (e.g. `https://app.example.com`), allowed to call the endpoint: they get CORS headers and pass cross-origin protection. Other origins get no CORS headers, and their state-changing requests (`POST`, `DELETE`) to the MCP endpoint are rejected |
 | MYSQL_MCP_HTTP_ALLOWED_HOSTS | No | – | Comma-separated public host names a **reverse proxy on the same machine** forwards to the loopback listener (e.g. `mcp.example.com`). Without it, such requests fail the DNS-rebinding check with 403. Setting it requires a token, because the proxy makes the server reachable from outside |
 | MYSQL_HTTP_RATE_LIMIT | No | 0 | Enable rate limiting for HTTP mode (set to 1) |
 | MYSQL_HTTP_RATE_LIMIT_RPS | No | 100 | Rate limit: requests per second |
