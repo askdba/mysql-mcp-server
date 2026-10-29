@@ -618,6 +618,7 @@ GRANT EXECUTE ON mysql_mcp.* TO 'mcp'@'%';   -- the account the MCP server uses
 - **Same results either way.** Each procedure returns exactly the result set of the tool's own query. One exception: `show_create_table` on a **view** in the connection's default database. MySQL then leaves out the schema name, but a procedure always runs in `mysql_mcp`, so with the pack the view definition is always schema-qualified. Input checks, `MYSQL_MCP_ALLOWED_DATABASES`, row limits and error messages stay in this server. CI checks every tool both ways on MySQL 8.0, 8.4, 9.7, 26.10 and MariaDB 11.4, 12.3.
 - **No extra privileges.** Every procedure is `SQL SECURITY INVOKER`, so it sees exactly what the calling account's grants allow, and none of them accepts SQL as an argument. `run_query` and `explain_query` never go through the pack.
 - **Optional.** Without the pack, or with `MYSQL_MCP_TOOL_PACK=off`, the server works exactly as before. This includes managed services that do not allow `CREATE ROUTINE`.
+- **Safe to upgrade while running.** If a pack call fails because a procedure is missing (1305, for example halfway through an upgrade) or `EXECUTE` was revoked (1370), the server logs a warning, stops using the pack on that connection and falls back to its own SQL until the next restart.
 - `mysql-mcp-server install-schema --uninstall` drops the `mysql_mcp` schema.
 
 ## MCP Tools

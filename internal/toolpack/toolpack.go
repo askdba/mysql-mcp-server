@@ -25,7 +25,7 @@ const Version = "1.0.0"
 const SupportedMajor = 1
 
 // SourceRef identifies the askdba/myvector commit the files in sql/ were copied from.
-const SourceRef = "askdba/myvector@ecb640029118756827f9f247b3a6af42f506c1b5 (sql/mcp/)"
+const SourceRef = "askdba/myvector@09122e068483418ad9e79fe5c4f7dbf8f431b836 (sql/mcp/)"
 
 //go:embed sql/mysql_mcp.sql
 var installSQL string

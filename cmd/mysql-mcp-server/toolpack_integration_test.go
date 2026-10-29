@@ -318,13 +318,18 @@ func TestToolPackParity(t *testing.T) {
 		return []string{o.Note, strings.Repeat("x", min(len(o.Processes), 1))}, err
 	}))
 
-	// The pack really is used: without its list_databases procedure, pack mode fails.
+	// The pack really is used, and a dropped procedure (for example an interrupted
+	// upgrade) falls back to the embedded SQL and stops using the pack on the connection.
 	if _, err := db.ExecContext(ctx, "DROP PROCEDURE mysql_mcp.list_databases"); err != nil {
 		t.Fatal(err)
 	}
 	setPack(true)
-	if _, _, err := toolListDatabases(ctx, nil, ListDatabasesInput{}); err == nil || !strings.Contains(err.Error(), "list_databases") {
-		t.Errorf("pack mode without mysql_mcp.list_databases: err = %v, want a missing-procedure error", err)
+	_, fallback, err := toolListDatabases(ctx, nil, ListDatabasesInput{})
+	if err != nil || len(fallback.Databases) == 0 {
+		t.Errorf("pack mode without mysql_mcp.list_databases: %+v %v, want the embedded result", fallback, err)
+	}
+	if v := cm.ToolPackOf("default"); v != "" {
+		t.Errorf("pack still in use after a missing procedure: %q", v)
 	}
 	setPack(false)
 	if err := toolpack.Install(ctx, db); err != nil {

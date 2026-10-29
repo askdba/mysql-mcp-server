@@ -935,7 +935,7 @@ func toolSearchSchema(
 	var rows *sql.Rows
 	var err error
 	if usePack {
-		rows, err = getDB(ctx).QueryContext(ctx, packCall("search_tables", 3), input.Pattern, nullIfEmpty(input.Database), maxRows)
+		rows, err = catalogRows(ctx, "search_tables", []any{input.Pattern, nullIfEmpty(input.Database), maxRows}, tableQuery, tableArgs...)
 	} else {
 		rows, err = getDB(ctx).QueryContext(ctx, tableQuery, tableArgs...)
 	}
@@ -987,7 +987,7 @@ func toolSearchSchema(
 	if len(out.Matches) < maxRows {
 		var crows *sql.Rows
 		if usePack {
-			crows, err = getDB(ctx).QueryContext(ctx, packCall("search_columns", 3), input.Pattern, nullIfEmpty(input.Database), maxRows-len(out.Matches))
+			crows, err = catalogRows(ctx, "search_columns", []any{input.Pattern, nullIfEmpty(input.Database), maxRows - len(out.Matches)}, colQuery, colArgs...)
 		} else {
 			crows, err = getDB(ctx).QueryContext(ctx, colQuery, colArgs...)
 		}
@@ -1373,8 +1373,13 @@ func toolVectorInfo(
 			ORDER BY INDEX_NAME LIMIT 1
 		`
 		var indexName, indexType sql.NullString
-		_ = catalogRow(ctx, "vector_column_index", []any{input.Database, tableName, colName},
-			indexQuery, input.Database, tableName, colName).Scan(&indexName, &indexType)
+		if irows, err := catalogRows(ctx, "vector_column_index", []any{input.Database, tableName, colName},
+			indexQuery, input.Database, tableName, colName); err == nil {
+			if irows.Next() {
+				_ = irows.Scan(&indexName, &indexType)
+			}
+			irows.Close()
+		}
 		info.IndexName = indexName.String
 		info.IndexType = indexType.String
 

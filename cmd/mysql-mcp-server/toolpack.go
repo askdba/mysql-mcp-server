@@ -4,10 +4,13 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 
 	"github.com/askdba/mysql-mcp-server/internal/config"
 	"github.com/askdba/mysql-mcp-server/internal/toolpack"
@@ -55,19 +58,40 @@ func packCall(proc string, n int) string {
 
 // catalogRows runs a catalog query: the tool pack's procedure with procArgs when the
 // connection has the pack, otherwise query with args. Both return the same result set.
+// If the pack has gone away (a procedure dropped, for example by an interrupted upgrade,
+// or EXECUTE revoked), the connection stops using it and the query runs instead.
 func catalogRows(ctx context.Context, proc string, procArgs []any, query string, args ...any) (*sql.Rows, error) {
 	if usesToolPack(ctx) {
-		return getDB(ctx).QueryContext(ctx, packCall(proc, len(procArgs)), procArgs...)
+		rows, err := getDB(ctx).QueryContext(ctx, packCall(proc, len(procArgs)), procArgs...)
+		if !packUnavailable(err) {
+			return rows, err
+		}
+		connManager.dropToolPack(ctx, err)
 	}
 	return getDB(ctx).QueryContext(ctx, query, args...)
 }
 
-// catalogRow is catalogRows for a single row.
-func catalogRow(ctx context.Context, proc string, procArgs []any, query string, args ...any) *sql.Row {
-	if usesToolPack(ctx) {
-		return getDB(ctx).QueryRowContext(ctx, packCall(proc, len(procArgs)), procArgs...)
+// packUnavailable reports whether err means the pack cannot be called at all:
+// ER_SP_DOES_NOT_EXIST (1305) or ER_PROCACCESS_DENIED_ERROR (1370).
+func packUnavailable(err error) bool {
+	var me *mysql.MySQLError
+	return errors.As(err, &me) && (me.Number == 1305 || me.Number == 1370)
+}
+
+// dropToolPack stops using the tool pack on the connection ctx resolves to, until the
+// connection is added again (restart).
+func (cm *ConnectionManager) dropToolPack(ctx context.Context, cause error) {
+	cm.mu.Lock()
+	name := cm.activeNameLocked(ctx)
+	had := cm.toolPacks[name]
+	delete(cm.toolPacks, name)
+	cm.mu.Unlock()
+	if had != "" {
+		logWarn("mysql_mcp tool pack unavailable; using embedded SQL on this connection until restart", map[string]interface{}{
+			"connection": name,
+			"error":      cause.Error(),
+		})
 	}
-	return getDB(ctx).QueryRowContext(ctx, query, args...)
 }
 
 // nullIfEmpty maps an omitted optional argument to NULL for a pack procedure.
