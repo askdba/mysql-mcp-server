@@ -72,10 +72,13 @@ type Config struct {
 	// Feature flags
 	ExtendedMode bool
 	VectorMode   bool
-	HTTPMode     bool
-	MetricsHTTP  bool // Serve /status + /api/metrics/tokens on HTTP while MCP uses stdio (Claude Desktop)
-	JSONLogging  bool
-	TokenCard    bool // Enable live monitoring UI at /status
+	// ToolPack selects how catalog tools query the server: ToolPackAuto ("" means auto)
+	// uses the mysql_mcp SQL tool pack when a connection has it, ToolPackOff never does.
+	ToolPack    string
+	HTTPMode    bool
+	MetricsHTTP bool // Serve /status + /api/metrics/tokens on HTTP while MCP uses stdio (Claude Desktop)
+	JSONLogging bool
+	TokenCard   bool // Enable live monitoring UI at /status
 
 	// Token estimation (optional, disabled by default)
 	TokenTracking bool
@@ -181,6 +184,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if err := resolveMCPHTTPToken(cfg); err != nil {
+		return nil, err
+	}
+	if err := validateToolPack(cfg.ToolPack); err != nil {
 		return nil, err
 	}
 	if err := ValidateTransport(cfg); err != nil {
@@ -329,6 +335,9 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("MYSQL_MCP_ALLOWED_DATABASES"); v != "" {
 		cfg.AllowedDatabases = parseCSVList(v)
 	}
+	if v := strings.TrimSpace(os.Getenv("MYSQL_MCP_TOOL_PACK")); v != "" {
+		cfg.ToolPack = strings.ToLower(v)
+	}
 	if v := os.Getenv("MYSQL_MCP_STRICT_READ_ONLY"); v != "" {
 		cfg.StrictReadOnly = getEnvBool("MYSQL_MCP_STRICT_READ_ONLY")
 	}
@@ -429,6 +438,21 @@ func IsLoopbackBind(addr string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// Tool pack modes (MYSQL_MCP_TOOL_PACK, features.tool_pack).
+const (
+	ToolPackAuto = "auto"
+	ToolPackOff  = "off"
+)
+
+// validateToolPack accepts "", "auto" and "off".
+func validateToolPack(v string) error {
+	switch v {
+	case "", ToolPackAuto, ToolPackOff:
+		return nil
+	}
+	return fmt.Errorf("invalid MYSQL_MCP_TOOL_PACK %q (want %q or %q)", v, ToolPackAuto, ToolPackOff)
 }
 
 // ValidateTransport checks the MCP transport settings for unsafe or conflicting combinations.

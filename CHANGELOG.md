@@ -7,6 +7,24 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **MySQL-native mode: the `mysql_mcp` SQL tool pack** (phase 1 of [RFC 0001](docs/rfc/0001-mysql-component-architecture.md)). `mysql-mcp-server install-schema` installs (or with `--uninstall` removes) the schema `mysql_mcp` on a configured connection. The account needs only CREATE, DROP, CREATE ROUTINE and ALTER ROUTINE on `mysql_mcp.*`; `--print` writes the SQL for a DBA instead. The schema has one `SQL SECURITY INVOKER` procedure per catalog tool.
+  - When a connection has the pack (detected at connect with `CALL mysql_mcp.version()`, logged as `toolPack`), 18 catalog tools call it instead of sending their own SQL.
+  - Results are identical either way. A new integration test compares every tool in both modes on each CI server.
+  - `MYSQL_MCP_TOOL_PACK=off` (or `features.tool_pack: off`) disables it.
+  - The SQL is maintained in askdba/myvector `sql/mcp/` (Apache-2.0) and vendored in `internal/toolpack`.
+
+### Changed
+
+- **Catalog results are fully ordered.** `list_views`, `list_triggers`, `list_procedures`, `list_functions`, `list_partitions`, `foreign_keys`, `search_schema` and `vector_info` had no `ORDER BY`. Their order could vary between calls, and `search_schema`'s row limit could cut at different rows. Name orders use a binary tiebreak, so names that differ only in case (MariaDB) also sort the same way every time.
+
+### Fixed
+
+- **`list_variables` with a pattern works on MariaDB, and its first query works on MySQL.** `SHOW GLOBAL VARIABLES LIKE ?` cannot be prepared, so it always failed. MySQL then fell back to `performance_schema.global_variables`, and MariaDB, which has no such table, returned an error. It now uses `SHOW GLOBAL VARIABLES WHERE Variable_name LIKE ?`; `list_status`'s fallback had the same problem and is fixed the same way.
+- **`show_create_table` works on views.** For a view, `SHOW CREATE TABLE` returns four columns, and the tool failed with "expected 4 destination arguments in Scan, not 2".
+- **`list_indexes` returns indexes in a stable order** (`SHOW INDEX` order, `PRIMARY` first). It grouped rows through a Go map, so the order changed from call to call.
+
 ## [1.9.0-rc.2] - 2026-10-29
 
 Second release candidate for v1.9.0 (#142): fixes from the release review of rc.1 (#147, #148, #149, #150, #152, #153). Tested on MySQL 8.0, 8.4, 9.7, 26.10 and MariaDB 11.4, 12.3. v1.9.0 GA waits for the MySQL components from RFC 0001.

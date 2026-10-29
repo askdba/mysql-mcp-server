@@ -46,6 +46,7 @@ type ConnectionManager struct {
 	clients       map[string]*mysqlclient.Client // retry-capable clients wrapping each DB
 	configs       map[string]config.ConnectionConfig
 	serverTypes   map[string]ServerType
+	toolPacks     map[string]string // mysql_mcp tool pack version per connection ("" = none)
 	activeConn    string
 	tunnelClosers map[string]func() // per-connection SSH tunnel close functions
 	// pendingAdds marks names currently in addConnectionWithPoolConfig (!replace) between
@@ -61,6 +62,7 @@ func NewConnectionManager() *ConnectionManager {
 		clients:       make(map[string]*mysqlclient.Client),
 		configs:       make(map[string]config.ConnectionConfig),
 		serverTypes:   make(map[string]ServerType),
+		toolPacks:     make(map[string]string),
 		tunnelClosers: make(map[string]func()),
 	}
 }
@@ -130,6 +132,7 @@ func (cm *ConnectionManager) tearDownNamedConnection(name string) {
 		delete(cm.clients, name) // wraps the closed pool; holds the DSN credentials
 		delete(cm.configs, name)
 		delete(cm.serverTypes, name)
+		delete(cm.toolPacks, name)
 		if closeTunnel := cm.tunnelClosers[name]; closeTunnel != nil {
 			closeTunnel()
 			delete(cm.tunnelClosers, name)
@@ -299,6 +302,7 @@ func (cm *ConnectionManager) addConnectionWithPoolConfig(ctx context.Context, co
 	// Detect server type with a dedicated context to avoid sharing timeout with PingContext
 	detectCtx, cancelDetect := context.WithTimeout(ctx, pingTimeout)
 	serverType := cm.detectServerType(detectCtx, conn)
+	packVersion := detectToolPack(detectCtx, conn, cfg.ToolPack)
 	cancelDetect()
 
 	cm.mu.Lock()
@@ -331,6 +335,7 @@ func (cm *ConnectionManager) addConnectionWithPoolConfig(ctx context.Context, co
 
 	cm.configs[connCfg.Name] = connCfg
 	cm.serverTypes[connCfg.Name] = serverType
+	cm.toolPacks[connCfg.Name] = packVersion
 	if tunnelCloser != nil {
 		cm.tunnelClosers[connCfg.Name] = tunnelCloser
 	}

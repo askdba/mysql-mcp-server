@@ -82,6 +82,8 @@ type FileFeatureConfig struct {
 	ExtendedTools bool `yaml:"extended_tools" json:"extended_tools"`
 	VectorTools   bool `yaml:"vector_tools" json:"vector_tools"`
 	TokenCard     bool `yaml:"token_card" json:"token_card"`
+	// ToolPack: "auto" (default) or "off"; see Config.ToolPack.
+	ToolPack string `yaml:"tool_pack,omitempty" json:"tool_pack,omitempty"`
 }
 
 // FileSecurityConfig represents access-control and privileged tool flags.
@@ -264,6 +266,9 @@ func ValidateConfigFile(path string) error {
 	if err := resolveMCPHTTPToken(rc); err != nil {
 		return err
 	}
+	if err := validateToolPack(rc.ToolPack); err != nil {
+		return err
+	}
 	return ValidateTransport(rc)
 }
 
@@ -326,6 +331,7 @@ func (fc *FileConfig) ToConfig() *Config {
 	cfg.ExtendedMode = fc.Features.ExtendedTools
 	cfg.VectorMode = fc.Features.VectorTools
 	cfg.TokenCard = fc.Features.TokenCard
+	cfg.ToolPack = strings.ToLower(strings.TrimSpace(fc.Features.ToolPack))
 
 	if len(fc.Security.AllowedDatabases) > 0 {
 		cfg.AllowedDatabases = append([]string(nil), fc.Security.AllowedDatabases...)
@@ -452,6 +458,7 @@ func PrintConfig(cfg *Config) string {
 			ExtendedTools: cfg.ExtendedMode,
 			VectorTools:   cfg.VectorMode,
 			TokenCard:     cfg.TokenCard,
+			ToolPack:      cfg.ToolPack,
 		},
 		Security: FileSecurityConfig{
 			AllowedDatabases:   cfg.AllowedDatabases,

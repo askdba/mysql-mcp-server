@@ -970,7 +970,7 @@ func TestToolListStatusFallbackWithPattern(t *testing.T) {
 	rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("Threads_connected", "5").
 		AddRow("Threads_running", "2")
-	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE").WithArgs("Threads%").WillReturnRows(rows)
+	mock.ExpectQuery("SHOW GLOBAL STATUS WHERE Variable_name LIKE").WithArgs("Threads%").WillReturnRows(rows)
 
 	ctx := context.Background()
 	_, output, err := toolListStatus(ctx, &mcp.CallToolRequest{}, ListStatusInput{
@@ -1026,7 +1026,7 @@ func TestToolListVariablesWithPattern(t *testing.T) {
 		AddRow("innodb_buffer_pool_instances", "1").
 		AddRow("innodb_buffer_pool_size", "134217728")
 
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE").WithArgs("innodb_buffer%").WillReturnRows(rows)
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES WHERE Variable_name LIKE").WithArgs("innodb_buffer%").WillReturnRows(rows)
 
 	ctx := context.Background()
 	_, output, err := toolListVariables(ctx, &mcp.CallToolRequest{}, ListVariablesInput{
@@ -1079,7 +1079,7 @@ func TestToolListVariablesFallbackWithPattern(t *testing.T) {
 	mock, cleanup := setupExtendedMockDB(t)
 	defer cleanup()
 
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE").WithArgs("innodb_buffer%").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES WHERE Variable_name LIKE").WithArgs("innodb_buffer%").
 		WillReturnError(fmt.Errorf("access denied"))
 
 	rows := sqlmock.NewRows([]string{"VARIABLE_NAME", "VARIABLE_VALUE"}).

@@ -35,7 +35,8 @@ func toolListDatabases(
 	defer cancel()
 
 	// Use information_schema for better compatibility and to filter out system dbs if needed
-	rows, err := getDB(ctx).QueryContext(ctx, "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA ORDER BY SCHEMA_NAME")
+	rows, err := catalogRows(ctx, "list_databases", nil,
+		"SELECT SCHEMA_NAME FROM information_schema.SCHEMATA ORDER BY SCHEMA_NAME, CAST(SCHEMA_NAME AS BINARY)")
 	if err != nil {
 		return nil, ListDatabasesOutput{}, fmt.Errorf("ListDatabases failed: %w", err)
 	}
@@ -82,9 +83,9 @@ func toolListTables(
 	query := `SELECT TABLE_NAME, ENGINE, TABLE_ROWS, TABLE_COMMENT 
 			  FROM information_schema.TABLES 
 			  WHERE TABLE_SCHEMA = ?
-			  ORDER BY TABLE_NAME`
+			  ORDER BY TABLE_NAME, CAST(TABLE_NAME AS BINARY)`
 
-	rows, err := getDB(ctx).QueryContext(ctx, query, input.Database)
+	rows, err := catalogRows(ctx, "list_tables", []any{input.Database}, query, input.Database)
 	if err != nil {
 		return nil, ListTablesOutput{}, fmt.Errorf("ListTables failed: %w", err)
 	}
@@ -170,7 +171,7 @@ func toolDescribeTable(
 			  WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
 			  ORDER BY ORDINAL_POSITION`
 
-	rows, err := getDB(ctx).QueryContext(ctx, query, input.Database, input.Table)
+	rows, err := catalogRows(ctx, "describe_table", []any{input.Database, input.Table}, query, input.Database, input.Table)
 	if err != nil {
 		return nil, DescribeTableOutput{}, fmt.Errorf("DescribeTable failed: %w", err)
 	}

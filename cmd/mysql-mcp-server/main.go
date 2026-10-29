@@ -51,13 +51,17 @@ var (
 
 // parsedArgs holds the result of command-line argument parsing.
 type parsedArgs struct {
-	action        string // "", "version", "help", "print-config", "validate-config"
+	action        string // "", "version", "help", "print-config", "validate-config", "install-schema"
 	configPath    string // path from --config or --config=
 	validatePath  string // path for --validate-config
 	silent        bool   // --silent or -s: suppress INFO/WARN logs
 	daemon        bool   // --daemon: fork to background (HTTP mode)
 	tokenCardFlag bool   // --token-card: enable live token monitoring UI
-	err           error  // parsing error (e.g., unknown flag)
+	// install-schema options
+	installPrint     bool   // --print: write the SQL to stdout instead of running it
+	installUninstall bool   // --uninstall: remove the tool pack
+	installConn      string // --connection NAME: target connection (default: the first)
+	err              error  // parsing error (e.g., unknown flag)
 }
 
 // parseArgs parses command-line arguments and returns the result.
@@ -99,6 +103,26 @@ func parseArgs(args []string) parsedArgs {
 			result.daemon = true
 		case "--token-card":
 			result.tokenCardFlag = true
+		case "install-schema":
+			result.action = "install-schema"
+		case "--print", "--uninstall", "--connection":
+			if result.action != "install-schema" {
+				result.err = fmt.Errorf("%s is an install-schema option", arg)
+				return result
+			}
+			switch arg {
+			case "--print":
+				result.installPrint = true
+			case "--uninstall":
+				result.installUninstall = true
+			default:
+				if len(args) < 1 {
+					result.err = fmt.Errorf("--connection requires a name")
+					return result
+				}
+				result.installConn = args[0]
+				args = args[1:]
+			}
 		default:
 			// Check if it's --config=path format
 			if len(arg) > 9 && arg[:9] == "--config=" {
@@ -148,6 +172,8 @@ func main() {
 	case "validate-config":
 		handleValidateConfig(parsed.validatePath)
 		os.Exit(0)
+	case "install-schema":
+		os.Exit(handleInstallSchema(parsed))
 	}
 
 	var err error
@@ -224,10 +250,14 @@ func main() {
 		if err := connManager.AddConnectionWithPoolConfig(connCfg, cfg); err != nil {
 			logWarn("failed to add connection", map[string]interface{}{"name": connCfg.Name, "error": err.Error()})
 		} else {
-			logInfo("connection added", map[string]interface{}{
+			fields := map[string]interface{}{
 				"name": connCfg.Name,
 				"dsn":  util.MaskDSN(connCfg.DSN),
-			})
+			}
+			if v := connManager.ToolPackOf(connCfg.Name); v != "" {
+				fields["toolPack"] = v // catalog tools call mysql_mcp.* on this connection
+			}
+			logInfo("connection added", fields)
 		}
 	}
 
@@ -528,6 +558,7 @@ func printHelp() {
 
 USAGE:
     mysql-mcp-server [OPTIONS]
+    mysql-mcp-server install-schema [--connection NAME] [--uninstall] [--print]
 
 OPTIONS:
     -h, --help                  Show this help message
@@ -538,6 +569,13 @@ OPTIONS:
     --token-card                Enable live token monitoring UI at /status (HTTP mode)
     --print-config              Print current configuration as YAML
     --validate-config PATH      Validate config file at PATH
+
+COMMANDS:
+    install-schema              Install or upgrade the mysql_mcp SQL tool pack on the first
+                                configured connection (--connection NAME for another), then
+                                GRANT EXECUTE ON mysql_mcp.* to the MCP account. Catalog
+                                tools use it automatically. --uninstall removes it; --print
+                                writes the SQL to stdout instead of running it.
 
 DESCRIPTION:
     A fast, read-only MySQL Server for the Model Context Protocol (MCP).
@@ -568,6 +606,7 @@ CONFIGURATION:
         MYSQL_MCP_AUDIT_LOG          Path to audit log file
         MYSQL_MCP_ALLOWED_DATABASES Comma-separated schema allowlist (optional)
         MYSQL_MCP_STRICT_READ_ONLY   Set 1 for transaction_read_only=ON on connections
+        MYSQL_MCP_TOOL_PACK          auto (default): catalog tools use the mysql_mcp tool pack where installed; off: never
         MYSQL_MCP_PROCESS_ADMIN      Set 1 for process_list / kill_query tools (extended)
         MYSQL_MCP_READ_AUDIT_TOOL    Set 1 for read_audit_log when audit path set
         MYSQL_MCP_SLOW_QUERY_TOOL    Set 1 for slow_query_log tool (extended)

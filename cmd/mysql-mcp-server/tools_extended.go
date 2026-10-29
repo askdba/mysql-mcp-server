@@ -45,7 +45,7 @@ func toolListIndexes(
 	defer cancel()
 
 	query := fmt.Sprintf("SHOW INDEX FROM %s.%s", dbName, tableName)
-	rows, err := getDB(ctx).QueryContext(ctx, query)
+	rows, err := catalogRows(ctx, "list_indexes", []any{input.Database, input.Table}, query)
 	if err != nil {
 		return nil, ListIndexesOutput{}, fmt.Errorf("SHOW INDEX failed: %w", err)
 	}
@@ -63,9 +63,10 @@ func toolListIndexes(
 		return nil, ListIndexesOutput{}, fmt.Errorf("unexpected SHOW INDEX output: got %d columns, expected at least 11", colCount)
 	}
 
-	// Group columns by index name
+	// Group columns by index name, keeping indexes in SHOW INDEX order (PRIMARY first).
 	indexCols := make(map[string][]string)
 	indexInfo := make(map[string]IndexInfo)
+	var order []string
 
 	for rows.Next() {
 		values := make([]interface{}, colCount)
@@ -83,6 +84,9 @@ func toolListIndexes(
 		nonUnique := fmt.Sprintf("%v", util.NormalizeValue(values[1])) == "1"
 		indexType := fmt.Sprintf("%v", util.NormalizeValue(values[10]))
 
+		if _, seen := indexInfo[keyName]; !seen {
+			order = append(order, keyName)
+		}
 		indexCols[keyName] = append(indexCols[keyName], colName)
 		indexInfo[keyName] = IndexInfo{
 			Name:      keyName,
@@ -92,7 +96,8 @@ func toolListIndexes(
 	}
 
 	out := ListIndexesOutput{Indexes: []IndexInfo{}}
-	for name, info := range indexInfo {
+	for _, name := range order {
+		info := indexInfo[name]
 		info.Columns = strings.Join(indexCols[name], ", ")
 		out.Indexes = append(out.Indexes, info)
 	}
@@ -125,12 +130,36 @@ func toolShowCreateTable(
 	defer cancel()
 
 	query := fmt.Sprintf("SHOW CREATE TABLE %s.%s", dbName, tableName)
-	var tbl, createStmt string
-	if err := getDB(ctx).QueryRowContext(ctx, query).Scan(&tbl, &createStmt); err != nil {
+	rows, err := catalogRows(ctx, "show_create_table", []any{input.Database, input.Table}, query)
+	if err != nil {
+		return nil, ShowCreateTableOutput{}, fmt.Errorf("SHOW CREATE TABLE failed: %w", err)
+	}
+	defer rows.Close()
+	// A table returns (Table, Create Table); a view returns four columns (View, Create View,
+	// character_set_client, collation_connection). The statement is the second either way.
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, ShowCreateTableOutput{}, fmt.Errorf("SHOW CREATE TABLE failed: %w", err)
+	}
+	if len(cols) < 2 {
+		return nil, ShowCreateTableOutput{}, fmt.Errorf("SHOW CREATE TABLE failed: unexpected %d columns", len(cols))
+	}
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, ShowCreateTableOutput{}, fmt.Errorf("SHOW CREATE TABLE failed: %w", err)
+		}
+		return nil, ShowCreateTableOutput{}, fmt.Errorf("SHOW CREATE TABLE failed: %w", sql.ErrNoRows)
+	}
+	vals := make([]sql.NullString, len(cols))
+	ptrs := make([]any, len(cols))
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
+	if err := rows.Scan(ptrs...); err != nil {
 		return nil, ShowCreateTableOutput{}, fmt.Errorf("SHOW CREATE TABLE failed: %w", err)
 	}
 
-	return nil, ShowCreateTableOutput{CreateStatement: createStmt}, nil
+	return nil, ShowCreateTableOutput{CreateStatement: vals[1].String}, nil
 }
 
 func toolExplainQuery(
@@ -365,8 +394,8 @@ func toolListViews(
 	defer cancel()
 
 	query := `SELECT TABLE_NAME, DEFINER, SECURITY_TYPE, IS_UPDATABLE 
-		FROM information_schema.VIEWS WHERE TABLE_SCHEMA = ?`
-	rows, err := getDB(ctx).QueryContext(ctx, query, input.Database)
+		FROM information_schema.VIEWS WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, CAST(TABLE_NAME AS BINARY)`
+	rows, err := catalogRows(ctx, "list_views", []any{input.Database}, query, input.Database)
 	if err != nil {
 		return nil, ListViewsOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -406,8 +435,9 @@ func toolListTriggers(
 	defer cancel()
 
 	query := `SELECT TRIGGER_NAME, EVENT_MANIPULATION, EVENT_OBJECT_TABLE, ACTION_TIMING, 
-		LEFT(ACTION_STATEMENT, 200) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ?`
-	rows, err := getDB(ctx).QueryContext(ctx, query, input.Database)
+		LEFT(ACTION_STATEMENT, 200) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ?
+		ORDER BY TRIGGER_NAME`
+	rows, err := catalogRows(ctx, "list_triggers", []any{input.Database}, query, input.Database)
 	if err != nil {
 		return nil, ListTriggersOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -448,8 +478,8 @@ func toolListProcedures(
 
 	query := `SELECT ROUTINE_NAME, DEFINER, CREATED, LAST_ALTERED, 
 		IFNULL(PARAMETER_STYLE, '') FROM information_schema.ROUTINES 
-		WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'PROCEDURE'`
-	rows, err := getDB(ctx).QueryContext(ctx, query, input.Database)
+		WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'PROCEDURE' ORDER BY ROUTINE_NAME`
+	rows, err := catalogRows(ctx, "list_procedures", []any{input.Database}, query, input.Database)
 	if err != nil {
 		return nil, ListProceduresOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -490,8 +520,8 @@ func toolListFunctions(
 
 	query := `SELECT ROUTINE_NAME, DEFINER, DTD_IDENTIFIER, CREATED 
 		FROM information_schema.ROUTINES 
-		WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'FUNCTION'`
-	rows, err := getDB(ctx).QueryContext(ctx, query, input.Database)
+		WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'FUNCTION' ORDER BY ROUTINE_NAME`
+	rows, err := catalogRows(ctx, "list_functions", []any{input.Database}, query, input.Database)
 	if err != nil {
 		return nil, ListFunctionsOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -533,8 +563,9 @@ func toolListPartitions(
 	query := `SELECT PARTITION_NAME, PARTITION_METHOD, PARTITION_EXPRESSION, 
 		PARTITION_DESCRIPTION, TABLE_ROWS, DATA_LENGTH 
 		FROM information_schema.PARTITIONS 
-		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND PARTITION_NAME IS NOT NULL`
-	rows, err := getDB(ctx).QueryContext(ctx, query, input.Database, input.Table)
+		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND PARTITION_NAME IS NOT NULL
+		ORDER BY PARTITION_ORDINAL_POSITION, SUBPARTITION_ORDINAL_POSITION`
+	rows, err := catalogRows(ctx, "list_partitions", []any{input.Database, input.Table}, query, input.Database, input.Table)
 	if err != nil {
 		return nil, ListPartitionsOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -591,15 +622,13 @@ func toolDatabaseSize(
 	} else {
 		query += " WHERE TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')"
 	}
-	query += " GROUP BY TABLE_SCHEMA ORDER BY size_mb DESC"
+	query += " GROUP BY TABLE_SCHEMA ORDER BY size_mb DESC, TABLE_SCHEMA, CAST(TABLE_SCHEMA AS BINARY)"
 
-	var rows *sql.Rows
-	var err error
+	var args []any
 	if database != "" {
-		rows, err = getDB(ctx).QueryContext(ctx, query, database)
-	} else {
-		rows, err = getDB(ctx).QueryContext(ctx, query)
+		args = append(args, database)
 	}
+	rows, err := catalogRows(ctx, "database_size", []any{nullIfEmpty(database)}, query, args...)
 	if err != nil {
 		return nil, DatabaseSizeOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -656,9 +685,9 @@ func toolTableSize(
 		query += " AND TABLE_NAME = ?"
 		args = append(args, input.Table)
 	}
-	query += " ORDER BY total_mb DESC"
+	query += " ORDER BY total_mb DESC, TABLE_NAME"
 
-	rows, err := getDB(ctx).QueryContext(ctx, query, args...)
+	rows, err := catalogRows(ctx, "table_size", []any{input.Database, nullIfEmpty(input.Table)}, query, args...)
 	if err != nil {
 		return nil, TableSizeOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -722,8 +751,9 @@ func toolForeignKeys(
 		query += " AND TABLE_NAME = ?"
 		args = append(args, input.Table)
 	}
+	query += " ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION"
 
-	rows, err := getDB(ctx).QueryContext(ctx, query, args...)
+	rows, err := catalogRows(ctx, "foreign_keys", []any{input.Database, nullIfEmpty(input.Table)}, query, args...)
 	if err != nil {
 		return nil, ForeignKeysOutput{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -763,17 +793,17 @@ func toolListStatus(
 
 	// Use performance_schema for better performance and flexibility
 	if input.Pattern != "" {
-		rows, err = getDB(ctx).QueryContext(ctx,
+		rows, err = catalogRows(ctx, "list_status", []any{input.Pattern},
 			"SELECT VARIABLE_NAME, VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME LIKE ? ORDER BY VARIABLE_NAME",
 			input.Pattern)
 	} else {
-		rows, err = getDB(ctx).QueryContext(ctx,
+		rows, err = catalogRows(ctx, "list_status", []any{nil},
 			"SELECT VARIABLE_NAME, VARIABLE_VALUE FROM performance_schema.global_status ORDER BY VARIABLE_NAME")
 	}
 	if err != nil {
 		// Fallback to SHOW GLOBAL STATUS for restricted environments or older versions
 		if input.Pattern != "" {
-			rows, err = getDB(ctx).QueryContext(ctx, "SHOW GLOBAL STATUS LIKE ?", input.Pattern)
+			rows, err = getDB(ctx).QueryContext(ctx, "SHOW GLOBAL STATUS WHERE Variable_name LIKE ?", input.Pattern)
 		} else {
 			rows, err = getDB(ctx).QueryContext(ctx, "SHOW GLOBAL STATUS")
 		}
@@ -816,9 +846,9 @@ func toolListVariables(
 	// MySQL/MariaDB deployments. Some environments stall when selecting from
 	// performance_schema.global_variables; use that only as a fallback.
 	if input.Pattern != "" {
-		rows, err = getDB(ctx).QueryContext(ctx, "SHOW GLOBAL VARIABLES LIKE ?", input.Pattern)
+		rows, err = catalogRows(ctx, "list_variables", []any{input.Pattern}, "SHOW GLOBAL VARIABLES WHERE Variable_name LIKE ?", input.Pattern)
 	} else {
-		rows, err = getDB(ctx).QueryContext(ctx, "SHOW GLOBAL VARIABLES")
+		rows, err = catalogRows(ctx, "list_variables", []any{nil}, "SHOW GLOBAL VARIABLES")
 	}
 	if err != nil {
 		if input.Pattern != "" {
@@ -897,10 +927,18 @@ func toolSearchSchema(
 	default:
 		tableQuery += " AND TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')"
 	}
-	tableQuery += " LIMIT ?"
+	tableQuery += " ORDER BY TABLE_SCHEMA, CAST(TABLE_SCHEMA AS BINARY), TABLE_NAME, CAST(TABLE_NAME AS BINARY) LIMIT ?"
 	tableArgs = append(tableArgs, maxRows)
 
-	rows, err := getDB(ctx).QueryContext(ctx, tableQuery, tableArgs...)
+	// The tool pack covers one database or all of them; the allow-list filter stays here.
+	usePack := usesToolPack(ctx) && (input.Database != "" || !accessControlEnabled())
+	var rows *sql.Rows
+	var err error
+	if usePack {
+		rows, err = catalogRows(ctx, "search_tables", []any{input.Pattern, nullIfEmpty(input.Database), maxRows}, tableQuery, tableArgs...)
+	} else {
+		rows, err = getDB(ctx).QueryContext(ctx, tableQuery, tableArgs...)
+	}
 	if err != nil {
 		return nil, SearchSchemaOutput{}, fmt.Errorf("table search failed: %w", err)
 	}
@@ -943,11 +981,16 @@ func toolSearchSchema(
 	default:
 		colQuery += " AND TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')"
 	}
-	colQuery += " LIMIT ?"
+	colQuery += " ORDER BY TABLE_SCHEMA, CAST(TABLE_SCHEMA AS BINARY), TABLE_NAME, CAST(TABLE_NAME AS BINARY), ORDINAL_POSITION LIMIT ?"
 	colArgs = append(colArgs, maxRows-len(out.Matches))
 
 	if len(out.Matches) < maxRows {
-		crows, err := getDB(ctx).QueryContext(ctx, colQuery, colArgs...)
+		var crows *sql.Rows
+		if usePack {
+			crows, err = catalogRows(ctx, "search_columns", []any{input.Pattern, nullIfEmpty(input.Database), maxRows - len(out.Matches)}, colQuery, colArgs...)
+		} else {
+			crows, err = getDB(ctx).QueryContext(ctx, colQuery, colArgs...)
+		}
 		if err != nil {
 			return nil, SearchSchemaOutput{}, fmt.Errorf("column search failed: %w", err)
 		}
@@ -1298,8 +1341,9 @@ func toolVectorInfo(
 		query += " AND TABLE_NAME = ?"
 		args = append(args, input.Table)
 	}
+	query += " ORDER BY TABLE_NAME, ORDINAL_POSITION"
 
-	rows, err := getDB(ctx).QueryContext(ctx, query, args...)
+	rows, err := catalogRows(ctx, "vector_columns", []any{input.Database, nullIfEmpty(input.Table)}, query, args...)
 	if err != nil {
 		return nil, VectorInfoOutput{}, fmt.Errorf("failed to query vector columns: %w", err)
 	}
@@ -1326,9 +1370,16 @@ func toolVectorInfo(
 			SELECT INDEX_NAME, INDEX_TYPE 
 			FROM information_schema.STATISTICS 
 			WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?
+			ORDER BY INDEX_NAME LIMIT 1
 		`
 		var indexName, indexType sql.NullString
-		_ = getDB(ctx).QueryRowContext(ctx, indexQuery, input.Database, tableName, colName).Scan(&indexName, &indexType)
+		if irows, err := catalogRows(ctx, "vector_column_index", []any{input.Database, tableName, colName},
+			indexQuery, input.Database, tableName, colName); err == nil {
+			if irows.Next() {
+				_ = irows.Scan(&indexName, &indexType)
+			}
+			irows.Close()
+		}
 		info.IndexName = indexName.String
 		info.IndexType = indexType.String
 
