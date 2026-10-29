@@ -195,7 +195,8 @@ Facts established against the `mysql-26.10.0` source and the Go driver:
 - **Privileges:**
   - Installing needs `CREATE ROUTINE`/`CREATE VIEW` on `mysql_mcp`, a one-time DBA step.
   - MCP accounts need only `EXECUTE` on `mysql_mcp` plus their normal data grants.
-- A `mysql_mcp.version()` function lets callers check compatibility.
+- `CALL mysql_mcp.version()` lets callers check compatibility. *Phase 1: a procedure, not a function. With binary logging on (the MySQL default), `CREATE FUNCTION` needs SUPER or `log_bin_trust_function_creators`, which least-privilege and managed-service installers lack.*
+- *Phase 1: each procedure runs fixed statement text as a prepared statement with bound `?` arguments. A routine parameter compared directly would bring its own collation: case-insensitive name matching on MySQL, and "Illegal mix of collations" on MariaDB 11.5+.*
 - Version variants are chosen at install time (e.g. no `VECTOR` on 8.x).
 - **Go server:**
   - A new `mysql-mcp-server install-schema` subcommand installs the vendored pack.
@@ -379,7 +380,7 @@ Innovation releases are supported only until the next one ships. Each new Innova
 |---|---|---|---|
 | 0 | **In review:** [askdba/myvector#227](https://github.com/askdba/myvector/pull/227). Refresh source trees (8.4.11, 9.7.2, 26.10.0); hello-world `component_mcp_guard` building on 8.4, 9.7, 26.10 via the MyVector scripts (lifecycle test 7/7 on each); add `sql/mcp/LICENSE` (Apache-2.0) and the `NOTICE` entry | — | 1 week |
 | 0b | **Done.** Streamable HTTP MCP transport in the Go server (§6.1a): [#140](https://github.com/askdba/mysql-mcp-server/issues/140), [PR #141](https://github.com/askdba/mysql-mcp-server/pull/141), shipped in [v1.9.0-rc.1](https://github.com/askdba/mysql-mcp-server/releases/tag/v1.9.0-rc.1) | — | done |
-| 1 | SQL tool pack v1 + Go `install-schema` + parity tests | 0 (license) | 2–3 weeks |
+| 1 | **In review:** [askdba/myvector#238](https://github.com/askdba/myvector/pull/238) (pack 1.0.0, 18 tools, CI on MySQL 8.0–26.10 and MariaDB 11.4, 12.3) and the Go side here (`install-schema`, detection, parity test). SQL tool pack v1 + Go `install-schema` + parity tests | 0 (license) | 2–3 weeks |
 | 2 | `component_mcp_guard`: privileges, sysvars, read-only + schema enforcement, status vars, MTR | 0 | 3–4 weeks |
 | 3 | `P_S.mcp_tool_calls`, audit emission; Go connection attributes + statement comment labels, `server_info` detection, error mapping; Docker images | 2 | 2–3 weeks |
 | 4 | `component_mcp` build spike on 26.10: in-tree build with the Router HTTP libraries, one tool served, build time / size / thread budget, token auth (§5.3). **Exit requires** a deny-path test that the guard's policy reaches `run_query` in impersonated `"local"` sessions: an account without `MCP_USER` is not treated as MCP, and an MCP account's write is rejected. This answers open question 4 | 0 (26.10.0 source tag: available) | 2–3 weeks |

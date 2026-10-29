@@ -161,6 +161,24 @@ func TestParseArgs(t *testing.T) {
 			wantConfigPath: "/path/to/config.yaml",
 		},
 
+		{
+			name:       "install-schema",
+			args:       []string{"install-schema"},
+			wantAction: "install-schema",
+		},
+		{
+			name:        "install-schema option without install-schema",
+			args:        []string{"--print"},
+			wantErr:     true,
+			errContains: "install-schema option",
+		},
+		{
+			name:        "install-schema --connection without a name",
+			args:        []string{"install-schema", "--connection"},
+			wantErr:     true,
+			errContains: "--connection requires a name",
+		},
+
 		// Error cases
 		{
 			name:        "unknown flag",
@@ -269,4 +287,14 @@ func findSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestParseArgsInstallSchemaOptions(t *testing.T) {
+	r := parseArgs([]string{"--config", "/c.yaml", "install-schema", "--connection", "prod", "--uninstall", "--print"})
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	if r.action != "install-schema" || r.installConn != "prod" || !r.installUninstall || !r.installPrint || r.configPath != "/c.yaml" {
+		t.Errorf("parseArgs = %+v", r)
+	}
 }

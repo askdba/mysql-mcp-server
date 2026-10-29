@@ -131,6 +131,7 @@ Environment variables:
 | MYSQL_MCP_AUDIT_LOG | No | – | Path to audit log file |
 | MYSQL_MCP_ALLOWED_DATABASES | No | – | Comma-separated schema allowlist (empty = all allowed). With an allowlist, **`run_query`** rejects **`SHOW DATABASES`** / **`SHOW DATABASES LIKE`**—use **`list_databases`**. |
 | MYSQL_MCP_STRICT_READ_ONLY | No | 0 | Set `1` to enable `transaction_read_only=ON` on new connections |
+| MYSQL_MCP_TOOL_PACK | No | auto | `auto`: catalog tools call the [`mysql_mcp` SQL tool pack](#mysql-native-mode-the-sql-tool-pack) on connections where it is installed. `off`: always use the embedded SQL |
 | MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS | No | 0 | Set `1` to allow **read-only** access to `information_schema`, `performance_schema`, and `sys` (for diagnostics: index cardinality, index usage, redundant/unused indexes). `mysql` stays blocked regardless. |
 | MYSQL_MCP_PROCESS_ADMIN | No | 0 | Set `1` to enable **`process_list`** / **`kill_query`** (extended); **`kill_query`** issues **`KILL QUERY`** (cancels the running statement only, not the connection) |
 | MYSQL_MCP_READ_AUDIT_TOOL | No | 0 | Set `1` to enable `read_audit_log` when audit path is set |
@@ -308,6 +309,7 @@ pool:
 features:
   extended_tools: true
   vector_tools: false
+  # tool_pack: auto   # or off; see "MySQL-native mode: the SQL tool pack"
 
 # HTTP/REST API (optional)
 http:
@@ -595,6 +597,28 @@ http:
     # allowed_hosts: ["mcp.example.com"]             # reverse proxy forwarding to loopback
     # allow_insecure: false
 ```
+
+## MySQL-native mode: the SQL tool pack
+
+The catalog tools can run inside the server as stored procedures in a `mysql_mcp` schema instead of as SQL sent by this process. This is phase 1 of [RFC 0001](docs/rfc/0001-mysql-component-architecture.md). The same procedures will be the foundation for the planned MySQL components. The procedures come from [askdba/myvector `sql/mcp/`](https://github.com/askdba/myvector/tree/main/sql/mcp) (Apache-2.0), and this binary includes a copy.
+
+```bash
+# As an account with CREATE, DROP, CREATE ROUTINE and ALTER ROUTINE on mysql_mcp.*
+# (no SUPER needed). Re-run it to upgrade.
+mysql-mcp-server install-schema                      # first configured connection
+mysql-mcp-server install-schema --connection prod    # another one
+mysql-mcp-server install-schema --print > mysql_mcp.sql   # or hand the SQL to a DBA
+```
+
+```sql
+GRANT EXECUTE ON mysql_mcp.* TO 'mcp'@'%';   -- the account the MCP server uses
+```
+
+- **Detection is automatic.** When a connection is added, the server runs `CALL mysql_mcp.version()`. If the pack is there with a supported version, the startup log shows `toolPack: 1.0.0` for that connection, and these tools call it: `list_databases`, `list_tables`, `describe_table`, `show_create_table`, `list_indexes`, `list_views`, `list_triggers`, `list_procedures`, `list_functions`, `list_partitions`, `database_size`, `table_size`, `foreign_keys`, `search_schema`, `list_status`, `list_variables`, `process_list` and `vector_info`. Restart the server after installing the pack on a running deployment.
+- **Same results either way.** Each procedure returns exactly the result set of the tool's own query. Input checks, `MYSQL_MCP_ALLOWED_DATABASES`, row limits and error messages stay in this server. CI checks every tool both ways on MySQL 8.0, 8.4, 9.7, 26.10 and MariaDB 11.4, 12.3.
+- **No extra privileges.** Every procedure is `SQL SECURITY INVOKER`, so it sees exactly what the calling account's grants allow, and none of them accepts SQL as an argument. `run_query` and `explain_query` never go through the pack.
+- **Optional.** Without the pack, or with `MYSQL_MCP_TOOL_PACK=off`, the server works exactly as before. This includes managed services that do not allow `CREATE ROUTINE`.
+- `mysql-mcp-server install-schema --uninstall` drops the `mysql_mcp` schema.
 
 ## MCP Tools
 

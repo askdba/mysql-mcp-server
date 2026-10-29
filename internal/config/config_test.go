@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -32,6 +33,7 @@ func clearEnv() {
 		"MYSQL_MCP_AUDIT_LOG",
 		"MYSQL_MCP_ALLOWED_DATABASES",
 		"MYSQL_MCP_STRICT_READ_ONLY",
+		"MYSQL_MCP_TOOL_PACK",
 		"MYSQL_MCP_PROCESS_ADMIN",
 		"MYSQL_MCP_READ_AUDIT_TOOL",
 		"MYSQL_MCP_SLOW_QUERY_TOOL",
@@ -562,5 +564,28 @@ func TestSecurityEnvOverrides(t *testing.T) {
 	set := AllowedDatabaseSet(cfg.AllowedDatabases)
 	if len(set) != 3 {
 		t.Fatalf("set len %d", len(set))
+	}
+}
+
+func TestToolPackMode(t *testing.T) {
+	clearEnv()
+	defer clearEnv()
+	os.Setenv("MYSQL_DSN", "u:p@tcp(h:3306)/d")
+	for _, tc := range []struct{ env, want string }{{"", ""}, {"auto", "auto"}, {" OFF ", "off"}} {
+		os.Setenv("MYSQL_MCP_TOOL_PACK", tc.env)
+		if tc.env == "" {
+			os.Unsetenv("MYSQL_MCP_TOOL_PACK")
+		}
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("MYSQL_MCP_TOOL_PACK=%q: %v", tc.env, err)
+		}
+		if cfg.ToolPack != tc.want {
+			t.Errorf("MYSQL_MCP_TOOL_PACK=%q: ToolPack = %q, want %q", tc.env, cfg.ToolPack, tc.want)
+		}
+	}
+	os.Setenv("MYSQL_MCP_TOOL_PACK", "sometimes")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "invalid MYSQL_MCP_TOOL_PACK") {
+		t.Errorf("invalid mode: %v", err)
 	}
 }

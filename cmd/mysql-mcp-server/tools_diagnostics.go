@@ -34,7 +34,7 @@ func toolProcessList(
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
 
-	rows, err := getDB(ctx).QueryContext(ctx, "SHOW FULL PROCESSLIST")
+	rows, err := catalogRows(ctx, "process_list", nil, "SHOW FULL PROCESSLIST")
 	if err != nil {
 		return nil, ProcessListOutput{
 			Note: fmt.Sprintf("SHOW FULL PROCESSLIST failed (need PROCESS privilege): %v", err),

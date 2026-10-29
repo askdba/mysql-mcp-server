@@ -1,0 +1,69 @@
+// cmd/mysql-mcp-server/toolpack_test.go
+package main
+
+import (
+	"database/sql/driver"
+	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
+)
+
+func TestPackCall(t *testing.T) {
+	for n, want := range map[int]string{
+		0: "CALL mysql_mcp.list_databases()",
+		1: "CALL mysql_mcp.list_databases(?)",
+		3: "CALL mysql_mcp.list_databases(?, ?, ?)",
+	} {
+		if got := packCall("list_databases", n); got != want {
+			t.Errorf("packCall(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// With the pack detected on the connection, catalog tools CALL mysql_mcp.*; without it
+// they run their embedded SQL. Omitted optional arguments become NULL.
+func TestCatalogToolsUseToolPackWhenDetected(t *testing.T) {
+	r := setupMockDBFull(t)
+	defer r.cleanup()
+	mock := r.mock
+
+	mock.ExpectQuery(`SELECT TABLE_NAME, ENGINE, TABLE_ROWS, TABLE_COMMENT`).WithArgs("shop").
+		WillReturnRows(sqlmock.NewRows([]string{"TABLE_NAME", "ENGINE", "TABLE_ROWS", "TABLE_COMMENT"}).AddRow("a", "InnoDB", 1, ""))
+	if _, out, err := toolListTables(t.Context(), nil, ListTablesInput{Database: "shop"}); err != nil || len(out.Tables) != 1 {
+		t.Fatalf("embedded list_tables: %+v %v", out, err)
+	}
+
+	connManager.mu.Lock()
+	connManager.toolPacks["mock"] = "1.0.0"
+	connManager.mu.Unlock()
+
+	mock.ExpectQuery(`CALL mysql_mcp\.list_tables\(\?\)`).WithArgs("shop").
+		WillReturnRows(sqlmock.NewRows([]string{"TABLE_NAME", "ENGINE", "TABLE_ROWS", "TABLE_COMMENT"}).AddRow("a", "InnoDB", 1, ""))
+	if _, out, err := toolListTables(t.Context(), nil, ListTablesInput{Database: "shop"}); err != nil || len(out.Tables) != 1 {
+		t.Fatalf("pack list_tables: %+v %v", out, err)
+	}
+
+	sizeCols := []string{"TABLE_SCHEMA", "size_mb", "data_mb", "index_mb", "tables"}
+	mock.ExpectQuery(`CALL mysql_mcp\.database_size\(\?\)`).WithArgs(nilArg{}).
+		WillReturnRows(sqlmock.NewRows(sizeCols).AddRow("shop", 1.5, 1.0, 0.5, 3))
+	if _, out, err := toolDatabaseSize(t.Context(), nil, DatabaseSizeInput{}); err != nil || len(out.Databases) != 1 {
+		t.Fatalf("pack database_size (all): %+v %v", out, err)
+	}
+
+	mock.ExpectQuery(`CALL mysql_mcp\.search_tables\(\?, \?, \?\)`).WithArgs("%film%", nilArg{}, maxRows).
+		WillReturnRows(sqlmock.NewRows([]string{"TABLE_SCHEMA", "TABLE_NAME"}).AddRow("shop", "film"))
+	mock.ExpectQuery(`CALL mysql_mcp\.search_columns\(\?, \?, \?\)`).WithArgs("%film%", nilArg{}, maxRows-1).
+		WillReturnRows(sqlmock.NewRows([]string{"TABLE_SCHEMA", "TABLE_NAME", "COLUMN_NAME"}))
+	if _, out, err := toolSearchSchema(t.Context(), nil, SearchSchemaInput{Pattern: "%film%"}); err != nil || len(out.Matches) != 1 {
+		t.Fatalf("pack search_schema: %+v %v", out, err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Error(err)
+	}
+}
+
+// nilArg matches a NULL query argument.
+type nilArg struct{}
+
+func (nilArg) Match(v driver.Value) bool { return v == nil }
