@@ -7,6 +7,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [1.9.0-rc.2] - 2026-10-29
+
+Second release candidate for v1.9.0 (#142): fixes from the release review of rc.1 (#147, #148, #149, #150, #152, #153). Tested on MySQL 8.0, 8.4, 9.7, 26.10 and MariaDB 11.4, 12.3. v1.9.0 GA waits for the MySQL components from RFC 0001.
+
 ### Fixed
 - **MCP HTTP settings from the environment are normalized like the config file.** Defaults and normalization ran before the environment overrides, so `MYSQL_MCP_HTTP_BIND=[::1]` failed at startup and a mixed-case or trailing-slash `MYSQL_MCP_HTTP_ALLOWED_ORIGINS` passed the CORS preflight but was then refused with 403. Allowed origins are now also validated up front (`scheme://host[:port]`, no path), instead of failing after the database connects.
 - **`--validate-config` runs the same steps as startup**, including every environment override (for example `MYSQL_MCP_HTTP_ALLOW_INSECURE`, `MYSQL_MCP_TRANSPORT`, `MYSQL_MCP_HTTP_BIND`) and the origin check, so it no longer disagrees with startup in either direction.
