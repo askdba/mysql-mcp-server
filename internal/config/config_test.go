@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -584,11 +585,20 @@ func TestToolPackMode(t *testing.T) {
 			t.Errorf("MYSQL_MCP_TOOL_PACK=%q: ToolPack = %q, want %q", tc.env, cfg.ToolPack, tc.want)
 		}
 	}
-	// A blank value is unset: it must not override a file setting with "auto".
-	os.Setenv("MYSQL_MCP_TOOL_PACK", "  ")
-	if cfg, err := Load(); err != nil || cfg.ToolPack != "" {
-		t.Errorf("blank MYSQL_MCP_TOOL_PACK: %q %v", cfg.ToolPack, err)
+	// A blank value is unset: it must not override a file setting of "off".
+	dir := t.TempDir()
+	file := filepath.Join(dir, "c.yaml")
+	if err := os.WriteFile(file, []byte("connections:\n  default:\n    dsn: \"u:p@tcp(h:3306)/d\"\nfeatures:\n  tool_pack: off\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
+	oldPath := ConfigFilePath
+	ConfigFilePath = file
+	defer func() { ConfigFilePath = oldPath }()
+	os.Setenv("MYSQL_MCP_TOOL_PACK", "  ")
+	if cfg, err := Load(); err != nil || cfg.ToolPack != ToolPackOff {
+		t.Errorf("file tool_pack: off with blank MYSQL_MCP_TOOL_PACK: %+v %v, want off", cfg, err)
+	}
+	ConfigFilePath = oldPath
 	os.Setenv("MYSQL_MCP_TOOL_PACK", "sometimes")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "invalid MYSQL_MCP_TOOL_PACK") {
 		t.Errorf("invalid mode: %v", err)

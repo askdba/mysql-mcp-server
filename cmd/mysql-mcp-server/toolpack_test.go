@@ -3,6 +3,7 @@ package main
 
 import (
 	"database/sql/driver"
+	"errors"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -82,36 +83,50 @@ func TestShowCreateTableView(t *testing.T) {
 	}
 }
 
-// A missing procedure (interrupted upgrade) falls back to the embedded SQL and stops using
-// the pack on that connection; other errors are returned as they are.
+// A missing procedure (1305, an interrupted upgrade) or a revoked EXECUTE (1370) falls back
+// to the embedded SQL and stops using the pack on that connection.
 func TestCatalogRowsFallsBackWhenPackGone(t *testing.T) {
+	for _, code := range []uint16{1305, 1370} {
+		r := setupMockDBFull(t)
+		mock := r.mock
+		connManager.mu.Lock()
+		connManager.toolPacks["mock"] = "1.0.0"
+		connManager.mu.Unlock()
+
+		mock.ExpectQuery(`CALL mysql_mcp\.list_databases\(\)`).
+			WillReturnError(&mysql.MySQLError{Number: code, Message: "pack unavailable"})
+		mock.ExpectQuery(`SELECT SCHEMA_NAME FROM information_schema\.SCHEMATA`).
+			WillReturnRows(sqlmock.NewRows([]string{"SCHEMA_NAME"}).AddRow("shop"))
+		if _, out, err := toolListDatabases(t.Context(), nil, ListDatabasesInput{}); err != nil || len(out.Databases) != 1 || out.Databases[0].Name != "shop" {
+			t.Errorf("error %d: fallback = %+v %v", code, out, err)
+		}
+		if v := connManager.ToolPackOf("mock"); v != "" {
+			t.Errorf("error %d: pack still in use: %q", code, v)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("error %d: %v", code, err)
+		}
+		r.cleanup()
+	}
+}
+
+// Any other error from a pack call is returned, and the pack stays in use.
+func TestCatalogRowsKeepsPackOnOtherErrors(t *testing.T) {
 	r := setupMockDBFull(t)
 	defer r.cleanup()
-	mock := r.mock
 	connManager.mu.Lock()
 	connManager.toolPacks["mock"] = "1.0.0"
 	connManager.mu.Unlock()
-
-	mock.ExpectQuery(`CALL mysql_mcp\.list_databases\(\)`).
-		WillReturnError(&mysql.MySQLError{Number: 1305, Message: "PROCEDURE mysql_mcp.list_databases does not exist"})
-	mock.ExpectQuery(`SELECT SCHEMA_NAME FROM information_schema\.SCHEMATA`).
-		WillReturnRows(sqlmock.NewRows([]string{"SCHEMA_NAME"}).AddRow("shop"))
-	if _, out, err := toolListDatabases(t.Context(), nil, ListDatabasesInput{}); err != nil || len(out.Databases) != 1 {
-		t.Fatalf("fallback: %+v %v", out, err)
+	r.mock.ExpectQuery(`CALL mysql_mcp\.list_tables\(\?\)`).WillReturnError(&mysql.MySQLError{Number: 1205, Message: "Lock wait timeout"})
+	_, _, err := toolListTables(t.Context(), nil, ListTablesInput{Database: "shop"})
+	var me *mysql.MySQLError
+	if !errors.As(err, &me) || me.Number != 1205 {
+		t.Errorf("err = %v, want MySQL error 1205", err)
 	}
-	if v := connManager.ToolPackOf("mock"); v != "" {
-		t.Errorf("pack still in use: %q", v)
+	if v := connManager.ToolPackOf("mock"); v != "1.0.0" {
+		t.Errorf("pack marker = %q after a lock wait timeout, want 1.0.0", v)
 	}
-
-	// Another error from a pack call is not a reason to fall back.
-	connManager.mu.Lock()
-	connManager.toolPacks["mock"] = "1.0.0"
-	connManager.mu.Unlock()
-	mock.ExpectQuery(`CALL mysql_mcp\.list_tables\(\?\)`).WillReturnError(&mysql.MySQLError{Number: 1205, Message: "Lock wait timeout"})
-	if _, _, err := toolListTables(t.Context(), nil, ListTablesInput{Database: "shop"}); err == nil {
-		t.Error("lock wait timeout was swallowed")
-	}
-	if err := mock.ExpectationsWereMet(); err != nil {
+	if err := r.mock.ExpectationsWereMet(); err != nil {
 		t.Error(err)
 	}
 }

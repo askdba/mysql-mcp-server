@@ -14,6 +14,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -132,6 +133,11 @@ func TestToolPackParity(t *testing.T) {
 		embedded = res()
 		setPack(true)
 		pack = res()
+		// A pack call that hit 1305/1370 would fall back to the embedded SQL and pass the
+		// comparison without running a procedure; the fallback clears the marker.
+		if cm.ToolPackOf("default") == "" {
+			pack = "error: pack mode fell back to the embedded SQL"
+		}
 		setPack(false)
 		return embedded, pack
 	}
@@ -323,10 +329,15 @@ func TestToolPackParity(t *testing.T) {
 	if _, err := db.ExecContext(ctx, "DROP PROCEDURE mysql_mcp.list_databases"); err != nil {
 		t.Fatal(err)
 	}
+	setPack(false)
+	_, embeddedDBs, err := toolListDatabases(ctx, nil, ListDatabasesInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	setPack(true)
 	_, fallback, err := toolListDatabases(ctx, nil, ListDatabasesInput{})
-	if err != nil || len(fallback.Databases) == 0 {
-		t.Errorf("pack mode without mysql_mcp.list_databases: %+v %v, want the embedded result", fallback, err)
+	if err != nil || !reflect.DeepEqual(fallback, embeddedDBs) {
+		t.Errorf("pack mode without mysql_mcp.list_databases: %+v %v, want the embedded result %+v", fallback, err, embeddedDBs)
 	}
 	if v := cm.ToolPackOf("default"); v != "" {
 		t.Errorf("pack still in use after a missing procedure: %q", v)
