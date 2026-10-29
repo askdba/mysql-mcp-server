@@ -10,8 +10,9 @@
 #   BIN              server binary to test (default: build from this checkout)
 #   MYSQL_IMAGE      MySQL image to run (default: mysql:<mysql-image-tag>)
 #
-# Requires Linux, Docker, curl, jq, openssl, python3. Takes about 1.5 minutes
-# (the slow-body check waits for the 30s body read limit).
+# Requires Docker, curl, jq, openssl, python3, on Linux or macOS (bash 3.2 or later; GNU
+# timeout is not needed). Takes about 1.5 minutes (the slow-body check waits for the 30s
+# body read limit).
 set -u
 
 TAG=${1:-8.0}
@@ -27,8 +28,9 @@ CNAME=mcp-smoke-$(printf '%s' "$TAG" | tr -c 'a-zA-Z0-9.-' '-')-$$
 PIDS=()
 
 cleanup() {
-	for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done
-	docker rm -f "$CNAME" >/dev/null 2>&1
+	# ${PIDS[@]+...}: an empty array is "unbound" under set -u before bash 4.4.
+	for p in ${PIDS[@]+"${PIDS[@]}"}; do kill "$p" 2>/dev/null; done
+	docker rm -f -v "$CNAME" >/dev/null 2>&1 # -v: also remove the anonymous datadir volume
 	rm -rf "${W:?}"
 }
 trap cleanup EXIT
@@ -45,7 +47,16 @@ bad() { FAIL=$((FAIL + 1)); printf '  FAIL  %s  -- %s\n' "$1" "$2"; }
 check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "got '$2', want '$3'"; fi; }
 has() { if printf '%s' "$2" | grep -qi -- "$3"; then ok "$1"; else bad "$1" "missing '$3' in: $(printf '%s' "$2" | head -c 300)"; fi; }
 between() { awk -v v="$1" -v lo="$2" -v hi="$3" 'BEGIN { exit !(v >= lo && v <= hi) }'; }
-now() { date +%s.%N; }
+now() { python3 -c 'import time; print(time.time())'; } # BSD date has no %N
+# "${TIMEOUT[@]}" SECS CMD...: GNU timeout, or gtimeout, or a perl alarm (stock macOS has
+# neither). An array rather than a function, so it also works after env.
+if command -v timeout >/dev/null 2>&1; then
+	TIMEOUT=(timeout)
+elif command -v gtimeout >/dev/null 2>&1; then
+	TIMEOUT=(gtimeout)
+else
+	TIMEOUT=(perl -e 'alarm shift; exec @ARGV or die "exec $ARGV[0]: $!\n"')
+fi
 since() { awk -v s="$1" -v e="$(now)" 'BEGIN { printf "%.1f", e - s }'; }
 
 export MYSQL_DSN="mcpuser:mcppass00@tcp(127.0.0.1:$DBPORT)/testdb?parseTime=true"
@@ -55,15 +66,19 @@ docker run -d --name "$CNAME" -p "127.0.0.1:$DBPORT:3306" -e MYSQL_ROOT_PASSWORD
 # MySQL images ship the `mysql` client; MariaDB images only `mariadb`.
 CLIENT=
 ready=0
+# Probe over TCP: the entrypoint first runs a temporary server with --skip-networking, which
+# answers on the Unix socket and then stops; only the final server listens on TCP.
+sql() { docker exec -i "$CNAME" "$CLIENT" -h127.0.0.1 -P3306 -uroot -ptestpass "$@"; }
 for _ in $(seq 1 120); do
 	[ -n "$CLIENT" ] || CLIENT=$(docker exec "$CNAME" sh -c 'command -v mysql || command -v mariadb' 2>/dev/null)
-	[ -n "$CLIENT" ] && docker exec "$CNAME" "$CLIENT" -uroot -ptestpass -e 'select 1' >/dev/null 2>&1 && { ready=1; break; }
+	[ -n "$CLIENT" ] && sql -e 'select 1' </dev/null >/dev/null 2>&1 && { ready=1; break; }
 	sleep 2
 done
 [ "$ready" = 1 ] || { echo "$IMAGE did not become ready"; exit 1; }
-docker exec -i "$CNAME" "$CLIENT" -uroot -ptestpass <"$REPO/tests/sql/init.sql" 2>/dev/null
-docker exec -i "$CNAME" "$CLIENT" -uroot -ptestpass <"$REPO/tests/sql/mcp_test_user.sql" 2>/dev/null
-VER=$(docker exec "$CNAME" "$CLIENT" -uroot -ptestpass -N -e 'select version()' 2>/dev/null)
+for f in init.sql mcp_test_user.sql; do
+	sql <"$REPO/tests/sql/$f" 2>"$W/$f.err" || { echo "loading $f failed:"; grep -v 'password on the command line' "$W/$f.err"; exit 1; }
+done
+VER=$(sql -N -e 'select version()' </dev/null 2>/dev/null)
 echo "   server version: $VER"
 
 start_srv() { # name env...
@@ -108,6 +123,10 @@ tool() { # url sid name argsjson [curl args...]
 	mcp_rpc "$url" "$sid" "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{\"name\":\"$name\",\"arguments\":$args}}" "$@"
 }
 
+# add_args NAME: add_connection arguments for MYSQL_DSN. Built with jq rather than inline
+# "{\"...\"}" inside "$(...)", which bash 3.2 (macOS) brace-expands.
+add_args() { jq -cn --arg n "$1" --arg d "$MYSQL_DSN" '{name: $n, dsn: $d}'; }
+
 # Sends a request that promises 100 body bytes, sends 1 and stalls; prints
 # "<seconds until the server closed the connection> <status line>".
 slow_body() {
@@ -150,7 +169,7 @@ STDIO=$({
 		'{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
 		'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"run_query","arguments":{"sql":"SELECT name FROM users ORDER BY id LIMIT 1","database":"testdb"}}}'
 	sleep 2
-} | MYSQL_MCP_EXTENDED=1 timeout 15 "$BIN" 2>/dev/null)
+} | env MYSQL_MCP_EXTENDED=1 "${TIMEOUT[@]}" 15 "$BIN" 2>/dev/null)
 STDIO_TOOLS=$(printf '%s\n' "$STDIO" | jq -rs '[.[] | select(.id==2) | .result.tools[].name] | sort | join(",")')
 has "stdio tools/list" "$STDIO_TOOLS" run_query
 has "stdio run_query returns rows" "$(printf '%s\n' "$STDIO" | jq -c 'select(.id==3) | .result.structuredContent')" '"rows"'
@@ -172,6 +191,7 @@ if wait_health "http://127.0.0.1:$HP/health"; then
 	has "list_connections" "$(tool "$U" "$SID" list_connections '{}')" '"active"'
 	check "GET /health" "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$HP/health")" 200
 	has "GET /api/metrics/tokens" "$(curl -s "http://127.0.0.1:$HP/api/metrics/tokens")" run_query
+	check "DNS-rebinding Host rejected on /health" "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$HP/health" -H 'Host: evil.example')" 403
 	check "DNS-rebinding Host rejected" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$U" -H 'Host: evil.example' -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{}')" 403
 	check "cross-origin POST rejected" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$U" -H 'Origin: https://evil.example' -H 'Sec-Fetch-Site: cross-site' -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{}')" 403
 	check "sub-path /mcp/x not routed" "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$HP/mcp/x")" 404
@@ -204,6 +224,7 @@ if wait_health "https://127.0.0.1:$TP/health"; then
 	PRE=$(curl -sk -D - -o /dev/null -X OPTIONS "$TU" -H 'Origin: https://app.example' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: authorization, content-type')
 	has "CORS preflight (allowed origin, before auth) -> 204" "$PRE" " 204"
 	has "CORS allow-origin header" "$PRE" "Access-Control-Allow-Origin: https://app.example"
+	has "CORS allows Mcp-Method (protocol 2026-07-28)" "$PRE" "Mcp-Method"
 	check "/api/metrics/tokens needs token" "$(curl -sk -o /dev/null -w '%{http_code}' "https://127.0.0.1:$TP/api/metrics/tokens")" 401
 	stop_srv tls >/dev/null
 else bad "TLS server start" "$(tail -3 "$W/tls.log")"; fi
@@ -212,7 +233,7 @@ echo "== 5. Unsafe configurations refused at startup"
 refuse() { # label expected env...
 	local label=$1 want=$2 out
 	shift 2
-	out=$(env "$@" timeout 10 "$BIN" 2>&1 | tail -1)
+	out=$(env "$@" "${TIMEOUT[@]}" 10 "$BIN" 2>&1 | tail -1)
 	has "refuses: $label" "$out" "$want"
 }
 refuse "remote bind without token" "bearer token is required" MYSQL_MCP_TRANSPORT=http MYSQL_MCP_HTTP_BIND=0.0.0.0
@@ -231,7 +252,7 @@ SU=http://127.0.0.1:$SP/mcp
 start_srv stateless MYSQL_MCP_TRANSPORT=http MYSQL_MCP_HTTP_STATELESS=1 MYSQL_MCP_EXTENDED=1 MYSQL_MCP_ENABLE_ADD_CONNECTION=1 MYSQL_HTTP_PORT=$SP
 if wait_health "http://127.0.0.1:$SP/health"; then
 	has "stateless tools/call without initialize" "$(tool "$SU" "" list_databases '{}')" testdb
-	has "stateless add_connection refused" "$(tool "$SU" "" add_connection "{\"name\":\"x\",\"dsn\":\"$MYSQL_DSN\"}")" "stateless"
+	has "stateless add_connection refused" "$(tool "$SU" "" add_connection "$(add_args x)")" "stateless"
 	stop_srv stateless >/dev/null
 else bad "stateless server start" "$(tail -3 "$W/stateless.log")"; fi
 
@@ -244,12 +265,12 @@ if wait_health "http://127.0.0.1:$AP/health"; then
 	S1=$SID
 	mcp_init "$AU"
 	S2=$SID
-	has "session 1 add_connection extra" "$(tool "$AU" "$S1" add_connection "{\"name\":\"extra\",\"dsn\":\"$MYSQL_DSN\"}")" '"success":true'
+	has "session 1 add_connection extra" "$(tool "$AU" "$S1" add_connection "$(add_args extra)")" '"success":true'
 	has "session 1 sees extra as active" "$(tool "$AU" "$S1" list_connections '{}')" '"active":"extra"'
 	L2=$(tool "$AU" "$S2" list_connections '{}')
 	if printf '%s' "$L2" | grep -q '"name":"extra"\|mcp-session/'; then bad "session 2 cannot see extra" "$L2"; else ok "session 2 cannot see extra"; fi
 	has "session 2 cannot use_connection extra" "$(tool "$AU" "$S2" use_connection '{"name":"extra"}')" "not found"
-	has "session 2 may reuse the name" "$(tool "$AU" "$S2" add_connection "{\"name\":\"extra\",\"dsn\":\"$MYSQL_DSN\"}")" '"success":true'
+	has "session 2 may reuse the name" "$(tool "$AU" "$S2" add_connection "$(add_args extra)")" '"success":true'
 	curl -s -o /dev/null -X DELETE "$AU" -H "Mcp-Session-Id: $S1"
 	sleep 1
 	has "ending session 1 closes its connection" "$(cat "$W/addconn.log")" "closed session connection"

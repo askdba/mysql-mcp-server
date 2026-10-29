@@ -1121,7 +1121,7 @@ make test-integration-97
 make test-integration-2610
 ```
 
-**Smoke-test the built binary end to end** (REST API, stdio MCP, and MCP Streamable HTTP with auth, TLS, CORS, unsafe-config refusals and session scoping; about 1.5 minutes, Docker required):
+**Smoke-test the built binary end to end** (REST API, stdio MCP, and MCP Streamable HTTP with auth, TLS, CORS, unsafe-config refusals and session scoping; about 1.5 minutes). It needs Docker, curl, jq, openssl and python3, and runs on Linux and macOS (stock bash 3.2 is fine):
 
 ```bash
 make smoke-http                            # MySQL 8.0
