@@ -30,6 +30,9 @@ Semantic Versioning.
 ### CI
 
 - **The `MCP HTTP Smoke` job now covers every supported server:** MySQL 8.0, 8.4, 9.7 and 26.10, and MariaDB 11.4 and 12.3. Before, it ran only on MySQL 8.0 and 26.10. `scripts/smoke-mcp-http.sh` accepts a full image such as `mariadb:11.4` and uses the `mariadb` client when the image has no `mysql` client.
+- **The smoke script no longer flakes at startup.** It probed readiness over the container's Unix socket, so it could reach the image's temporary init server (started with `--skip-networking`) just before that server stopped. The fixture loads then failed silently, and the job reported unrelated errors such as "Access denied for mcpuser". It now probes over TCP, and a failed fixture load stops the run with the client's error.
+- **`make smoke-http` works on macOS and cleans up after itself.** It no longer needs GNU `timeout` or GNU `date`, it works with bash 3.2 (empty arrays under `set -u`, JSON arguments built with `jq`), and it removes the container's data volume (about 200MB per run).
+- The smoke test also checks that `/health` rejects a DNS-rebinding `Host` and that the CORS preflight allows `Mcp-Method`.
 
 ## [1.9.0-rc.1] - 2026-10-22
 
