@@ -584,6 +584,11 @@ func TestToolPackMode(t *testing.T) {
 			t.Errorf("MYSQL_MCP_TOOL_PACK=%q: ToolPack = %q, want %q", tc.env, cfg.ToolPack, tc.want)
 		}
 	}
+	// A blank value is unset: it must not override a file setting with "auto".
+	os.Setenv("MYSQL_MCP_TOOL_PACK", "  ")
+	if cfg, err := Load(); err != nil || cfg.ToolPack != "" {
+		t.Errorf("blank MYSQL_MCP_TOOL_PACK: %q %v", cfg.ToolPack, err)
+	}
 	os.Setenv("MYSQL_MCP_TOOL_PACK", "sometimes")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "invalid MYSQL_MCP_TOOL_PACK") {
 		t.Errorf("invalid mode: %v", err)

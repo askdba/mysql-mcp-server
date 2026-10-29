@@ -130,12 +130,36 @@ func toolShowCreateTable(
 	defer cancel()
 
 	query := fmt.Sprintf("SHOW CREATE TABLE %s.%s", dbName, tableName)
-	var tbl, createStmt string
-	if err := catalogRow(ctx, "show_create_table", []any{input.Database, input.Table}, query).Scan(&tbl, &createStmt); err != nil {
+	rows, err := catalogRows(ctx, "show_create_table", []any{input.Database, input.Table}, query)
+	if err != nil {
+		return nil, ShowCreateTableOutput{}, fmt.Errorf("SHOW CREATE TABLE failed: %w", err)
+	}
+	defer rows.Close()
+	// A table returns (Table, Create Table); a view returns four columns (View, Create View,
+	// character_set_client, collation_connection). The statement is the second either way.
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, ShowCreateTableOutput{}, fmt.Errorf("SHOW CREATE TABLE failed: %w", err)
+	}
+	if len(cols) < 2 {
+		return nil, ShowCreateTableOutput{}, fmt.Errorf("SHOW CREATE TABLE failed: unexpected %d columns", len(cols))
+	}
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, ShowCreateTableOutput{}, fmt.Errorf("SHOW CREATE TABLE failed: %w", err)
+		}
+		return nil, ShowCreateTableOutput{}, fmt.Errorf("SHOW CREATE TABLE failed: %w", sql.ErrNoRows)
+	}
+	vals := make([]sql.NullString, len(cols))
+	ptrs := make([]any, len(cols))
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
+	if err := rows.Scan(ptrs...); err != nil {
 		return nil, ShowCreateTableOutput{}, fmt.Errorf("SHOW CREATE TABLE failed: %w", err)
 	}
 
-	return nil, ShowCreateTableOutput{CreateStatement: createStmt}, nil
+	return nil, ShowCreateTableOutput{CreateStatement: vals[1].String}, nil
 }
 
 func toolExplainQuery(

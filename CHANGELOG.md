@@ -22,6 +22,7 @@ Semantic Versioning.
 ### Fixed
 
 - **`list_variables` with a pattern works on MariaDB, and its first query works on MySQL.** `SHOW GLOBAL VARIABLES LIKE ?` cannot be prepared, so it always failed. MySQL then fell back to `performance_schema.global_variables`, and MariaDB, which has no such table, returned an error. It now uses `SHOW GLOBAL VARIABLES WHERE Variable_name LIKE ?`; `list_status`'s fallback had the same problem and is fixed the same way.
+- **`show_create_table` works on views.** For a view, `SHOW CREATE TABLE` returns four columns, and the tool failed with "expected 4 destination arguments in Scan, not 2".
 - **`list_indexes` returns indexes in a stable order** (`SHOW INDEX` order, `PRIMARY` first). It grouped rows through a Go map, so the order changed from call to call.
 
 ## [1.9.0-rc.2] - 2026-10-29

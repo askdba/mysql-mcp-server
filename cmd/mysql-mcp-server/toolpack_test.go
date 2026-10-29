@@ -67,3 +67,16 @@ func TestCatalogToolsUseToolPackWhenDetected(t *testing.T) {
 type nilArg struct{}
 
 func (nilArg) Match(v driver.Value) bool { return v == nil }
+
+// SHOW CREATE TABLE on a view returns four columns; the statement is the second.
+func TestShowCreateTableView(t *testing.T) {
+	mock, cleanup := setupMockDB(t)
+	defer cleanup()
+	mock.ExpectQuery("SHOW CREATE TABLE `shop`.`v`").WillReturnRows(
+		sqlmock.NewRows([]string{"View", "Create View", "character_set_client", "collation_connection"}).
+			AddRow("v", "CREATE VIEW `v` AS select 1", "utf8mb4", "utf8mb4_0900_ai_ci"))
+	_, out, err := toolShowCreateTable(t.Context(), nil, ShowCreateTableInput{Database: "shop", Table: "v"})
+	if err != nil || out.CreateStatement != "CREATE VIEW `v` AS select 1" {
+		t.Fatalf("view: %+v %v", out, err)
+	}
+}

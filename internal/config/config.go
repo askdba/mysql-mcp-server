@@ -335,8 +335,8 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("MYSQL_MCP_ALLOWED_DATABASES"); v != "" {
 		cfg.AllowedDatabases = parseCSVList(v)
 	}
-	if v := os.Getenv("MYSQL_MCP_TOOL_PACK"); v != "" {
-		cfg.ToolPack = strings.ToLower(strings.TrimSpace(v))
+	if v := strings.TrimSpace(os.Getenv("MYSQL_MCP_TOOL_PACK")); v != "" {
+		cfg.ToolPack = strings.ToLower(v)
 	}
 	if v := os.Getenv("MYSQL_MCP_STRICT_READ_ONLY"); v != "" {
 		cfg.StrictReadOnly = getEnvBool("MYSQL_MCP_STRICT_READ_ONLY")

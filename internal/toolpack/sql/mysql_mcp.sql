@@ -30,9 +30,10 @@
 --     also on error. The prepared statement is named mysql_mcp_stmt.
 --   * No routine accepts SQL. Names are checked against information_schema before a
 --     dynamic SHOW (SHOW INDEX, SHOW CREATE TABLE) is built, and they are quoted.
---   * NULL means "not given" for optional arguments.
+--   * NULL means "not given" for optional arguments. String arguments are TEXT, so a
+--     long name or pattern is never truncated (the Go server binds it unshortened).
 --
--- Supported: MySQL 8.0, 8.4, 9.7, 26.10; MariaDB 10.6+ (see README.md).
+-- Tested: MySQL 8.0, 8.4, 9.7, 26.10; MariaDB 11.4, 12.3 (see README.md).
 
 CREATE DATABASE IF NOT EXISTS mysql_mcp DEFAULT CHARACTER SET utf8mb4;
 
@@ -62,24 +63,11 @@ DROP PROCEDURE IF EXISTS mysql_mcp.require_table;
 
 DELIMITER $$
 
--- Pack version (semantic versioning): CALL mysql_mcp.version() returns one row, `version`.
--- Callers use the pack only when the major version is one they support; a new major
--- version may change result sets. A procedure rather than a function: with binary
--- logging on (the MySQL default), CREATE FUNCTION needs SUPER or
--- log_bin_trust_function_creators, which least-privilege and managed-service installers
--- do not have.
-CREATE PROCEDURE mysql_mcp.version()
-    NO SQL SQL SECURITY INVOKER
-    COMMENT 'mysql_mcp tool pack version'
-BEGIN
-    SELECT '1.0.0' AS version;
-END$$
-
 -- Fails with error 1146 (ER_NO_SUCH_TABLE) unless p_database.p_table is visible to the
 -- caller in information_schema.TABLES. Guards the dynamic SHOW statements.
 CREATE PROCEDURE mysql_mcp.require_table(
-    IN p_database VARCHAR(64),
-    IN p_table VARCHAR(64))
+    IN p_database TEXT,
+    IN p_table TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'Internal: fail unless the table exists and is visible'
 BEGIN
@@ -123,7 +111,7 @@ END$$
 
 -- list_tables
 CREATE PROCEDURE mysql_mcp.list_tables(
-    IN p_database VARCHAR(64))
+    IN p_database TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool list_tables'
 BEGIN
@@ -141,8 +129,8 @@ END$$
 
 -- describe_table
 CREATE PROCEDURE mysql_mcp.describe_table(
-    IN p_database VARCHAR(64),
-    IN p_table VARCHAR(64))
+    IN p_database TEXT,
+    IN p_table TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool describe_table'
 BEGIN
@@ -161,8 +149,8 @@ END$$
 
 -- show_create_table: SHOW CREATE TABLE `db`.`table`
 CREATE PROCEDURE mysql_mcp.show_create_table(
-    IN p_database VARCHAR(64),
-    IN p_table VARCHAR(64))
+    IN p_database TEXT,
+    IN p_table TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool show_create_table'
 BEGIN
@@ -181,8 +169,8 @@ END$$
 
 -- list_indexes: SHOW INDEX FROM `db`.`table`
 CREATE PROCEDURE mysql_mcp.list_indexes(
-    IN p_database VARCHAR(64),
-    IN p_table VARCHAR(64))
+    IN p_database TEXT,
+    IN p_table TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool list_indexes'
 BEGIN
@@ -201,7 +189,7 @@ END$$
 
 -- list_views
 CREATE PROCEDURE mysql_mcp.list_views(
-    IN p_database VARCHAR(64))
+    IN p_database TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool list_views'
 BEGIN
@@ -219,7 +207,7 @@ END$$
 
 -- list_triggers
 CREATE PROCEDURE mysql_mcp.list_triggers(
-    IN p_database VARCHAR(64))
+    IN p_database TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool list_triggers'
 BEGIN
@@ -237,7 +225,7 @@ END$$
 
 -- list_procedures
 CREATE PROCEDURE mysql_mcp.list_procedures(
-    IN p_database VARCHAR(64))
+    IN p_database TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool list_procedures'
 BEGIN
@@ -255,7 +243,7 @@ END$$
 
 -- list_functions
 CREATE PROCEDURE mysql_mcp.list_functions(
-    IN p_database VARCHAR(64))
+    IN p_database TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool list_functions'
 BEGIN
@@ -273,8 +261,8 @@ END$$
 
 -- list_partitions
 CREATE PROCEDURE mysql_mcp.list_partitions(
-    IN p_database VARCHAR(64),
-    IN p_table VARCHAR(64))
+    IN p_database TEXT,
+    IN p_table TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool list_partitions'
 BEGIN
@@ -293,7 +281,7 @@ END$$
 
 -- database_size: one database, or (NULL) every database except the system schemas
 CREATE PROCEDURE mysql_mcp.database_size(
-    IN p_database VARCHAR(64))
+    IN p_database TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool database_size'
 BEGIN
@@ -317,8 +305,8 @@ END$$
 
 -- table_size: every table of a database, or (p_table not NULL) one table
 CREATE PROCEDURE mysql_mcp.table_size(
-    IN p_database VARCHAR(64),
-    IN p_table VARCHAR(64))
+    IN p_database TEXT,
+    IN p_table TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool table_size'
 BEGIN
@@ -344,8 +332,8 @@ END$$
 
 -- foreign_keys: every foreign key of a database, or (p_table not NULL) of one table
 CREATE PROCEDURE mysql_mcp.foreign_keys(
-    IN p_database VARCHAR(64),
-    IN p_table VARCHAR(64))
+    IN p_database TEXT,
+    IN p_table TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool foreign_keys'
 BEGIN
@@ -371,8 +359,8 @@ END$$
 
 -- search_schema (tables): names LIKE p_pattern in one database, or (NULL) in every database except the system schemas; at most p_limit rows
 CREATE PROCEDURE mysql_mcp.search_tables(
-    IN p_pattern VARCHAR(255),
-    IN p_database VARCHAR(64),
+    IN p_pattern TEXT,
+    IN p_database TEXT,
     IN p_limit INT UNSIGNED)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool search_schema (tables)'
@@ -401,8 +389,8 @@ END$$
 
 -- search_schema (columns): names LIKE p_pattern in one database, or (NULL) in every database except the system schemas; at most p_limit rows
 CREATE PROCEDURE mysql_mcp.search_columns(
-    IN p_pattern VARCHAR(255),
-    IN p_database VARCHAR(64),
+    IN p_pattern TEXT,
+    IN p_database TEXT,
     IN p_limit INT UNSIGNED)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool search_schema (columns)'
@@ -431,7 +419,7 @@ END$$
 
 -- list_status: performance_schema.global_status, optionally LIKE p_pattern. Fails where that table is unavailable; callers then use SHOW GLOBAL STATUS, as the Go server does without the pack
 CREATE PROCEDURE mysql_mcp.list_status(
-    IN p_pattern VARCHAR(255))
+    IN p_pattern TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool list_status'
 BEGIN
@@ -457,7 +445,7 @@ END$$
 -- Go server's first choice; some managed deployments stall on
 -- performance_schema.global_variables). SHOW ... LIKE ? cannot be prepared; the WHERE form can.
 CREATE PROCEDURE mysql_mcp.list_variables(
-    IN p_pattern VARCHAR(255))
+    IN p_pattern TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool list_variables'
 BEGIN
@@ -497,8 +485,8 @@ END$$
 
 -- vector_info (columns): VECTOR columns of a database, or (p_table not NULL) of one table
 CREATE PROCEDURE mysql_mcp.vector_columns(
-    IN p_database VARCHAR(64),
-    IN p_table VARCHAR(64))
+    IN p_database TEXT,
+    IN p_table TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool vector_info (columns)'
 BEGIN
@@ -524,9 +512,9 @@ END$$
 
 -- vector_info (index): the first index (by name) on one column, or no row
 CREATE PROCEDURE mysql_mcp.vector_column_index(
-    IN p_database VARCHAR(64),
-    IN p_table VARCHAR(64),
-    IN p_column VARCHAR(64))
+    IN p_database TEXT,
+    IN p_table TEXT,
+    IN p_column TEXT)
     READS SQL DATA SQL SECURITY INVOKER
     COMMENT 'mysql-mcp-server tool vector_info (index)'
 BEGIN
@@ -542,6 +530,20 @@ BEGIN
     EXECUTE mysql_mcp_stmt USING @mysql_mcp_1, @mysql_mcp_2, @mysql_mcp_3;
     DEALLOCATE PREPARE mysql_mcp_stmt;
     SET @mysql_mcp_1 = NULL, @mysql_mcp_2 = NULL, @mysql_mcp_3 = NULL;
+END$$
+
+-- Pack version (semantic versioning): CALL mysql_mcp.version() returns one row, `version`.
+-- It is dropped first and created last, so an interrupted install or upgrade never looks
+-- complete. Callers use the pack only when the major version is one they support; a new major
+-- version may change result sets. A procedure rather than a function: with binary
+-- logging on (the MySQL default), CREATE FUNCTION needs SUPER or
+-- log_bin_trust_function_creators, which least-privilege and managed-service installers
+-- do not have.
+CREATE PROCEDURE mysql_mcp.version()
+    NO SQL SQL SECURITY INVOKER
+    COMMENT 'mysql_mcp tool pack version'
+BEGIN
+    SELECT '1.0.0' AS version;
 END$$
 
 DELIMITER ;

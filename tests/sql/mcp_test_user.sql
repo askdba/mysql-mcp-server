@@ -9,8 +9,9 @@ CREATE USER IF NOT EXISTS 'mcpuser'@'%' IDENTIFIED BY 'mcppass00';
 
 -- testdb: integration tests (mcp_tools_test, mariadb_*) create tables as mcpuser; needs DDL + DML.
 -- sakila: remain read-only via mcp_test_user_sakila.sql only.
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, CREATE TEMPORARY TABLES, SHOW VIEW, EXECUTE ON `testdb`.* TO 'mcpuser'@'localhost';
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, CREATE TEMPORARY TABLES, SHOW VIEW, EXECUTE ON `testdb`.* TO 'mcpuser'@'%';
+-- CREATE VIEW, TRIGGER, CREATE ROUTINE, ALTER ROUTINE: fixtures of the tool pack parity test.
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, CREATE TEMPORARY TABLES, SHOW VIEW, EXECUTE, CREATE VIEW, TRIGGER, CREATE ROUTINE, ALTER ROUTINE ON `testdb`.* TO 'mcpuser'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, CREATE TEMPORARY TABLES, SHOW VIEW, EXECUTE, CREATE VIEW, TRIGGER, CREATE ROUTINE, ALTER ROUTINE ON `testdb`.* TO 'mcpuser'@'%';
 
 -- mysql_mcp: the SQL tool pack (install-schema). Least privilege for installing and
 -- upgrading it, plus EXECUTE to call it (cmd/mysql-mcp-server/toolpack_integration_test.go).

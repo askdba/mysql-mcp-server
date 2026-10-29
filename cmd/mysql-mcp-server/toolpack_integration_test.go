@@ -53,20 +53,41 @@ func TestToolPackParity(t *testing.T) {
 		t.Fatalf("Detect = %q, want %q", v, toolpack.Version)
 	}
 
-	// Fixtures the account can create: a partitioned table, a foreign key, and (MySQL 9+)
-	// VECTOR columns. Views, triggers and routines come from sakila.
+	// Fixtures: a partitioned table, a foreign key, a view, a trigger, a procedure and
+	// (MySQL 9+) VECTOR columns. A stored function needs SUPER with binary logging on, so
+	// functions come from sakila when it is visible.
+	cleanup := func() {
+		for _, stmt := range []string{
+			"DROP VIEW IF EXISTS tp_parent_v",
+			"DROP PROCEDURE IF EXISTS tp_proc",
+			"DROP TABLE IF EXISTS tp_child, tp_parent, tp_parts, tp_vec",
+		} {
+			_, _ = db.ExecContext(context.Background(), stmt)
+		}
+	}
+	cleanup()
+	defer cleanup()
 	for _, stmt := range []string{
-		"DROP TABLE IF EXISTS tp_child, tp_parent, tp_parts, tp_vec",
 		"CREATE TABLE tp_parent (id INT PRIMARY KEY, name VARCHAR(20), KEY ix_name (name))",
 		"CREATE TABLE tp_child (id INT PRIMARY KEY, parent_id INT, CONSTRAINT fk_tp_parent FOREIGN KEY (parent_id) REFERENCES tp_parent(id) ON DELETE CASCADE)",
 		"CREATE TABLE tp_parts (id INT, d DATE) PARTITION BY RANGE (YEAR(d)) (PARTITION p2024 VALUES LESS THAN (2025), PARTITION pmax VALUES LESS THAN MAXVALUE)",
+		"CREATE VIEW tp_parent_v AS SELECT id, name FROM tp_parent",
+		"CREATE PROCEDURE tp_proc() SELECT 1",
 	} {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)
 		}
 	}
-	_, _ = db.ExecContext(ctx, "CREATE TABLE tp_vec (id INT PRIMARY KEY, emb VECTOR(3), emb2 VECTOR(4))") // MySQL 9+ only
-	defer db.ExecContext(context.Background(), "DROP TABLE IF EXISTS tp_child, tp_parent, tp_parts, tp_vec")
+	// Like stored functions, triggers need SUPER when binary logging is on (MySQL default),
+	// and sakila's are hidden from an account without the TRIGGER privilege there.
+	triggerFixture := false
+	if _, err := db.ExecContext(ctx, "CREATE TRIGGER tp_parent_bi BEFORE INSERT ON tp_parent FOR EACH ROW SET NEW.name = TRIM(NEW.name)"); err == nil {
+		triggerFixture = true
+	}
+	vectorTable := false
+	if _, err := db.ExecContext(ctx, "CREATE TABLE tp_vec (id INT PRIMARY KEY, emb VECTOR(3), emb2 VECTOR(4))"); err == nil {
+		vectorTable = true // MySQL 9+
+	}
 
 	sakila := ""
 	var n int
@@ -82,6 +103,7 @@ func TestToolPackParity(t *testing.T) {
 	cm := NewConnectionManager()
 	cm.connections["default"] = db
 	cm.configs["default"] = config.ConnectionConfig{Name: "default", DSN: dsn}
+	cm.serverTypes["default"] = cm.detectServerType(ctx, db) // vector_info checks it
 	cm.activeConn = "default"
 	oldCM, oldCfg, oldMax, oldTimeout := connManager, cfg, maxRows, queryTimeout
 	connManager, cfg, maxRows, queryTimeout = cm, &config.Config{MaxRows: 200}, 200, 30*time.Second
@@ -113,13 +135,35 @@ func TestToolPackParity(t *testing.T) {
 		setPack(false)
 		return embedded, pack
 	}
+	// same requires identical output in both modes. Calls on known objects must also
+	// succeed (an error shared by both modes would otherwise pass); only no_such_* cases
+	// may fail, identically.
+	outputs := map[string]string{}
 	same := func(name string, call func() (any, error)) {
 		t.Helper()
 		e, p := both(call)
-		if e != p {
+		// The one known difference: SHOW CREATE TABLE on a view omits the schema name when
+		// the view is in the session's current database. A procedure runs with mysql_mcp as
+		// its current database, so pack mode always qualifies it; embedded mode does not
+		// for views in the DSN's default database.
+		if strings.HasPrefix(name, "show_create_table ") && strings.Contains(p, " VIEW `"+testDB+"`.") {
+			p = strings.ReplaceAll(p, "`"+testDB+"`.", "")
+		}
+		switch {
+		case e != p:
 			t.Errorf("%s differs:\n embedded: %.600s\n pack:     %.600s", name, e, p)
-		} else if testing.Verbose() {
+		case strings.HasPrefix(e, "error:") && !strings.Contains(name, "no_such"):
+			t.Errorf("%s failed in both modes: %.600s", name, e)
+		case testing.Verbose():
 			t.Logf("%s: same (%d bytes)", name, len(e))
+		}
+		outputs[name] = e
+	}
+	// nonEmpty fails when an earlier same() call for a known object listed nothing.
+	nonEmpty := func(name, field string) {
+		t.Helper()
+		if out, ok := outputs[name]; !ok || strings.Contains(out, `"`+field+`":[]`) || strings.Contains(out, `"`+field+`":null`) {
+			t.Errorf("%s: expected a non-empty %s, got %.300s", name, field, out)
 		}
 	}
 	wrap := func(out any, err error) (any, error) { return out, err }
@@ -168,8 +212,23 @@ func TestToolPackParity(t *testing.T) {
 		})
 	}
 	same("database_size all", func() (any, error) { _, o, err := toolDatabaseSize(ctx, nil, DatabaseSizeInput{}); return wrap(o, err) })
+	nonEmpty("list_views "+testDB, "views")
+	nonEmpty("list_procedures "+testDB, "procedures")
+	nonEmpty("foreign_keys "+testDB, "foreign_keys")
+	if triggerFixture {
+		nonEmpty("list_triggers "+testDB, "triggers")
+	}
+	if sakila != "" {
+		nonEmpty("list_views "+sakila, "views")
+		nonEmpty("list_procedures "+sakila, "procedures")
+		nonEmpty("list_functions "+sakila, "functions")
+	}
+	// The tool reports VECTOR columns only where it detects support (MySQL 9+).
+	if vectorTable && strings.Contains(outputs["vector_info "+testDB], `"vector_support":true`) {
+		nonEmpty("vector_info "+testDB, "columns")
+	}
 
-	tables := [][2]string{{testDB, "tp_parent"}, {testDB, "tp_child"}, {testDB, "tp_parts"}, {testDB, "no_such_table"}}
+	tables := [][2]string{{testDB, "tp_parent"}, {testDB, "tp_child"}, {testDB, "tp_parts"}, {testDB, "tp_parent_v"}, {testDB, "no_such_table"}}
 	if sakila != "" {
 		tables = append(tables, [2]string{sakila, "film"}, [2]string{sakila, "payment"}, [2]string{sakila, "actor_info"})
 	}
