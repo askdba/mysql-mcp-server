@@ -316,7 +316,7 @@ MyVector already proves the build model on this host:
 | Layout | `src/mcp/guard/`, `src/mcp/endpoint/`, `sql/mcp/` (tool pack), `mysql-test/suite/mcp/` |
 | CMake | New targets `component_mcp_guard`, `component_mcp`, built from the same top-level `CMakeLists.txt` and selected by option (`-DMYVECTOR_BUILD_MCP=ON`). They stay separate `.so` files from `myvector_component` so each installs independently |
 | Manifests | `mcp_guard.json`, `mcp.json` (name, description, license, version) |
-| Docker | Image tags such as `ghcr.io/askdba/myvector:mysql9.7-mcp`, or a separate `mysql-mcp` image family (decide at release) |
+| Docker | A separate image family, `ghcr.io/askdba/mysql-mcp:<8.4\|9.7\|26.10>` (decided 2026-10-31, Q6), each based on the exact MySQL release its component is built for |
 | Source trees | Refresh to the latest tags: 8.4.8 → **8.4.11**, 9.7.0 → **9.7.2**, and add **26.10.0** (tagged at GA, 2026-10-20) |
 | Version parsing | CalVer (`YY.M.P`, `MYSQL_PREVIOUS_LTS_VERSION_ID`) in component code and in the Go server's version gates |
 | ABI policy | One artifact per (server patch release × arch). Rebuild on every patch release; never promise cross-patch compatibility |
@@ -380,9 +380,9 @@ Innovation releases are supported only until the next one ships. Each new Innova
 |---|---|---|---|
 | 0 | **Done.** [askdba/myvector#227](https://github.com/askdba/myvector/pull/227): refresh source trees (8.4.11, 9.7.2, 26.10.0); `component_mcp_guard` skeleton building on 8.4, 9.7, 26.10 via the MyVector scripts; `sql/mcp/LICENSE` (Apache-2.0) and the `NOTICE` entry. CI builds the guard and runs its lifecycle test (7/7) on MySQL 8.4.11, 9.7.2 and 26.10.0 ([askdba/myvector#229](https://github.com/askdba/myvector/pull/229)) | — | done |
 | 0b | **Done.** Streamable HTTP MCP transport in the Go server (§6.1a): [#140](https://github.com/askdba/mysql-mcp-server/issues/140), [PR #141](https://github.com/askdba/mysql-mcp-server/pull/141), shipped in [v1.9.0-rc.1](https://github.com/askdba/mysql-mcp-server/releases/tag/v1.9.0-rc.1) | — | done |
-| 1 | **In review:** [askdba/myvector#238](https://github.com/askdba/myvector/pull/238) (pack 1.0.0, 18 tools, CI on MySQL 8.0–26.10 and MariaDB 11.4, 12.3) and the Go side here (`install-schema`, detection, parity test). SQL tool pack v1 + Go `install-schema` + parity tests | 0 (license) | 2–3 weeks |
-| 2 | `component_mcp_guard`: privileges, sysvars, read-only + schema enforcement, status vars, MTR | 0 | 3–4 weeks |
-| 3 | `P_S.mcp_tool_calls`, audit emission; Go connection attributes + statement comment labels, `server_info` detection, error mapping; Docker images | 2 | 2–3 weeks |
+| 1 | **Done.** SQL tool pack `mysql_mcp` 1.0.0 (18 tools, CI on MySQL 8.0–26.10 and MariaDB 11.4, 12.3): [askdba/myvector#238](https://github.com/askdba/myvector/pull/238). Go side (`install-schema`, detection, parity tests, fallback to embedded SQL): [#155](https://github.com/askdba/mysql-mcp-server/pull/155) | 0 (license) | done |
+| 2 | **Done.** `component_mcp_guard` enforcement: `MCP_USER`/`MCP_ADMIN`, `mcp.*` settings (kill switch, read-only, schema rules), status variables ([askdba/myvector#241](https://github.com/askdba/myvector/pull/241)); time limit and refusal log ([askdba/myvector#242](https://github.com/askdba/myvector/pull/242)). Tested by `scripts/test-mcp-guard.sh` on 8.4, 9.7 and 26.10 instead of MTR | 0 | done |
+| 3 | **In review.** Go: statement labels, connection attributes, guard error mapping, `server_info` detection ([#157](https://github.com/askdba/mysql-mcp-server/pull/157)). Guard: `performance_schema.mcp_tool_calls` and audit messages ([askdba/myvector#243](https://github.com/askdba/myvector/pull/243)). Docker images: separate `ghcr.io/askdba/mysql-mcp` family ([askdba/myvector#244](https://github.com/askdba/myvector/pull/244)) | 2 | 2–3 weeks |
 | 4 | `component_mcp` build spike on 26.10: in-tree build with the Router HTTP libraries, one tool served, build time / size / thread budget, token auth (§5.3). **Exit requires** a deny-path test that the guard's policy reaches `run_query` in impersonated `"local"` sessions: an account without `MCP_USER` is not treated as MCP, and an MCP account's write is rejected. This answers open question 4 | 0 (26.10.0 source tag: available) | 2–3 weeks |
 | 5 | `component_mcp` MVP (5 core tools, loopback), fuzzing, go/no-go | 1, 2, 4 | 4–6 weeks |
 
@@ -405,7 +405,7 @@ All of the following must hold:
 3. ~~`table_access` events or digest parsing for `mcp.allowed_schemas`?~~ Resolved: `table_access` events, which carry the database and table per access (§3a). Phase 2 tests must confirm that views and stored functions raise events for their underlying tables.
 4. Do impersonated `"local"` command-service sessions count against `max_connections`, `max_user_connections` and the thread pool (Community since 26.7)? Do they fire `event_tracking_connection` with the impersonated account, so that the guard's per-connection `MCP_USER` cache works for them? Verify in the 26.10 source; `component_mysql_rest_service` uses the same impersonated-session pattern and is the reference to study. Phase 4 cannot close until a deny-path test proves the guard sees these sessions (§9).
 5. ~~Licensing sign-off for `sql/mcp/`~~ Resolved: askdba owns the myvector copyright and licenses `sql/mcp/` as Apache-2.0 (§7.2).
-6. Branding and images: ship in `ghcr.io/askdba/myvector` with tags, or as a separate `mysql-mcp` image family?
+6. ~~Branding and images: ship in `ghcr.io/askdba/myvector` with tags, or as a separate `mysql-mcp` image family?~~ **Decided 2026-10-31:** a separate `ghcr.io/askdba/mysql-mcp` family ([askdba/myvector#244](https://github.com/askdba/myvector/pull/244)).
 7. Will Oracle ship MCP on MRS natively? The guard stays scoped to our server (§3a). If Oracle ships one, our differentiation is tool depth, the guard and support from 8.0 to 26.10 plus MariaDB.
 
 ---
