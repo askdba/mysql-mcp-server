@@ -21,6 +21,7 @@ func TestGuardParity(t *testing.T) {
 	}
 	defer f.Close()
 	rows := 0
+	seen := map[string]bool{}
 	s := bufio.NewScanner(f)
 	for s.Scan() {
 		line := s.Text()
@@ -39,6 +40,7 @@ func TestGuardParity(t *testing.T) {
 		if got != want {
 			t.Errorf("%q: validator says %s, parity table says %s (%s)", stmt, got, want, cols[3])
 		}
+		seen[stmt] = true
 		rows++
 	}
 	if err := s.Err(); err != nil {
@@ -47,4 +49,19 @@ func TestGuardParity(t *testing.T) {
 	if rows < 30 {
 		t.Fatalf("parity table has %d rows, want at least 30", rows)
 	}
+	for _, stmt := range guardParityRequired {
+		if !seen[stmt] {
+			t.Errorf("parity table lacks %q", stmt)
+		}
+	}
+}
+
+// guardParityRequired are rows the table must keep: the cases this test was added for.
+var guardParityRequired = []string{
+	"SELECT * FROM d1.t FOR UPDATE",
+	"SELECT * FROM d1.t FOR SHARE",
+	"SELECT * FROM d1.t LOCK IN SHARE MODE",
+	"SELECT * FROM d1.t /*!50000 FOR UPDATE */",
+	"SELECT 1; DELETE FROM d1.t",
+	"INSERT INTO d1.t VALUES (1)",
 }

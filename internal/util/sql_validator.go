@@ -174,6 +174,8 @@ var blockedPatterns = []*regexp.Regexp{
 	// SQL comments (could be used to truncate/hide malicious SQL)
 	regexp.MustCompile(`--`),
 	regexp.MustCompile(`/\*`),
+	// MySQL's # comment, e.g. FOR # comment\n UPDATE splits a locking clause.
+	regexp.MustCompile(`#`),
 
 	// System schema access (information disclosure). `mysql` is always blocked;
 	// the read-only diagnostic schemas are gated separately via

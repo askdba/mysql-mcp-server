@@ -25,12 +25,15 @@ func TestValidateSQL(t *testing.T) {
 		{"comment marker inside string literal", "SELECT '/* not a comment */' AS txt", false},
 		{"double hyphen inside string literal", "SELECT '-- not a comment' AS txt", false},
 		{"locking words inside string literal", "SELECT 'for update', 'lock in share mode' AS txt", false},
+		{"hash inside string literal", "SELECT '#1' AS tag", false},
 
 		// Invalid queries - locking reads
 		{"for update", "SELECT * FROM users FOR UPDATE", true},
 		{"for update nowait", "SELECT * FROM users WHERE id = 1 FOR UPDATE NOWAIT", true},
 		{"for share", "SELECT * FROM users FOR SHARE SKIP LOCKED", true},
 		{"lock in share mode", "SELECT * FROM users LOCK IN SHARE MODE", true},
+		{"for update split by a # comment", "SELECT * FROM users FOR # c\n UPDATE", true},
+		{"hash comment", "SELECT * FROM users # trailing comment", true},
 
 		// Invalid queries - DDL
 		{"create table", "CREATE TABLE users (id INT)", true},
