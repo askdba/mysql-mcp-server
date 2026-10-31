@@ -109,6 +109,8 @@ type ServerInfoOutput struct {
 	ThreadsConnected int                   `json:"threads_connected" jsonschema:"current number of connected threads"`
 	Health           *ServerHealthSnapshot `json:"health,omitempty" jsonschema:"present when detailed=true"`
 	TokenMetrics     *ServerTokenSnapshot  `json:"token_metrics,omitempty" jsonschema:"present when token tracking is enabled"`
+	ToolPack         string                `json:"tool_pack,omitempty" jsonschema:"version of the mysql_mcp SQL tool pack the catalog tools use, if any"`
+	MCPGuard         *GuardInfo            `json:"mcp_guard,omitempty" jsonschema:"component_mcp_guard on the server: installed and its mcp.* settings"`
 }
 
 // ===== Multi-DSN Tool Types =====

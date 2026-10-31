@@ -23,7 +23,13 @@ func toolCallMiddleware() mcp.Middleware {
 				return next(ctx, method, req)
 			}
 			ctx, _ = connManager.PinFor(ctx)
+			if r, ok := req.(*mcp.CallToolRequest); ok && r.Params != nil {
+				ctx = withCallLabel(ctx, r.Params.Name)
+			}
 			res, err := next(ctx, method, req)
+			if r, ok := res.(*mcp.CallToolResult); ok && r != nil && r.IsError {
+				explainGuardRefusal(r)
+			}
 			if sc := sessionConnFrom(ctx); sc != nil {
 				if r, ok := res.(*mcp.CallToolResult); ok && r != nil && connManager.visibleConnectionCount(sc) > 1 {
 					// Report the pin after the call: use_connection / add_connection move it.

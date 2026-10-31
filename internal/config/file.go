@@ -84,6 +84,8 @@ type FileFeatureConfig struct {
 	TokenCard     bool `yaml:"token_card" json:"token_card"`
 	// ToolPack: "auto" (default) or "off"; see Config.ToolPack.
 	ToolPack string `yaml:"tool_pack,omitempty" json:"tool_pack,omitempty"`
+	// StatementLabels: false turns off the /* mcp:tool=... */ statement labels (default on).
+	StatementLabels *bool `yaml:"statement_labels,omitempty" json:"statement_labels,omitempty"`
 }
 
 // FileSecurityConfig represents access-control and privileged tool flags.
@@ -289,6 +291,7 @@ func (fc *FileConfig) ToConfig() *Config {
 		RateLimitRPS:       float64(DefaultRateLimitRPS),
 		RateLimitBurst:     DefaultRateLimitBurst,
 		TokenModel:         "cl100k_base",
+		StatementLabels:    true,
 		DBRetryMaxRetries:  3,
 		DBRetryMaxInterval: 10 * time.Second,
 	}
@@ -332,6 +335,9 @@ func (fc *FileConfig) ToConfig() *Config {
 	cfg.VectorMode = fc.Features.VectorTools
 	cfg.TokenCard = fc.Features.TokenCard
 	cfg.ToolPack = strings.ToLower(strings.TrimSpace(fc.Features.ToolPack))
+	if fc.Features.StatementLabels != nil {
+		cfg.StatementLabels = *fc.Features.StatementLabels
+	}
 
 	if len(fc.Security.AllowedDatabases) > 0 {
 		cfg.AllowedDatabases = append([]string(nil), fc.Security.AllowedDatabases...)
@@ -459,6 +465,13 @@ func PrintConfig(cfg *Config) string {
 			VectorTools:   cfg.VectorMode,
 			TokenCard:     cfg.TokenCard,
 			ToolPack:      cfg.ToolPack,
+			StatementLabels: func() *bool {
+				if cfg.StatementLabels {
+					return nil // the default
+				}
+				off := false
+				return &off
+			}(),
 		},
 		Security: FileSecurityConfig{
 			AllowedDatabases:   cfg.AllowedDatabases,

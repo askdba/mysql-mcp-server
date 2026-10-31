@@ -213,6 +213,7 @@ func main() {
 		dbRetryCfg.MaxInterval = 10 * time.Second
 	}
 	extendedMode = cfg.ExtendedMode
+	labelsEnabled = cfg.StatementLabels
 	jsonLogging = cfg.JSONLogging
 	tokenTracking = cfg.TokenTracking
 	tokenModel = cfg.TokenModel
@@ -607,6 +608,7 @@ CONFIGURATION:
         MYSQL_MCP_ALLOWED_DATABASES Comma-separated schema allowlist (optional)
         MYSQL_MCP_STRICT_READ_ONLY   Set 1 for transaction_read_only=ON on connections
         MYSQL_MCP_TOOL_PACK          auto (default): catalog tools use the mysql_mcp tool pack where installed; off: never
+        MYSQL_MCP_STATEMENT_LABELS   Prefix tool statements with /* mcp:tool=<name> req=<id> */ (default 1; set 0 to turn off)
         MYSQL_MCP_PROCESS_ADMIN      Set 1 for process_list / kill_query tools (extended)
         MYSQL_MCP_READ_AUDIT_TOOL    Set 1 for read_audit_log when audit path set
         MYSQL_MCP_SLOW_QUERY_TOOL    Set 1 for slow_query_log tool (extended)
