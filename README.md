@@ -131,6 +131,7 @@ Environment variables:
 | MYSQL_MCP_AUDIT_LOG | No | – | Path to audit log file |
 | MYSQL_MCP_ALLOWED_DATABASES | No | – | Comma-separated schema allowlist (empty = all allowed). With an allowlist, **`run_query`** rejects **`SHOW DATABASES`** / **`SHOW DATABASES LIKE`**—use **`list_databases`**. |
 | MYSQL_MCP_STRICT_READ_ONLY | No | 0 | Set `1` to enable `transaction_read_only=ON` on new connections |
+| MYSQL_MCP_STATEMENT_LABELS | No | 1 | Prefix each tool call's statements with `/* mcp:tool=<name> req=<id> */` ([labels](#labels-for-the-server-side)); `0` turns it off |
 | MYSQL_MCP_TOOL_PACK | No | auto | `auto`: catalog tools call the [`mysql_mcp` SQL tool pack](#mysql-native-mode-the-sql-tool-pack) on connections where it is installed. `off`: always use the embedded SQL |
 | MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS | No | 0 | Set `1` to allow **read-only** access to `information_schema`, `performance_schema`, and `sys` (for diagnostics: index cardinality, index usage, redundant/unused indexes). `mysql` stays blocked regardless. |
 | MYSQL_MCP_PROCESS_ADMIN | No | 0 | Set `1` to enable **`process_list`** / **`kill_query`** (extended); **`kill_query`** issues **`KILL QUERY`** (cancels the running statement only, not the connection) |
@@ -620,6 +621,22 @@ GRANT EXECUTE ON mysql_mcp.* TO 'mcp'@'%';   -- the account the MCP server uses
 - **Optional.** Without the pack, or with `MYSQL_MCP_TOOL_PACK=off`, the server works exactly as before. This includes managed services that do not allow `CREATE ROUTINE`.
 - **Safe to upgrade while running.** If a pack call fails because a procedure is missing (1305, for example halfway through an upgrade) or `EXECUTE` was revoked (1370), the server logs a warning, stops using the pack on that connection and falls back to its own SQL until the next restart.
 - `mysql-mcp-server install-schema --uninstall` drops the `mysql_mcp` schema.
+
+### Server-side guard (component_mcp_guard)
+
+`component_mcp_guard` is a MySQL component (8.4, 9.7, 26.10) from [askdba/myvector](https://github.com/askdba/myvector/blob/main/docs/MCP_COMPONENTS.md). It enforces a policy on the sessions of accounts that hold its `MCP_USER` privilege, inside `mysqld`, so this server or its clients cannot widen it. The policy covers read-only (even with write grants), schema limits, a time limit and a kill switch. This server works with or without it:
+
+- **Refusals are explained.** The guard refuses with error 1290 (`… running with the mcp.read_only option …`). A tool call that hits it returns: `Refused by the server's MCP guard (component_mcp_guard, mcp.read_only): MCP sessions may only read on this server. …`, with the server's error kept, and `_meta["mysql-mcp-server/guard"]` names the setting. Only errors the server returned during the call are explained, never text that merely quotes one.
+- **`server_info` reports it**: `mcp_guard.installed` and its `mcp.*` settings, and `tool_pack`, the version of the SQL tool pack in use. If the settings cannot be read, `mcp_guard.error` says why and `installed` is unknown.
+
+### Labels for the server side
+
+So that MySQL (the guard, `performance_schema`, the slow log, the process list) can tell which tool call a statement belongs to:
+
+- **Every connection** carries the connection attributes `program_name=mysql-mcp-server`, `mcp_transport` (`stdio`, `http` or `rest`) and `mcp_version`. Attributes already set in the DSN (`connectionAttributes`) are kept.
+- **Every statement of a tool call** starts with a comment naming the tool and the call: `/* mcp:tool=list_tables req=3f9a2c11-17 */ SELECT …`. The request id is unique per call, so the statements of one call can be grouped. `MYSQL_MCP_STATEMENT_LABELS=0` (or `features.statement_labels: false`) turns this off.
+
+Labels are informational: the guard decides who is an MCP session from privileges, never from labels.
 
 ## MCP Tools
 

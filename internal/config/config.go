@@ -74,11 +74,14 @@ type Config struct {
 	VectorMode   bool
 	// ToolPack selects how catalog tools query the server: ToolPackAuto ("" means auto)
 	// uses the mysql_mcp SQL tool pack when a connection has it, ToolPackOff never does.
-	ToolPack    string
-	HTTPMode    bool
-	MetricsHTTP bool // Serve /status + /api/metrics/tokens on HTTP while MCP uses stdio (Claude Desktop)
-	JSONLogging bool
-	TokenCard   bool // Enable live monitoring UI at /status
+	ToolPack string
+	// StatementLabels prefixes each tool call's statements with
+	// /* mcp:tool=<name> req=<id> */ (default true; MYSQL_MCP_STATEMENT_LABELS=0 turns it off).
+	StatementLabels bool
+	HTTPMode        bool
+	MetricsHTTP     bool // Serve /status + /api/metrics/tokens on HTTP while MCP uses stdio (Claude Desktop)
+	JSONLogging     bool
+	TokenCard       bool // Enable live monitoring UI at /status
 
 	// Token estimation (optional, disabled by default)
 	TokenTracking bool
@@ -155,6 +158,7 @@ func Load() (*Config, error) {
 			RateLimitRPS:       float64(DefaultRateLimitRPS),
 			RateLimitBurst:     DefaultRateLimitBurst,
 			TokenModel:         "cl100k_base",
+			StatementLabels:    true,
 			DBRetryMaxRetries:  3,
 			DBRetryMaxInterval: 10 * time.Second,
 		}
@@ -334,6 +338,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("MYSQL_MCP_ALLOWED_DATABASES"); v != "" {
 		cfg.AllowedDatabases = parseCSVList(v)
+	}
+	if v := os.Getenv("MYSQL_MCP_STATEMENT_LABELS"); v != "" {
+		cfg.StatementLabels = getEnvBool("MYSQL_MCP_STATEMENT_LABELS")
 	}
 	if v := strings.TrimSpace(os.Getenv("MYSQL_MCP_TOOL_PACK")); v != "" {
 		cfg.ToolPack = strings.ToLower(v)
