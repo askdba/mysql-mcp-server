@@ -202,7 +202,7 @@ func (c labelConn) PrepareContext(ctx context.Context, query string) (driver.Stm
 func (c labelConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	r, err := c.fullConn.QueryContext(ctx, labelQuery(ctx, query), args)
 	guardHitFrom(ctx).note(err)
-	return r, err
+	return newLabelRows(r, guardHitFrom(ctx)), err
 }
 
 func (c labelConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
@@ -236,11 +236,54 @@ func newLabelStmt(s driver.Stmt) driver.Stmt {
 func (s labelStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
 	r, err := s.fullStmt.QueryContext(ctx, args)
 	guardHitFrom(ctx).note(err)
-	return r, err
+	return newLabelRows(r, guardHitFrom(ctx)), err
 }
 
 func (s labelStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
 	r, err := s.fullStmt.ExecContext(ctx, args)
 	guardHitFrom(ctx).note(err)
 	return r, err
+}
+
+// fullRows is what the go-sql-driver/mysql result sets implement.
+type fullRows interface {
+	driver.Rows
+	driver.RowsNextResultSet
+	driver.RowsColumnTypeDatabaseTypeName
+	driver.RowsColumnTypeNullable
+	driver.RowsColumnTypePrecisionScale
+	driver.RowsColumnTypeScanType
+}
+
+// labelRows notes guard refusals that arrive while reading: a CALL of a tool pack
+// procedure returns the error of a later statement from Next, NextResultSet or Close.
+type labelRows struct {
+	fullRows
+	hit *guardHit
+}
+
+func newLabelRows(r driver.Rows, hit *guardHit) driver.Rows {
+	fr, ok := r.(fullRows)
+	if !ok || hit == nil {
+		return r
+	}
+	return labelRows{fr, hit}
+}
+
+func (r labelRows) Next(dest []driver.Value) error {
+	err := r.fullRows.Next(dest)
+	r.hit.note(err)
+	return err
+}
+
+func (r labelRows) NextResultSet() error {
+	err := r.fullRows.NextResultSet()
+	r.hit.note(err)
+	return err
+}
+
+func (r labelRows) Close() error {
+	err := r.fullRows.Close()
+	r.hit.note(err)
+	return err
 }

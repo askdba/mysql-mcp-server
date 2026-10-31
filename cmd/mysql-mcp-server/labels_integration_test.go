@@ -69,6 +69,12 @@ func TestLabelsOnServer(t *testing.T) {
 			attrs[k] = v
 		}
 	}
+	if err := rows.Err(); err != nil {
+		if os.Getenv("MYSQL_MCP_REQUIRE_CONNECTION_ATTRS") == "1" {
+			t.Fatalf("connection attributes read failed: %v", err)
+		}
+		t.Skipf("connection attributes read failed here: %v", err)
+	}
 	if len(attrs) == 0 {
 		if os.Getenv("MYSQL_MCP_REQUIRE_CONNECTION_ATTRS") == "1" {
 			t.Fatal("performance_schema returned no connection attributes")

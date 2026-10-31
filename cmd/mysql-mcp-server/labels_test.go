@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -174,6 +175,17 @@ func TestExplainGuardRefusalNeedsServerError(t *testing.T) {
 		}
 	}
 
+	// A refusal of the same setting earlier in the call does not make a later error that
+	// only quotes it a refusal: only a 1290 error is rewritten.
+	later := &guardHit{}
+	later.note(guardRefusal("mcp.read_only"))
+	quoted := "Error 1146 (42S02): Table 'd.t' doesn't exist; echoed: running with the mcp.read_only option so it cannot execute this statement"
+	lr := &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: quoted}}}
+	explainGuardRefusal(lr, later)
+	if lr.Content[0].(*mcp.TextContent).Text != quoted || lr.Meta != nil {
+		t.Errorf("rewrote an unrelated error: %q", lr.Content[0].(*mcp.TextContent).Text)
+	}
+
 	// Setting names with digits are matched too.
 	hit := &guardHit{}
 	hit.note(guardRefusal("mcp.v2_limit"))
@@ -211,5 +223,30 @@ func TestLabelStmtNotesGuardRefusal(t *testing.T) {
 	_, _ = st.(driver.StmtQueryContext).QueryContext(ctx, nil)
 	if !guardHitFrom(ctx).saw("mcp.read_only") {
 		t.Error("refusal of a prepared statement not noted")
+	}
+}
+
+// fakeRows returns err from Next, as a CALL does when a later statement is refused.
+type fakeRows struct{ err error }
+
+func (r fakeRows) Columns() []string                                 { return nil }
+func (r fakeRows) Close() error                                      { return nil }
+func (r fakeRows) Next([]driver.Value) error                         { return r.err }
+func (r fakeRows) HasNextResultSet() bool                            { return false }
+func (r fakeRows) NextResultSet() error                              { return r.err }
+func (r fakeRows) ColumnTypeDatabaseTypeName(int) string             { return "" }
+func (r fakeRows) ColumnTypeNullable(int) (bool, bool)               { return false, false }
+func (r fakeRows) ColumnTypePrecisionScale(int) (int64, int64, bool) { return 0, 0, false }
+func (r fakeRows) ColumnTypeScanType(int) reflect.Type               { return nil }
+
+func TestLabelRowsNotesGuardRefusal(t *testing.T) {
+	hit := &guardHit{}
+	rows := newLabelRows(fakeRows{err: guardRefusal("mcp.allowed_schemas")}, hit)
+	if _, ok := rows.(labelRows); !ok {
+		t.Fatalf("rows not wrapped: %T", rows)
+	}
+	_ = rows.Next(nil)
+	if !hit.saw("mcp.allowed_schemas") {
+		t.Error("refusal while reading rows not noted")
 	}
 }
