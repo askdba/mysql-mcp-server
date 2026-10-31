@@ -56,6 +56,9 @@ func TestLabelsOnServer(t *testing.T) {
 	// Connection attributes (performance_schema; off by default on MariaDB).
 	rows, err := db.QueryContext(ctx, "SELECT ATTR_NAME, ATTR_VALUE FROM performance_schema.session_account_connect_attrs WHERE PROCESSLIST_ID = CONNECTION_ID()")
 	if err != nil {
+		if os.Getenv("MYSQL_MCP_REQUIRE_CONNECTION_ATTRS") == "1" {
+			t.Fatalf("connection attributes not readable: %v", err)
+		}
 		t.Skipf("connection attributes not readable here: %v", err)
 	}
 	defer rows.Close()
@@ -67,6 +70,9 @@ func TestLabelsOnServer(t *testing.T) {
 		}
 	}
 	if len(attrs) == 0 {
+		if os.Getenv("MYSQL_MCP_REQUIRE_CONNECTION_ATTRS") == "1" {
+			t.Fatal("performance_schema returned no connection attributes")
+		}
 		t.Skip("performance_schema has no connection attributes here")
 	}
 	if attrs["program_name"] != "mysql-mcp-server" || attrs["mcp_transport"] != "http" || attrs["mcp_version"] == "" {

@@ -4,9 +4,12 @@ package main
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/askdba/mysql-mcp-server/internal/config"
@@ -118,11 +121,19 @@ func TestLabelConnPrefixesStatements(t *testing.T) {
 	}
 }
 
+// guardRefusal is the driver error the guard's setting produces.
+func guardRefusal(setting string) error {
+	return &mysql.MySQLError{Number: 1290, SQLState: [5]byte{'H', 'Y', '0', '0', '0'},
+		Message: "The MySQL server is running with the " + setting + " option so it cannot execute this statement"}
+}
+
 func TestExplainGuardRefusal(t *testing.T) {
+	hit := &guardHit{}
+	hit.note(fmt.Errorf("query failed: %w", guardRefusal("mcp.allowed_schemas")))
 	r := &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{
 		Text: "query failed: Error 1290 (HY000): The MySQL server is running with the mcp.allowed_schemas option so it cannot execute this statement",
 	}}}
-	explainGuardRefusal(r)
+	explainGuardRefusal(r, hit)
 	text := r.Content[0].(*mcp.TextContent).Text
 	if !strings.HasPrefix(text, "Refused by the server's MCP guard (component_mcp_guard, mcp.allowed_schemas): this schema is outside") ||
 		!strings.Contains(text, "Error 1290") {
@@ -138,9 +149,67 @@ func TestExplainGuardRefusal(t *testing.T) {
 		"Error 1146 (42S02): Table 'd.t' doesn't exist",
 	} {
 		r := &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: msg}}}
-		explainGuardRefusal(r)
+		explainGuardRefusal(r, hit)
 		if r.Content[0].(*mcp.TextContent).Text != msg || r.Meta != nil {
 			t.Errorf("changed a non-guard error: %q", r.Content[0].(*mcp.TextContent).Text)
 		}
+	}
+}
+
+func TestExplainGuardRefusalNeedsServerError(t *testing.T) {
+	// Text that only quotes a refusal (an echoed name, say) is not one: no 1290 from the
+	// server for that setting during the call.
+	msg := "access denied to database 'Error 1290 x running with the mcp.read_only option so it cannot execute this statement'"
+	for _, hit := range []*guardHit{nil, {}, func() *guardHit {
+		h := &guardHit{}
+		h.note(guardRefusal("mcp.allowed_schemas")) // a different setting
+		h.note(&mysql.MySQLError{Number: 1146, Message: "running with the mcp.read_only option so it cannot execute this statement"})
+		h.note(errors.New("Error 1290: running with the mcp.read_only option so it cannot execute this statement"))
+		return h
+	}()} {
+		r := &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: msg}}}
+		explainGuardRefusal(r, hit)
+		if r.Content[0].(*mcp.TextContent).Text != msg || r.Meta != nil {
+			t.Errorf("rewrote a quoted refusal: %q", r.Content[0].(*mcp.TextContent).Text)
+		}
+	}
+
+	// Setting names with digits are matched too.
+	hit := &guardHit{}
+	hit.note(guardRefusal("mcp.v2_limit"))
+	r := &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{
+		Text: "Error 1290 (HY000): The MySQL server is running with the mcp.v2_limit option so it cannot execute this statement",
+	}}}
+	explainGuardRefusal(r, hit)
+	if r.Meta[guardMetaKey] != "mcp.v2_limit" {
+		t.Errorf("_meta = %v", r.Meta)
+	}
+}
+
+// fakeStmt fails its executions with err.
+type fakeStmt struct{ err error }
+
+func (s fakeStmt) Close() error                               { return nil }
+func (s fakeStmt) NumInput() int                              { return -1 }
+func (s fakeStmt) Exec([]driver.Value) (driver.Result, error) { return nil, s.err }
+func (s fakeStmt) Query([]driver.Value) (driver.Rows, error)  { return nil, s.err }
+func (s fakeStmt) CheckNamedValue(*driver.NamedValue) error   { return nil }
+func (s fakeStmt) ColumnConverter(int) driver.ValueConverter  { return driver.DefaultParameterConverter }
+func (s fakeStmt) ExecContext(context.Context, []driver.NamedValue) (driver.Result, error) {
+	return nil, s.err
+}
+func (s fakeStmt) QueryContext(context.Context, []driver.NamedValue) (driver.Rows, error) {
+	return nil, s.err
+}
+
+func TestLabelStmtNotesGuardRefusal(t *testing.T) {
+	ctx := withCallLabel(context.Background(), "run_query")
+	st := newLabelStmt(fakeStmt{err: guardRefusal("mcp.read_only")})
+	if _, ok := st.(labelStmt); !ok {
+		t.Fatalf("statement not wrapped: %T", st)
+	}
+	_, _ = st.(driver.StmtQueryContext).QueryContext(ctx, nil)
+	if !guardHitFrom(ctx).saw("mcp.read_only") {
+		t.Error("refusal of a prepared statement not noted")
 	}
 }

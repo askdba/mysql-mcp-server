@@ -626,8 +626,8 @@ GRANT EXECUTE ON mysql_mcp.* TO 'mcp'@'%';   -- the account the MCP server uses
 
 `component_mcp_guard` is a MySQL component (8.4, 9.7, 26.10) from [askdba/myvector](https://github.com/askdba/myvector/blob/main/docs/MCP_COMPONENTS.md). It enforces a policy on the sessions of accounts that hold its `MCP_USER` privilege, inside `mysqld`, so this server or its clients cannot widen it. The policy covers read-only (even with write grants), schema limits, a time limit and a kill switch. This server works with or without it:
 
-- **Refusals are explained.** The guard refuses with error 1290 (`… running with the mcp.read_only option …`). A tool call that hits it returns: `Refused by the server's MCP guard (component_mcp_guard, mcp.read_only): MCP sessions may only read on this server. …`, with the server's error kept, and `_meta["mysql-mcp-server/guard"]` names the setting.
-- **`server_info` reports it**: `mcp_guard.installed` and its `mcp.*` settings, and `tool_pack`, the version of the SQL tool pack in use.
+- **Refusals are explained.** The guard refuses with error 1290 (`… running with the mcp.read_only option …`). A tool call that hits it returns: `Refused by the server's MCP guard (component_mcp_guard, mcp.read_only): MCP sessions may only read on this server. …`, with the server's error kept, and `_meta["mysql-mcp-server/guard"]` names the setting. Only errors the server returned during the call are explained, never text that merely quotes one.
+- **`server_info` reports it**: `mcp_guard.installed` and its `mcp.*` settings, and `tool_pack`, the version of the SQL tool pack in use. If the settings cannot be read, `mcp_guard.error` says why and `installed` is unknown.
 
 ### Labels for the server side
 

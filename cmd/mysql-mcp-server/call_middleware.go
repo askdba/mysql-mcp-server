@@ -28,7 +28,7 @@ func toolCallMiddleware() mcp.Middleware {
 			}
 			res, err := next(ctx, method, req)
 			if r, ok := res.(*mcp.CallToolResult); ok && r != nil && r.IsError {
-				explainGuardRefusal(r)
+				explainGuardRefusal(r, guardHitFrom(ctx))
 			}
 			if sc := sessionConnFrom(ctx); sc != nil {
 				if r, ok := res.(*mcp.CallToolResult); ok && r != nil && connManager.visibleConnectionCount(sc) > 1 {

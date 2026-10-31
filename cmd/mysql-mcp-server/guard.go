@@ -3,9 +3,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
+	"sync"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -20,7 +23,51 @@ import (
 // guardMetaKey names the guard setting that refused a tool call, in the result's _meta.
 const guardMetaKey = "mysql-mcp-server/guard"
 
-var guardRefusalRe = regexp.MustCompile(`running with the (mcp(?:\.[a-z_]+)?|mcp_guard) option so it cannot execute this statement`)
+var guardRefusalRe = regexp.MustCompile(`running with the (mcp(?:\.[a-z0-9_]+)?|mcp_guard) option so it cannot execute this statement`)
+
+// guardHit records the guard refusals the server returned during one tool call. Text
+// alone cannot tell a refusal from an error that merely quotes one (an echoed name, say),
+// so the rewrite requires the driver to have seen MySQL error 1290 naming that setting.
+type guardHit struct {
+	mu       sync.Mutex
+	settings map[string]bool
+}
+
+// note records err if it is a guard refusal.
+func (h *guardHit) note(err error) {
+	if h == nil || err == nil {
+		return
+	}
+	var me *mysql.MySQLError
+	if !errors.As(err, &me) || me.Number != 1290 {
+		return
+	}
+	m := guardRefusalRe.FindStringSubmatch(me.Message)
+	if m == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.settings == nil {
+		h.settings = map[string]bool{}
+	}
+	h.settings[m[1]] = true
+}
+
+func (h *guardHit) saw(setting string) bool {
+	if h == nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.settings[setting]
+}
+
+// guardHitFrom returns the refusal record of the tool call in ctx, if any.
+func guardHitFrom(ctx context.Context) *guardHit {
+	l, _ := ctx.Value(callLabelKey{}).(callLabel)
+	return l.guard
+}
 
 // guardHints explains each setting in the words of a tool user.
 var guardHints = map[string]string{
@@ -34,14 +81,15 @@ var guardHints = map[string]string{
 
 // explainGuardRefusal rewrites a tool error caused by a guard refusal so it says which
 // setting refused it and why, keeping the server's message, and names the setting in _meta.
-func explainGuardRefusal(r *mcp.CallToolResult) {
+// Only refusals the server actually returned during the call (hit) are rewritten.
+func explainGuardRefusal(r *mcp.CallToolResult, hit *guardHit) {
 	for _, c := range r.Content {
 		tc, ok := c.(*mcp.TextContent)
 		if !ok || !strings.Contains(tc.Text, "1290") {
 			continue
 		}
 		m := guardRefusalRe.FindStringSubmatch(tc.Text)
-		if m == nil {
+		if m == nil || !hit.saw(m[1]) {
 			continue
 		}
 		setting := m[1]
@@ -61,26 +109,29 @@ func explainGuardRefusal(r *mcp.CallToolResult) {
 
 // GuardInfo reports component_mcp_guard on the server, for server_info.
 type GuardInfo struct {
-	Installed bool              `json:"installed" jsonschema:"true if component_mcp_guard is installed"`
+	Installed bool              `json:"installed" jsonschema:"true if component_mcp_guard is installed; unknown when error is set"`
 	Settings  map[string]string `json:"settings,omitempty" jsonschema:"the mcp.* system variables"`
+	Error     string            `json:"error,omitempty" jsonschema:"why the guard could not be detected; installed is then unknown"`
 }
 
 // guardInfo reads the mcp.* variables (SHOW is allowed under the guard). No rows: no guard.
+// A failed lookup is reported in Error, so it is not mistaken for an unguarded server.
 func guardInfo(ctx context.Context) *GuardInfo {
 	rows, err := getDB(ctx).QueryContext(ctx, "SHOW GLOBAL VARIABLES LIKE 'mcp.%'")
 	if err != nil {
-		return nil
+		return &GuardInfo{Error: err.Error()}
 	}
 	defer rows.Close()
 	info := &GuardInfo{Settings: map[string]string{}}
 	for rows.Next() {
 		var name, value string
-		if rows.Scan(&name, &value) == nil {
-			info.Settings[name] = value
+		if err := rows.Scan(&name, &value); err != nil {
+			return &GuardInfo{Error: err.Error()}
 		}
+		info.Settings[name] = value
 	}
-	if rows.Err() != nil {
-		return nil
+	if err := rows.Err(); err != nil {
+		return &GuardInfo{Error: err.Error()}
 	}
 	info.Installed = len(info.Settings) > 0
 	if !info.Installed {

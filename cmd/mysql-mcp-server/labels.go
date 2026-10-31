@@ -30,8 +30,9 @@ import (
 
 // callLabel identifies one tool call.
 type callLabel struct {
-	tool string
-	req  string
+	tool  string
+	req   string
+	guard *guardHit // guard refusals seen during the call (guard.go)
 }
 
 type callLabelKey struct{}
@@ -56,8 +57,9 @@ func newReqPrefix() string {
 // withCallLabel returns ctx labeled with tool and a new request id.
 func withCallLabel(ctx context.Context, tool string) context.Context {
 	return context.WithValue(ctx, callLabelKey{}, callLabel{
-		tool: sanitizeLabel(tool),
-		req:  fmt.Sprintf("%s-%d", reqPrefix, reqSeq.Add(1)),
+		tool:  sanitizeLabel(tool),
+		req:   fmt.Sprintf("%s-%d", reqPrefix, reqSeq.Add(1)),
+		guard: &guardHit{},
 	})
 }
 
@@ -184,16 +186,61 @@ func newLabelConn(c driver.Conn) (driver.Conn, error) {
 	return labelConn{fc}, nil
 }
 
+// The wrapper also notes guard refusals (MySQL error 1290) for the tool call in ctx.
+
 func (c labelConn) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
-	return c.fullConn.PrepareContext(ctx, labelQuery(ctx, query))
+	s, err := c.fullConn.PrepareContext(ctx, labelQuery(ctx, query))
+	guardHitFrom(ctx).note(err)
+	if err != nil {
+		return s, err
+	}
+	return newLabelStmt(s), nil
 }
 
 // QueryContext and ExecContext may return driver.ErrSkip; database/sql then prepares the
 // original query through PrepareContext, which labels it there (not twice).
 func (c labelConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	return c.fullConn.QueryContext(ctx, labelQuery(ctx, query), args)
+	r, err := c.fullConn.QueryContext(ctx, labelQuery(ctx, query), args)
+	guardHitFrom(ctx).note(err)
+	return r, err
 }
 
 func (c labelConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
-	return c.fullConn.ExecContext(ctx, labelQuery(ctx, query), args)
+	r, err := c.fullConn.ExecContext(ctx, labelQuery(ctx, query), args)
+	guardHitFrom(ctx).note(err)
+	return r, err
+}
+
+// fullStmt is what the go-sql-driver/mysql prepared statement implements.
+type fullStmt interface {
+	driver.Stmt
+	driver.StmtExecContext
+	driver.StmtQueryContext
+	driver.NamedValueChecker
+	driver.ColumnConverter
+}
+
+// labelStmt notes guard refusals of a prepared statement's executions.
+type labelStmt struct {
+	fullStmt
+}
+
+func newLabelStmt(s driver.Stmt) driver.Stmt {
+	fs, ok := s.(fullStmt)
+	if !ok {
+		return s
+	}
+	return labelStmt{fs}
+}
+
+func (s labelStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
+	r, err := s.fullStmt.QueryContext(ctx, args)
+	guardHitFrom(ctx).note(err)
+	return r, err
+}
+
+func (s labelStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	r, err := s.fullStmt.ExecContext(ctx, args)
+	guardHitFrom(ctx).note(err)
+	return r, err
 }
