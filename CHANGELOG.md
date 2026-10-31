@@ -29,6 +29,7 @@ Semantic Versioning.
 - **Catalog results are fully ordered.** `list_views`, `list_triggers`, `list_procedures`, `list_functions`, `list_partitions`, `foreign_keys`, `search_schema` and `vector_info` had no `ORDER BY`. Their order could vary between calls, and `search_schema`'s row limit could cut at different rows. Name orders use a binary tiebreak, so names that differ only in case (MariaDB) also sort the same way every time.
 
 ### Fixed
+- **`run_query` refuses locking reads** (`SELECT … FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`). They take row locks that block writers. Before, `FOR UPDATE` and `LOCK IN SHARE MODE` were accepted, and `FOR SHARE` was refused only by the parser. The gap was found by the parity table shared with `component_mcp_guard`: `internal/util/testdata/guard-parity.tsv`, copied from askdba/myvector `sql/mcp/` and checked by `TestGuardParity`, lists 34 statements with the verdicts of the validator and the guard (RFC 0001 §5.2 item 7).
 
 - **`list_variables` with a pattern works on MariaDB, and its first query works on MySQL.** `SHOW GLOBAL VARIABLES LIKE ?` cannot be prepared, so it always failed. MySQL then fell back to `performance_schema.global_variables`, and MariaDB, which has no such table, returned an error. It now uses `SHOW GLOBAL VARIABLES WHERE Variable_name LIKE ?`; `list_status`'s fallback had the same problem and is fixed the same way.
 - **`show_create_table` works on views.** For a view, `SHOW CREATE TABLE` returns four columns, and the tool failed with "expected 4 destination arguments in Scan, not 2".

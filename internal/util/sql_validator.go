@@ -142,6 +142,10 @@ var blockedPatterns = []*regexp.Regexp{
 
 	// Locking
 	regexp.MustCompile(`(?i)^\s*LOCK\s+TABLES\b`),
+	// Locking reads take row locks that block writers (component_mcp_guard refuses them too).
+	regexp.MustCompile(`(?i)\bFOR\s+UPDATE\b`),
+	regexp.MustCompile(`(?i)\bFOR\s+SHARE\b`),
+	regexp.MustCompile(`(?i)\bLOCK\s+IN\s+SHARE\s+MODE\b`),
 	regexp.MustCompile(`(?i)^\s*UNLOCK\s+TABLES\b`),
 
 	// Transactions (should not be user-controlled)

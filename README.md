@@ -988,6 +988,9 @@ The server enforces strict SQL validation:
 - Admin: `GRANT`, `REVOKE`, `FLUSH`, `KILL`, `SHUTDOWN`
 - Dangerous functions: `SLEEP()`, `BENCHMARK()`, `GET_LOCK()`
 - Transaction control: `BEGIN`, `COMMIT`, `ROLLBACK`
+- Locking: `LOCK TABLES`, and locking reads (`FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`)
+
+The same verdicts are checked against `component_mcp_guard` in a shared table (`internal/util/testdata/guard-parity.tsv`, from askdba/myvector).
 
 ### Recommended MySQL User
 
