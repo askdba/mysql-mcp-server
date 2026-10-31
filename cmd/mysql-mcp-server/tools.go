@@ -749,6 +749,13 @@ func toolServerInfo(
 		out.Health = h
 	}
 
+	if connManager != nil {
+		out.ToolPack = connManager.ToolPackFor(ctx)
+	}
+	if g := guardInfo(ctx); g.Installed || g.Error != "" {
+		out.MCPGuard = g
+	}
+
 	return nil, out, nil
 }
 

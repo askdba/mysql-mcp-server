@@ -180,6 +180,8 @@ jobs:
           MYSQL_TEST_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/testdb?parseTime=true"
           MYSQL_SAKILA_DSN: "mcpuser:mcppass00@tcp(127.0.0.1:3306)/sakila?parseTime=true"
           MYSQL_TC_IMAGE: "mysql:${{ matrix.mysql-version }}"
+          # MySQL has performance_schema on: the connection attribute check must run.
+          MYSQL_MCP_REQUIRE_CONNECTION_ATTRS: "1"
         run: |
           # Run MCP server tests with real MySQL
           go test -v -tags=integration ./...

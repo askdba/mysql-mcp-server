@@ -9,6 +9,15 @@ Semantic Versioning.
 
 ### Added
 
+- **Labels for the server side** (Phase 3 of [RFC 0001](docs/rfc/0001-mysql-component-architecture.md)).
+  - **Connection attributes:** every connection carries `program_name=mysql-mcp-server`, `mcp_transport` and `mcp_version`.
+  - **Statement labels:** every statement of a tool call starts with `/* mcp:tool=<name> req=<id> */`, so MySQL can attribute it to the tool call: `component_mcp_guard`, `performance_schema`, the slow log and the process list.
+  - **How:** a thin wrapper around the driver's connections does it, so every query path is covered, prepared statements included.
+  - **Off switch:** `MYSQL_MCP_STATEMENT_LABELS=0`.
+- **component_mcp_guard support.**
+  - **Clear refusals:** a tool call refused by the guard (error 1290 naming an `mcp.*` setting) returns a tool error that names the setting and says why, with the server's error kept, plus `_meta["mysql-mcp-server/guard"]`.
+  - **`server_info`:** reports `mcp_guard` (installed, `mcp.*` settings, or `error` when they cannot be read) and `tool_pack` (the SQL tool pack version in use).
+
 - **MySQL-native mode: the `mysql_mcp` SQL tool pack** (phase 1 of [RFC 0001](docs/rfc/0001-mysql-component-architecture.md)). `mysql-mcp-server install-schema` installs (or with `--uninstall` removes) the schema `mysql_mcp` on a configured connection. The account needs only CREATE, DROP, CREATE ROUTINE and ALTER ROUTINE on `mysql_mcp.*`; `--print` writes the SQL for a DBA instead. The schema has one `SQL SECURITY INVOKER` procedure per catalog tool.
   - When a connection has the pack (detected at connect with `CALL mysql_mcp.version()`, logged as `toolPack`), 18 catalog tools call it instead of sending their own SQL.
   - Results are identical either way. A new integration test compares every tool in both modes on each CI server.

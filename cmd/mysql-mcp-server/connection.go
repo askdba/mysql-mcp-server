@@ -251,7 +251,7 @@ func (cm *ConnectionManager) addConnectionWithPoolConfig(ctx context.Context, co
 		dsn = mysqlCfg.FormatDSN()
 	}
 
-	conn, err := sql.Open("mysql", dsn)
+	conn, err := openLabeledDB(dsn, cfg)
 	if err != nil {
 		cleanupLocal(nil)
 		return fmt.Errorf("failed to open connection %s: %w", connCfg.Name, err)
