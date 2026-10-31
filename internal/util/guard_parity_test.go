@@ -9,7 +9,7 @@ import (
 
 // guardParitySource is the askdba/myvector file testdata/guard-parity.tsv is copied from.
 // Do not edit the copy; change it in myvector and copy it over.
-const guardParitySource = "askdba/myvector@f949efa (sql/mcp/guard-parity.tsv)"
+const guardParitySource = "askdba/myvector@f3e26f1 (sql/mcp/guard-parity.tsv)"
 
 // TestGuardParity checks the go column of the table shared with component_mcp_guard
 // (RFC 0001 §5.2 item 7): for each statement, the verdict of the run_query validator.
