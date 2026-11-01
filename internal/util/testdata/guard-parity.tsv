@@ -1,0 +1,42 @@
+# Shared verdicts for run_query input: mysql-mcp-server's validator (go) and
+# component_mcp_guard (guard), RFC 0001 §5.2 item 7. Tab-separated: go, guard, statement, note.
+# go: what run_query accepts (default settings). guard: deny = refused with error 1290 by an
+# MCP session under the default mcp.* settings; allow = not refused by the guard (grants may
+# still refuse it). Every row where the two differ says why in the note.
+# Fixtures assumed: database d1 with table t (column i) and the function d1.f_write() that
+# inserts into d1.t; the MCP account has write grants on d1, so the guard, not grants, decides.
+# Tested by scripts/test-mcp-guard.sh (guard) and mysql-mcp-server (go, vendored copy).
+allow	allow	SELECT * FROM d1.t	
+allow	allow	SHOW TABLES FROM d1	
+allow	allow	DESCRIBE d1.t	
+allow	allow	EXPLAIN SELECT * FROM d1.t	
+allow	allow	SELECT COUNT(*) FROM d1.t WHERE i > 0 LIMIT 10	
+allow	allow	SELECT 'a;b' FROM d1.t	
+allow	allow	SHOW GRANTS	
+deny	deny	INSERT INTO d1.t VALUES (1)	
+deny	deny	UPDATE d1.t SET i = 2	
+deny	deny	DELETE FROM d1.t	
+deny	deny	REPLACE INTO d1.t VALUES (1)	
+deny	deny	CREATE TABLE d1.x (i INT)	
+deny	deny	DROP TABLE d1.t	
+deny	deny	TRUNCATE TABLE d1.t	
+deny	deny	ALTER TABLE d1.t ADD COLUMN j INT	
+deny	deny	SELECT * FROM d1.t FOR UPDATE	
+deny	deny	SELECT * FROM d1.t FOR SHARE	
+deny	deny	SELECT * FROM d1.t LOCK IN SHARE MODE	
+deny	deny	SELECT * FROM d1.t /*!50000 FOR UPDATE */	
+deny	deny	SELECT * FROM d1.t INTO OUTFILE '/tmp/parity.out'	
+deny	deny	SELECT * FROM d1.t INTO DUMPFILE '/tmp/parity.dump'	
+deny	deny	LOAD DATA INFILE '/tmp/parity.in' INTO TABLE d1.t	
+deny	deny	SELECT * FROM mysql.user	
+deny	deny	SELECT * FROM sys.sys_config	
+deny	deny	SET GLOBAL max_connections = 100	
+deny	deny	LOCK TABLES d1.t READ	
+deny	deny	GRANT SELECT ON d1.* TO mcp	
+deny	deny	SELECT 1; DELETE FROM d1.t	go: one statement per call; guard: checks each statement of a multi-statement packet
+deny	allow	SELECT * FROM information_schema.tables LIMIT 1	go blocks system schemas unless MYSQL_MCP_ALLOW_SYSTEM_SCHEMAS; the guard leaves information_schema to grants
+deny	allow	SELECT * FROM performance_schema.global_status LIMIT 1	same as information_schema
+deny	allow	SET SESSION sql_mode = ''	go accepts only reads; the guard allows session settings (they change nothing outside the session)
+deny	allow	CALL mysql_mcp.version()	go runs the tool pack itself, not through run_query; the guard allows CALL of mysql_mcp routines
+deny	allow	SELECT SLEEP(0)	go blocks SLEEP; the guard bounds run time with mcp.max_execution_time_ms instead
+allow	deny	SELECT d1.f_write()	go cannot see what a stored function does; the guard refuses the write inside it
