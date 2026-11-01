@@ -40,3 +40,6 @@ deny	allow	SET SESSION sql_mode = ''	go accepts only reads; the guard allows ses
 deny	allow	CALL mysql_mcp.version()	go runs the tool pack itself, not through run_query; the guard allows CALL of mysql_mcp routines
 deny	allow	SELECT SLEEP(0)	go blocks SLEEP; the guard bounds run time with mcp.max_execution_time_ms instead
 allow	deny	SELECT d1.f_write()	go cannot see what a stored function does; the guard refuses the write inside it
+deny	deny	SET @x = (SELECT MAX(i) FROM d1.t)	go accepts only reads; guard: a subquery in SET reads tables without table access events, so it is refused under the schema rules
+allow	deny	SHOW TABLES FROM d1 WHERE (SELECT COUNT(*) FROM d1.t) > 0	go checks schema names in the text; the guard cannot see a subquery's tables in SHOW, so it refuses it under the schema rules
+deny	deny	CHECKSUM TABLE d1.t	go accepts only reads; guard: CHECKSUM TABLE reads without table access events
