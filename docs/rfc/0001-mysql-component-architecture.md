@@ -206,7 +206,7 @@ Facts established against the `mysql-26.10.0` source and the Go driver:
 ### 5.2 `component_mcp_guard` (8.4, 9.7, 26.7, 26.10)
 
 - **MCP session identity:**
-  - The **`MCP_USER` dynamic privilege** on the account is authoritative. It is checked once, at `event_tracking_connection` connect/change-user time, and cached per connection id. It is not checked on every statement, so non-MCP sessions pay one lookup per statement against a connection-id set.
+  - The **`MCP_USER` dynamic privilege** on the account is authoritative. It is checked once, at `event_tracking_connection` connect/change-user time, and cached per connection id. It is not checked on every statement, so non-MCP sessions pay one lookup per statement against a connection-id set. Impersonated `"local"` command-service sessions raise no connection event, so the guard classifies them at their first statement instead (see §11 item 4).
   - Labels are informational and feed observability (§3a). The connection attribute `program_name=mysql-mcp-server` marks the connection, read with `mysql_connection_attributes_iterator` at connect time. A `/* mcp:tool=<name> req=<id> */` comment prefix on each statement gives the tool and request id, visible in the `event_tracking_query` text.
   - A client cannot opt out by dropping the labels: enforcement keys on the privilege.
 - **Scope:** built for `mysql-mcp-server` only (§3a). Policy and observability assume its tools, its `mysql_mcp` routines and its labels.
@@ -409,6 +409,7 @@ All of the following must hold:
 
    Other facts found:
    - The sessions count against `max_connections` but **not** `max_user_connections`, so `component_mcp` needs its own per-account cap.
+   - **Thread pool:** they run on the calling component's own thread (`component_mcp`'s I/O thread) and are not scheduled by the connection handler, so they take no thread-pool group or slot. This is from reading the source (`srv_session_open_internal`), not measured; the Phase 5 soak test should confirm it under load.
    - Impersonation also skips `ACCOUNT LOCK`, so `component_mcp` must check `account_locked`, as §5.3 already planned.
 5. ~~Licensing sign-off for `sql/mcp/`~~ Resolved: askdba owns the myvector copyright and licenses `sql/mcp/` as Apache-2.0 (§7.2).
 6. ~~Branding and images: ship in `ghcr.io/askdba/myvector` with tags, or as a separate `mysql-mcp` image family?~~ **Decided 2026-10-31:** a separate `ghcr.io/askdba/mysql-mcp` family ([askdba/myvector#244](https://github.com/askdba/myvector/pull/244)).
