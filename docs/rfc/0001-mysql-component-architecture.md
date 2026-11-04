@@ -347,7 +347,7 @@ MyVector already proves the build model on this host:
   - Honors `account_locked`.
   - Rate limits per account.
   - No passwords in MCP payloads, and none stored by default. A token table maps bearer tokens to accounts, which are impersonated (§5.3): `mysql.mcp_tokens` holds token SHA-256 hashes with an account and optional expiry, read through the locked account `mysql.mcp@localhost` ([askdba/myvector#270](https://github.com/askdba/myvector/pull/270)). OAuth 2.1 can be added later as another token source.
-  - Token hashes live in a server table readable only by `MCP_ADMIN`, or in the keyring component.
+  - Token hashes live in `mysql.mcp_tokens`. One grant model: the locked lookup account `mysql.mcp@localhost` has `SELECT` on that table only, and administrators manage it with their privileges on the `mysql` schema. MCP sessions cannot read it (the guard denies the `mysql` schema to them), and no other account is granted access. A keyring-backed store remains an option.
   - Impersonation makes the component fully trusted. A token→account mapping must never resolve to an account holding `SUPER`, `SYSTEM_USER` or `MCP_ADMIN`; the component enforces this at mapping time and again on every request.
 
 ### 7.5 Documentation
