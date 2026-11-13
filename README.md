@@ -148,7 +148,7 @@ Environment variables:
 | MYSQL_MCP_HTTP_TOKEN_FILE | No | – | File containing the bearer token (keeps it out of the environment) |
 | MYSQL_MCP_HTTP_TLS_CERT / MYSQL_MCP_HTTP_TLS_KEY | No | – | Serve HTTPS. Required for non-loopback binds |
 | MYSQL_MCP_HTTP_ALLOW_INSECURE | No | 0 | Set `1` to allow a non-loopback bind **without** TLS when a reverse proxy terminates TLS in front. The token is still required |
-| MYSQL_MCP_HTTP_STATELESS | No | 0 | Set `1` for stateless sessions (no `Mcp-Session-Id`); `use_connection` then only lasts one request |
+| MYSQL_MCP_HTTP_STATELESS | No | 0 | Set `1` for stateless sessions (no `Mcp-Session-Id`); `use_connection` then only lasts one request. Needed for MCP protocol 2026-07-28 over HTTP ([protocol versions](#remote-mcp-over-http-streamable-http)) |
 | MYSQL_MCP_HTTP_SESSION_TIMEOUT_MINUTES | No | 30 | Close idle MCP HTTP sessions after this many minutes |
 | MYSQL_MCP_HTTP_ALLOWED_ORIGINS | No | – | Comma-separated browser origins, each `scheme://host[:port]` with no path (e.g. `https://app.example.com`), allowed to call the endpoint: they get CORS headers and pass cross-origin protection. Other origins get no CORS headers, and their state-changing requests (`POST`, `DELETE`) to the MCP endpoint are rejected |
 | MYSQL_MCP_HTTP_ALLOWED_HOSTS | No | – | Comma-separated public host names a **reverse proxy on the same machine** forwards to the loopback listener (e.g. `mcp.example.com`). Without it, such requests fail the DNS-rebinding check with 403. Setting it requires a token, because the proxy makes the server reachable from outside |
@@ -560,6 +560,17 @@ claude mcp add --transport http mysql https://db-tools.example.com:9306/mcp \
 
 Behavior and safety:
 
+- **Protocol versions:** which MCP revisions a client can use depends on the transport and mode:
+
+  | Transport | 2024-11-05 to 2025-11-25 (sessions) | 2026-07-28 (stateless) |
+  |---|---|---|
+  | stdio | yes | yes |
+  | HTTP, default (stateful) | yes | no |
+  | HTTP, `MYSQL_MCP_HTTP_STATELESS=1` | yes | yes |
+
+  - The MCP Go SDK accepts 2026-07-28 over HTTP only in stateless mode, so the default HTTP mode does not advertise it in `server/discover`.
+  - Clients that negotiate the version (MCP Inspector with `--protocol-era auto`, the Python SDK's `Client` with its default `mode="auto"`) fall back to 2025-11-25 and work as usual.
+  - A client pinned to 2026-07-28 cannot connect in the default HTTP mode (for example "Unsupported protocol version: 2026-07-28"). For such clients, set `MYSQL_MCP_HTTP_STATELESS=1`. The cost: `use_connection` then lasts one request, and `add_connection` is unavailable (see per-session connections below).
 - **Refuses to start unsafely:** a non-loopback bind without a token, or without TLS, is a startup error. `--validate-config` runs the same checks, with the same environment overrides. With `--daemon`, the TLS key pair and the listen address are checked before the process detaches, so a bad certificate or a busy port is reported instead of exiting silently.
 - **Behind a reverse proxy** (nginx, Caddy, …) that terminates TLS:
   - If the proxy forwards to the loopback listener (default bind), list its public names in `MYSQL_MCP_HTTP_ALLOWED_HOSTS`. Otherwise the DNS-rebinding check rejects its `Host` header. A token is then required, as for any non-loopback bind.
