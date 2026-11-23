@@ -6,7 +6,7 @@
 | **Date** | 2026-10-18 |
 | **Targets** | Guard component: MySQL 8.4 LTS, 9.7 LTS, 26.7, 26.10. In-server MCP: **26.10+**. SQL tool pack: 8.0 → 26.10 |
 | **Unchanged** | Go server keeps full support for MySQL 8.0, MariaDB and managed cloud |
-| **Code home** | Components and SQL tool pack: [`askdba/myvector`](https://github.com/askdba/myvector) repo (§7). Go-side changes: this repo |
+| **Code home** | Components and SQL tool pack: [`askdba/mysql-mcp-components`](https://github.com/askdba/mysql-mcp-components) (moved there with their history on 2026-11-23; developed in [`askdba/myvector`](https://github.com/askdba/myvector) until then, so the issue and PR links below point there). Go-side changes: this repo |
 | **Related** | [`docs/architecture.md`](../architecture.md), [`docs/oracle_mcp_comparison.md`](../oracle_mcp_comparison.md), myvector `docs/BUILD_MODES.md`, myvector `docs/COMPONENT_MIGRATION_PLAN.md` |
 
 ---

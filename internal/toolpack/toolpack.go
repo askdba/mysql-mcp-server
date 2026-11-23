@@ -2,7 +2,8 @@
 //
 // Package toolpack vendors the mysql_mcp SQL tool pack (RFC 0001 §5.1) and installs it.
 //
-// The pack is maintained in askdba/myvector under sql/mcp/ (Apache-2.0, see sql/LICENSE);
+// The pack is maintained in askdba/mysql-mcp-components under sql/mcp/ (Apache-2.0, see
+// sql/LICENSE; developed in askdba/myvector until 2026-11-23);
 // the files in sql/ are copies of the version in SourceRef. Each procedure returns exactly
 // the result set of the query the server runs without the pack, so the server can use
 // either one.
@@ -24,7 +25,8 @@ const Version = "1.0.0"
 // SupportedMajor is the pack major version whose result sets the server expects.
 const SupportedMajor = 1
 
-// SourceRef identifies the askdba/myvector commit the files in sql/ were copied from.
+// SourceRef identifies the commit the files in sql/ were copied from (copies made before the
+// move name an askdba/myvector commit; later ones, askdba/mysql-mcp-components).
 const SourceRef = "askdba/myvector@09122e068483418ad9e79fe5c4f7dbf8f431b836 (sql/mcp/)"
 
 //go:embed sql/mysql_mcp.sql

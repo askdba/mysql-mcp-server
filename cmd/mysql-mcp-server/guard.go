@@ -14,7 +14,7 @@ import (
 
 // ===== component_mcp_guard (RFC 0001 §5.2) =====
 //
-// The guard is a MySQL component (askdba/myvector) that enforces a policy on the sessions
+// The guard is a MySQL component (askdba/mysql-mcp-components) that enforces a policy on the sessions
 // of accounts holding MCP_USER. It refuses statements with error 1290
 // (ER_OPTION_PREVENTS_STATEMENT), naming the setting: "The MySQL server is running with the
 // mcp.read_only option so it cannot execute this statement". This file turns that into a
