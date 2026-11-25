@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// guardParitySource is the askdba/myvector file testdata/guard-parity.tsv is copied from.
-// Do not edit the copy; change it in myvector and copy it over.
+// guardParitySource is the file testdata/guard-parity.tsv is copied from (now maintained in
+// askdba/mysql-mcp-components). Do not edit the copy; change it there and copy it over.
 const guardParitySource = "askdba/myvector@cd60ddb (sql/mcp/guard-parity.tsv)"
 
 // TestGuardParity checks the go column of the table shared with component_mcp_guard
