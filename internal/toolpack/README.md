@@ -2,6 +2,6 @@
 
 Vendored copy of the `mysql_mcp` SQL tool pack ([RFC 0001](../../docs/rfc/0001-mysql-component-architecture.md) §5.1).
 
-- **Source:** [askdba/myvector `sql/mcp/`](https://github.com/askdba/myvector/tree/main/sql/mcp), Apache-2.0 ([`sql/LICENSE`](sql/LICENSE)). Do not edit `sql/*.sql` here; change them in myvector, then copy them over and update `SourceRef` and, for a new pack version, `Version` in `toolpack.go`.
+- **Source:** [askdba/mysql-mcp-components `sql/mcp/`](https://github.com/askdba/mysql-mcp-components/tree/main/sql/mcp) (developed in askdba/myvector until 2026-11-23), Apache-2.0 ([`sql/LICENSE`](sql/LICENSE)). Do not edit `sql/*.sql` here; change them in mysql-mcp-components, then copy them over and update `SourceRef` and, for a new pack version, `Version` in `toolpack.go`.
 - **Embedded** in the binary for `mysql-mcp-server install-schema`.
 - **Parity:** `cmd/mysql-mcp-server/toolpack_integration_test.go` (`-tags=integration`) runs every catalog tool with and without the pack and requires identical output.
